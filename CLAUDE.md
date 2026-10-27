@@ -59,7 +59,9 @@ Derivation (pure functions, all tested offline)
 - `modes.py`: precip mode per step (frontal / post-frontal / cellular / lake-effect).
 
 Storms, verification, reports
-- `storms.py`: detect events (12 h dry gap), storm windows (LONGEST deterministic event), storm table, verify
+- `storms.py`: storm life cycle - forecast -> verified, or dropped (future storm no newest run shows) / merged; splits
+  noted ('split from'); per-model separate periods (fc_periods) and sub-periods (6 h gaps, fc_subperiods).
+  Detect events (12 h dry gap), storm windows (LONGEST deterministic event), storm table, verify
   against SNOTEL once 12 h dry, scores. `verify.py`: the separate DAILY-window verification (24 h windows ending
   12 UTC; NOAA ALTA at its 6 pm). Both are intentional: storms = event totals, verify = day-by-day skill.
 - `report.py`: the daily model table, staleness warnings, and the storm report (`render_storms`).
@@ -107,8 +109,7 @@ is UTC-8 (PST) all year; NOAA ALTA water before 10/2007 unreliable; Collins (CLN
 - Actuals missing: 2/16-2/18/2026 storms and 3/5/2026.
 
 ## Next build steps (agreed order)
-1. NEXT (owner, 2026-10-27): stale-storm fix (storms no model's newest run shows any more -> status "dropped",
-   kept for the record), then a STORM TIMELINE + RUN-TO-RUN TRENDS section in the storm report, per model per resort:
+1. DONE 2026-10-27: stale-storm fix + merge/split/periods/parts. NEXT (owner, 2026-10-27): a STORM TIMELINE + RUN-TO-RUN TRENDS section in the storm report, per model per resort:
    snow ONSET (first 3 h-averaged snow rate >= ~0.1"/h; snow, not precip), PEAK snowfall rate time + in/h (3 h
    average, so 1 h and 3 h models compare fairly), snow END, snow/water totals; trends vs the model's previous run
    (onset/peak/end hours earlier/later, snow +/- in and %, water, snow level) and over the last 3-4 runs

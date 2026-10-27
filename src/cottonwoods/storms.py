@@ -15,7 +15,16 @@ Flow regimes change through a storm, so they're kept as PHASES (cottonwoods.regi
 balloons once verified, and every scored run's own phases in storm_scores. Resort snow in the report is scaled
 step by step by that step's regime factor (data/processed/regime_factors.csv, scripts/regime_factors.py).
 
-data/archive/storms.csv            one row per storm (status: forecast -> verified)
+A tracked storm's status: forecast -> verified, or
+  dropped  a FUTURE storm no model's newest run shows any more (storms already under way are never dropped: they're
+           waiting for verification, and newer runs naturally don't show precip that has already fallen)
+  merged   one model event now spans it and an earlier storm: it's folded into that one ("merged into <id>")
+A storm that newer runs show as two separate events keeps the first; the other becomes a new storm ("split from
+<id>"). The report also lists, per storm, models that show it as separate periods, and its sub-periods (gaps of
+storms.subperiod_gap_hours or more inside the defining run), so a two-part storm like the journal's 2/16 a/b
+stays visible.
+
+data/archive/storms.csv            one row per storm (status: forecast -> verified / dropped / merged)
 data/archive/storm_scores.csv      one row per storm x model run (x member for ensembles) once verified
 """
 from __future__ import annotations
@@ -23,14 +32,18 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from . import modes, regimes
+from . import modes, regimes, timefmt
 from .windows import window_total
 from .archive.io import write_df
 from .config import ARCHIVE_DIR
 
 MM_PER_IN = 25.4
 COLS = ["storm_id", "point", "status", "fc_start", "fc_end", "defining_model", "defining_init", "outside_note",
-        "fc_flow", "fc_modes", "obs_start", "obs_end", "final_start", "final_end", "obs_water_in", "obs_flow", "updated_at"]
+        "fc_flow", "fc_modes", "fc_periods", "fc_subperiods", "obs_start", "obs_end", "final_start", "final_end",
+        "obs_water_in", "obs_flow", "note", "updated_at"]
+TEXT_COLS = ("storm_id", "point", "status", "defining_model", "outside_note", "fc_flow", "fc_modes", "fc_periods",
+             "fc_subperiods", "obs_flow", "note")
+TIME_COLS = ("fc_start", "fc_end", "defining_init", "obs_start", "obs_end", "final_start", "final_end", "updated_at")
 
 
 # --- detection -------------------------------------------------------------------------------
@@ -100,6 +113,8 @@ def storm_windows(events: pd.DataFrame) -> list[dict]:
     """Group overlapping model events into storms; each storm's window is its LONGEST single model event.
 
     outside_note lists any model whose event pokes outside that window (worth knowing, not used to widen it).
+    fc_periods lists models that show the storm as two or more separate events (they overlap the same group, e.g.
+    ECMWF splits what GFS shows as one long event), with Mountain times.
     """
     if events.empty:
         return []
@@ -122,8 +137,12 @@ def storm_windows(events: pd.DataFrame) -> list[dict]:
                    f"{abs((r.start - longest.start) if r.start < longest.start else (r.end - longest.end)) / pd.Timedelta(hours=1):.0f} h "
                    f"{'earlier' if r.start < longest.start else 'later'}"
                    for _, r in g.iterrows() if r.start < longest.start or r.end > longest.end]
+        periods = [f"{model} shows {len(m)} separate periods: "
+                   + "; ".join(f"{timefmt.clock(r.start, weekday=True)}-{timefmt.clock(r.end, weekday=True)}"
+                               for _, r in m.sort_values("start").iterrows())
+                   for model, m in g.groupby("model") if len(m) > 1]
         out.append({"fc_start": longest.start, "fc_end": longest.end, "defining_model": longest.model,
-                    "defining_init": longest.init, "outside_note": "; ".join(outside)})
+                    "defining_init": longest.init, "outside_note": "; ".join(outside), "fc_periods": " | ".join(periods)})
     return out
 
 
@@ -144,6 +163,19 @@ def run_modes(g: pd.DataFrame, point: str, s, e, cfg: dict) -> str:
     return modes.mode_string(gp[gp["qpf_mm"] >= cfg["storms"]["wet_in"] * MM_PER_IN])
 
 
+def run_subperiods(g: pd.DataFrame, point: str, s, e, cfg: dict) -> str:
+    """Parts of the storm in one run separated by storms.subperiod_gap_hours or more without measurable precip:
+    'Sat 10/31 0300 MDT-Sat 10/31 2100 MDT 70% | Sun 11/01 0900 MST-Mon 11/02 1100 MST 30%' ('' if one part)."""
+    scfg = cfg["storms"]
+    gp = g[(g["point"] == point) & (g["valid_end"] > s) & (g["valid_start"] < e)]
+    parts = detect_events(gp, scfg["wet_in"] * MM_PER_IN, scfg["subperiod_gap_hours"], 0.0)
+    if len(parts) < 2:
+        return ""
+    total = parts["total_mm"].sum() or 1.0
+    return " | ".join(f"{timefmt.clock(r.start, weekday=True)}-{timefmt.clock(r.end, weekday=True)} "
+                      f"{100 * r.total_mm / total:.0f}%" for _, r in parts.iterrows())
+
+
 # --- storm table -----------------------------------------------------------------------------
 
 def storms_path(root=None):
@@ -155,42 +187,72 @@ def load_storms(root=None) -> pd.DataFrame:
     if not p.exists():
         return pd.DataFrame(columns=COLS)
     # Text columns read as text (an all-blank column would otherwise load as numbers and refuse a note later)
-    df = pd.read_csv(p, dtype={c: object for c in ("storm_id", "point", "status", "defining_model", "outside_note",
-                                                   "fc_flow", "fc_modes", "obs_flow")})
-    text = ("storm_id", "point", "status", "defining_model", "outside_note", "fc_flow", "fc_modes", "obs_flow")
+    df = pd.read_csv(p, dtype={c: object for c in TEXT_COLS})
     for c in COLS:
         if c not in df.columns:  # storms saved before a column existed
-            df[c] = pd.Series([None] * len(df), dtype=object) if c in text else np.nan
-    for c in text:
+            df[c] = pd.Series([None] * len(df), dtype=object) if c in TEXT_COLS else np.nan
+    for c in TEXT_COLS:
         df[c] = df[c].astype(object)
-    for c in ("fc_start", "fc_end", "defining_init", "obs_start", "obs_end", "final_start", "final_end", "updated_at"):
+    for c in TIME_COLS:
         df[c] = pd.to_datetime(df[c])
     return df
 
 
 def update_forecast_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Timestamp) -> pd.DataFrame:
-    """Add new forecast storms and refresh the windows of storms not yet verified, from the newest runs."""
+    """Refresh tracked storms from the newest runs: update, add, split, merge and drop (see the module docstring)."""
     scfg = cfg["storms"]
     point = scfg["point"]
     storms = storms.copy()
-    for w in storm_windows(model_events(fc, point, scfg)):
-        if w["fc_end"] < now - pd.Timedelta(days=3):
-            continue  # an old run's event for a storm long gone; leave history alone
+    touched: set = set()   # rows updated or created in this pass
+    # Overlaps are judged against each storm's window as it was BEFORE this pass: updating a storm from the first
+    # event must not hide that a second event also overlaps it (that's a split, not a new unrelated storm).
+    before = storms[["fc_start", "fc_end"]].copy()
+
+    def blank_row(w, **extra):
+        row = {c: pd.NaT if c in TIME_COLS else np.nan for c in COLS}
+        row.update(w, storm_id=f"{w['fc_start']:%Y%m%d%H}", point=point, status="forecast", updated_at=now, **extra)
+        return row
+
+    windows = [w for w in storm_windows(model_events(fc, point, scfg)) if w["fc_end"] >= now - pd.Timedelta(days=3)]
+    for w in sorted(windows, key=lambda x: x["fc_start"]):
         g = fc[(fc["model"] == w["defining_model"]) & (fc["init"] == w["defining_init"])]
         w["fc_flow"] = run_flow(g, point, w["fc_start"], w["fc_end"], cfg)
         w["fc_modes"] = run_modes(g, point, w["fc_start"], w["fc_end"], cfg)
-        open_ = storms[(storms["point"] == point) & (storms["status"] == "forecast")]
-        hit = open_[(open_["fc_start"] <= w["fc_end"]) & (open_["fc_end"] >= w["fc_start"])]
-        if len(hit):
-            i = hit.index[0]                    # same storm as one already tracked: update its window
-            for k, v in w.items():
-                storms.at[i, k] = v
-            storms.at[i, "updated_at"] = now
-        elif not ((storms["point"] == point) & (storms["status"] == "verified")
-                  & (storms["final_start"] <= w["fc_end"]) & (storms["final_end"] >= w["fc_start"])).any():
-            row = {c: pd.NaT if c.endswith(("start", "end", "_at", "init")) else np.nan for c in COLS}
-            row.update(w, storm_id=f"{w['fc_start']:%Y%m%d%H}", point=point, status="forecast", updated_at=now)
-            storms = pd.concat([storms, pd.DataFrame([row])], ignore_index=True)
+        w["fc_subperiods"] = run_subperiods(g, point, w["fc_start"], w["fc_end"], cfg)
+        is_open = (storms["point"] == point) & (storms["status"] == "forecast") & storms.index.isin(before.index)
+        span = before.reindex(storms.index)
+        hits = storms[is_open & (span["fc_start"] <= w["fc_end"]) & (span["fc_end"] >= w["fc_start"])]
+        hits = hits.loc[span.loc[hits.index, "fc_start"].sort_values().index]
+        if hits.empty:
+            already_verified = ((storms["point"] == point) & (storms["status"] == "verified")
+                                & (storms["final_start"] <= w["fc_end"]) & (storms["final_end"] >= w["fc_start"])).any()
+            if not already_verified:
+                storms = pd.concat([storms, pd.DataFrame([blank_row(w)])], ignore_index=True)
+                touched.add(storms.index[-1])
+            continue
+        keep = hits.index[0]
+        if keep in touched:
+            # this storm was already matched to an earlier event in this pass: newer runs show it as two events
+            storms = pd.concat([storms, pd.DataFrame([blank_row(w, note=f"split from {storms.at[keep, 'storm_id']}")])],
+                               ignore_index=True)
+            touched.add(storms.index[-1])
+            continue
+        for k, v in w.items():
+            storms.at[keep, k] = v
+        storms.at[keep, "updated_at"] = now
+        touched.add(keep)
+        for other in hits.index[1:]:
+            if other not in touched:   # one event now spans two tracked storms: fold the later one in
+                storms.at[other, "status"] = "merged"
+                storms.at[other, "note"] = f"merged into {storms.at[keep, 'storm_id']} ({timefmt.clock(now)})"
+                storms.at[other, "updated_at"] = now
+
+    # Future storms no model's newest run shows any more. (Storms already under way are kept for verification.)
+    stale = (storms["point"] == point) & (storms["status"] == "forecast") & (storms["fc_start"] > now) \
+        & ~storms.index.isin(touched)
+    storms.loc[stale, "status"] = "dropped"
+    storms.loc[stale, "note"] = f"no model's newest run shows it any more ({timefmt.clock(now)})"
+    storms.loc[stale, "updated_at"] = now
     return storms
 
 

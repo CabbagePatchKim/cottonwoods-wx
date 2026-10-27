@@ -164,6 +164,7 @@ storms:
   wet_in: 0.01             # measurable precip per model step
   obs_wet_in: 0.1          # measurable per hour for SNOTEL: its gauge reports in 0.1" steps
   min_total_in: 0.10       # an "event" smaller than this isn't a storm
+  subperiod_gap_hours: 6   # inside a storm, a dry gap this long splits it into reported parts (e.g. 2/16 a/b)
 
 # Verification: forecast windows vs observed windows
 verify:

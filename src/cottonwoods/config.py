@@ -29,7 +29,7 @@ REQUIRED = {
                 "factor_min_days", "front_drop_c", "front_veer_deg", "front_window_hours", "cellular_cape_jkg",
                 "cellular_lapse_c_per_km", "event_gap_hours", "event_wet_mm", "lake_flow_deg", "lake_min_rh700",
                 "lake_temp_c_by_month"],
-    "storms": ["point", "gap_hours", "wet_in", "obs_wet_in", "min_total_in"],
+    "storms": ["point", "gap_hours", "wet_in", "obs_wet_in", "min_total_in", "subperiod_gap_hours"],
     "verify": ["window_hours", "window_end_utc_hour", "swe_tolerance_hours", "event_swe_in"],
     "snotel_settings": ["tz_offset_hours"],
     "local_settings": ["standard_offset_hours"],

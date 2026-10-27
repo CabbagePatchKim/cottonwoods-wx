@@ -7,6 +7,7 @@ import pandas as pd
 
 from cottonwoods.archive import forecasts as fa
 
+from cottonwoods.config import load_config
 from helpers import make_cfg, hourly, snotel_prec
 
 
@@ -88,3 +89,59 @@ def test_staleness_lists_only_models_with_missing_due_runs():
             p = fa.run_path("HRRR", t, cfg, root); p.parent.mkdir(parents=True, exist_ok=True); p.touch()
         w = staleness(cfg, now, root=root)
     assert len(w) == 1 and w[0].startswith("WARNING GDPS: 8 of its last 8 runs missing")
+
+
+# --- storm life cycle: dropped / merged / split / periods / parts ---------------------------------
+
+def run_steps(model, init, wet, hours=120, point="alta"):
+    """Hourly steps of one fake run: 1 mm/h inside each (start, end) wet range of hours after init, else dry."""
+    t0 = pd.Timestamp(init)
+    return pd.DataFrame([{"model": model, "init": t0, "point": point, "valid_start": t0 + pd.Timedelta(hours=h),
+                          "valid_end": t0 + pd.Timedelta(hours=h + 1),
+                          "qpf_mm": 1.0 if any(a <= h < b for a, b in wet) else 0.0} for h in range(hours)])
+
+
+def tracked(fc, now, storms=None):
+    from cottonwoods import storms as st
+    cfg = load_config()
+    base = storms if storms is not None else pd.DataFrame(columns=st.COLS)
+    return st.update_forecast_storms(base, fc, cfg, pd.Timestamp(now))
+
+
+def test_future_storm_no_model_shows_is_dropped_but_an_ongoing_one_is_kept():
+    first = tracked(pd.concat([run_steps("GFS", "2026-11-01", [(10, 20), (60, 70)])]), "2026-11-01 01:00")
+    assert len(first) == 2 and set(first.status) == {"forecast"}
+    # newer run: the second storm is gone; the first is under way (now is past its start) and has no events left
+    later = tracked(run_steps("GFS", "2026-11-01 18:00", []), "2026-11-01 18:30", first)
+    st = later.set_index("storm_id").status
+    assert st["2026110110"] == "forecast"           # started: waiting for verification, not dropped
+    assert st["2026110312"] == "dropped"            # future and gone from every newest run
+
+
+def test_one_event_spanning_two_tracked_storms_merges_them():
+    first = tracked(run_steps("GFS", "2026-11-01", [(10, 20), (36, 46)]), "2026-11-01 01:00")
+    assert len(first) == 2
+    later = tracked(run_steps("GFS", "2026-11-01 06:00", [(4, 40)]), "2026-11-01 06:30", first)
+    st = later.set_index("storm_id")
+    assert st.loc["2026110212", "status"] == "merged" and "merged into 2026110110" in st.loc["2026110212", "note"]
+    assert st.loc["2026110110", "status"] == "forecast"
+
+
+def test_a_storm_newer_runs_show_as_two_events_splits():
+    first = tracked(run_steps("GFS", "2026-11-01", [(10, 50)]), "2026-11-01 01:00")
+    later = tracked(run_steps("GFS", "2026-11-01 06:00", [(4, 14), (30, 44)]), "2026-11-01 06:30", first)
+    new = later[later.note.astype(str).str.contains("split from 2026110110")]
+    assert len(later) == 2 and len(new) == 1 and new.status.iloc[0] == "forecast"
+
+
+def test_model_disagreement_and_parts_are_reported():
+    from cottonwoods import storms as st
+    cfg = load_config()
+    fc = pd.concat([run_steps("GFS", "2026-11-01", [(10, 50)]),            # one long event
+                    run_steps("IFS", "2026-11-01", [(10, 20), (36, 50)])])  # two events inside it (16 h gap)
+    w = st.storm_windows(st.model_events(fc, "alta", cfg["storms"]))
+    assert len(w) == 1 and w[0]["defining_model"] == "GFS" and w[0]["fc_periods"].startswith("IFS shows 2 separate periods")
+    # GFS with an 8 h lull inside its storm: one storm (gap < 12 h), reported as two parts (gap >= 6 h)
+    g = run_steps("GFS", "2026-11-01", [(10, 20), (28, 40)])
+    parts = st.run_subperiods(g, "alta", pd.Timestamp("2026-11-01 10:00"), pd.Timestamp("2026-11-01 16:00") + pd.Timedelta(hours=24), cfg)
+    assert parts.count("|") == 1 and parts.endswith("55%")      # 10 h then 12 h of water: 45% | 55%

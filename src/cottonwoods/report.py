@@ -127,6 +127,12 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> str:
             lines.append(f"    flow ({st.defining_model}): {st.fc_flow}")
         if isinstance(st.fc_modes, str) and st.fc_modes:
             lines.append(f"    modes ({st.defining_model}): {st.fc_modes}")
+        if isinstance(st.fc_subperiods, str) and st.fc_subperiods:
+            lines.append(f"    parts ({st.defining_model}): {st.fc_subperiods}")
+        if isinstance(st.fc_periods, str) and st.fc_periods:
+            lines.append(f"    models disagree: {st.fc_periods}")
+        if isinstance(st.note, str) and st.note:
+            lines.append(f"    note: {st.note}")
         rows = []
         for model, g in fc.groupby("model"):
             g = g[g["init"] == g["init"].max()]
@@ -168,4 +174,9 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> str:
             t = t.fillna("")  # ensembles have no snow level or flow (precip only)
         lines.append(t.to_string(index=False) if not t.empty else "(no model reaches this storm)")
         lines.append("")
+    # Storms dropped or merged in the last day, so a forecast that vanished is visible rather than silently gone
+    recent = storms[storms["status"].isin(["dropped", "merged"])
+                    & (pd.to_datetime(storms["updated_at"]) >= pd.Timestamp(storms["updated_at"].max()) - pd.Timedelta(days=1))]
+    for _, st in recent.sort_values("fc_start").iterrows():
+        lines.append(f"--- Storm {st.storm_id} ({timefmt.clock(st.fc_start, weekday=True)}) {st.status.upper()}: {st.note}")
     return "\n".join(lines) if lines else "No storms in the newest model runs.\n"
