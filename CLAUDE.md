@@ -121,11 +121,43 @@ so the remaining big speed lever is server-side subsetting (deferred: NOMADS fil
 era5.request_pressure_levels is unused on purpose (planned ERA5 regime work). tools/golden.py keeps its own copy
 of storms.csv, so a scheduled pass can't cause a false DIFF.
 
-## Status (2026-10-27)
-Running live: all nine models archived every 3 h with station-profile snow, regimes, modes, 2x2 cells; observations
-(SNOTEL, NOAA ALTA, soundings); storm tracking + verification; reports in data/reports/. Verified facts: SNOTEL hourly
-is UTC-8 (PST) all year; NOAA ALTA water before 10/2007 unreliable; Collins (CLN) published 12 h data exists
-(Hive doi:10.7278/S50d-nsy5-8bje, CC BY-NC). Owner rules are in memory and in config comments.
+## Status (end of session 2026-10-27, evening)
+Running live, TWO places for now (side-by-side check before cutover):
+- LAPTOP: Windows tasks "Cottonwoods models" (every 3 h at :30 local, run_models.bat, DEVELOPMENT code = main) and
+  "Cottonwoods soundings". Writes data/ locally. Never publishes (not a release; no CWX_PUBLISH).
+- CLOUD: GitHub Actions github.com/CabbagePatchKim/cottonwoods-wx (PUBLIC), .github/workflows/pass.yml every 3 h at
+  :30 UTC, runs the newest approved tag = v1.0 (81d37f2). Archive in Cloudflare R2 bucket cwx-archive; log in
+  bucket logs/cloud/models_YYYY-MM.log. Publishes the feed (CWX_PUBLISH=1 set only there).
+  First manual run 2026-10-27 21:04Z: green, 53 min. Scheduled runs had NOT fired yet at end of session.
+- FEED v1.0 (approved by owner 2026-10-27): MODEL-RUN DATA ONLY, public at
+  https://cabbagepatchkim.github.io/cwx-feed/v1/{storms,daily,meta}.json (repo CabbagePatchKim/cwx-feed). The owner's
+  friend's site reads those URLs. Release procedure: see "RELEASE PROCEDURE" below; laptop never publishes.
+Keys/secrets (values never in git or chat): ~/.ssh/cwx_feed_ed25519 (laptop feed key), ~/.ssh/cwx_feed_ci_ed25519
+(cloud feed key = GitHub secret FEED_DEPLOY_KEY), ~/.ssh/cwx_code_ed25519 (laptop push to the code repo; repo-local
+core.sshCommand), ~/.ssh/known_hosts (GitHub host key, fingerprint SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU),
+~/.cwx_r2.env (R2 credentials for laptop bucket access), ~/.cwx_pylib (boto3, kept out of the main env). GitHub
+secrets: R2_BUCKET, R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, FEED_DEPLOY_KEY. Commit email = owner's
+GitHub noreply (history rewritten before going public; pre-rewrite backup:
+../../cottonwoods-wx_backup_before_public_20261027.bundle).
+Verified facts: SNOTEL hourly is UTC-8 (PST) all year; NOAA ALTA water before 10/2007 unreliable; Collins (CLN)
+published 12 h data exists (Hive doi:10.7278/S50d-nsy5-8bje, CC BY-NC); Collins live data has NO free automated
+route (api.weather.gov lists CLN but serves no observations; never automate the NWS page).
+
+## Tomorrow's agenda (start here, 2026-10-28)
+1. Cloud health: did scheduled runs fire (Actions list via api.github.com, no login needed)? Pull the bucket
+   (`scripts/bucket_sync.py pull` with PYTHONPATH incl. ~/.cwx_pylib, `--env-file ~/.cwx_r2.env`) and read
+   logs/cloud/models_*.log: per-step results, "Running approved release v1.0", "pushed ... cwx-feed". If no scheduled
+   runs: investigate (GitHub delays/disables new schedules; manual "Run workflow" works).
+2. Feed check: fetch the three public URLs; code_version must be v1.0; storms/daily sane. Give the owner the URLs.
+3. Speed: compare per-run archive times before/after download_workers (laptop data/logs/models.log "----- <script>
+   exit N (time)" lines + [archive] durations; cloud log). Laptop passes cut off after archiving earlier on
+   10/27 (likely my edits/memory use during passes): confirm passes now run all five steps.
+4. Side-by-side laptop vs cloud for a day, then CUTOVER (owner approval): disable laptop tasks "Cottonwoods models"
+   and "Cottonwoods soundings"; laptop becomes development only (pull from the bucket).
+5. Weekend storm (Fri 10/30 - Mon 11/2): first real verification ~11/2-11/3. The SessionStart hook will prompt the
+   owner for Alta Collins readings (data/entries/, scripts/send_entries.bat).
+6. Then the build plan below (HTML storm report + timeline/trends + NOAA ALTA display: DEVELOPMENT ONLY, unpublished;
+   feed v1 stays model-only until the owner approves a release that adds anything).
 
 ## Open questions for the owner
 - Which site were the journal "actual" totals measured at (Alta, Snowbird, Brighton, LCC avg)?
