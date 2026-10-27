@@ -67,7 +67,7 @@ Storms, verification, reports
 - `report.py`: the daily model table, staleness warnings, and the storm report. Numbers and text are separate:
   `model_days` / `storm_models` compute, `model_table` / `render_storms` format; the feed reuses the numbers.
 - `feed.py`: website feed v1 (meta/storms/daily .json, Mountain ISO times, inches, null for missing);
-  `release.py`: the approval gate. `scripts/publish_feed.py` (last step of run_models.bat; `--preview` for any code
+  `release.py`: the approval gate; `github_feed.py` pushes an approved feed to GitHub Pages. `scripts/publish_feed.py` (last step of run_models.bat; `--preview` for any code
   -> data/feed_preview/). `config.DATA_DIR` honors COTTONWOODS_DATA so a production copy shares one data folder.
 
 Observation clients (`obs/`): `snotel.py` (AWDB), `synoptic.py` (CLN, needs token), `ghcn.py` (NOAA coop),
@@ -166,10 +166,9 @@ WEBSITE FEED (owner, 2026-10-27; after the HTML report, shares its summary data)
         data path (git-ignored); repoint task "Cottonwoods models" to prod\scripts\run_models.bat (the whole pass,
         incl. archiving, then runs approved code). Later releases: `git -C ..\cottonwoods-wx-prod checkout vX.Y`.
      3. Run publish_feed.py from prod once to confirm it prints the tag.
-   UPLOAD (built 2026-10-27, not configured): friend's basic VPS. upload.py pushes data/feed/v1 by SFTP (Windows
-   OpenSSH, key ~/.ssh/cwx_feed_ed25519, BatchMode + StrictHostKeyChecking, temp name then rename) after an approved
-   publish only. Needs from the friend: host, port, upload user (SFTP-only, chrooted to the feed folder, our public
-   key installed), remote_dir, public URL (CORS header if the page is on another domain). Then: owner's first manual
-   `sftp -i ~/.ssh/cwx_feed_ed25519 user@host` to accept the host key (fingerprint checked with the friend), fill
-   config feed_upload. Never upload before the owner confirms the destination.
+   PUBLISHING (2026-10-27): friend declined to share VPS access, so the feed is PUBLIC on the owner's GitHub Pages:
+   repo github.com/CabbagePatchKim/cwx-feed -> https://cabbagepatchkim.github.io/cwx-feed/v1/{meta,storms,daily}.json;
+   the friend's site fetches it. github_feed.py: clone in data/feed_repo, copy, commit, push with deploy key
+   ~/.ssh/cwx_feed_ed25519 (write access, this repo only). Config feed_github stays commented until the owner adds
+   the deploy key, turns on Pages, and approves the first release. Never push preview/dev output.
 Deferred: server-side subsetting (NOMADS / GeoMet), only if bandwidth becomes a problem.

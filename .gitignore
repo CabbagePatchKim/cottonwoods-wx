@@ -17,4 +17,5 @@ data/reports/
 *.bak
 data/feed/
 data/feed_preview/
+data/feed_repo/
 data_dir.txt

@@ -105,23 +105,26 @@ def test_only_a_clean_annotated_release_tag_may_publish():
         assert release.dev_version(root).startswith("dev-")
 
 
-def test_upload_puts_each_file_under_a_temp_name_then_renames_and_never_prompts():
-    from cottonwoods import upload
-    ucfg = {"host": "vps.example", "user": "cwxfeed", "key_file": "C:/keys/k", "remote_dir": "/var/www/cwx/"}
+def test_github_publish_commits_changed_files_and_skips_unchanged():
+    from cottonwoods import github_feed
     with tempfile.TemporaryDirectory() as d:
-        out = Path(d) / "v1"
-        out.mkdir()
-        for n in ("meta.json", "storms.json"):
-            (out / n).write_text("{}")
-        seen = {}
-
-        def fake_run(cmd, **kw):
-            seen["cmd"], seen["batch"] = cmd, Path(cmd[cmd.index("-b") + 1]).read_text(encoding="utf-8")
-            return subprocess.CompletedProcess(cmd, 0, "", "")
-        assert "2 files" in upload.upload_feed(ucfg, out, run=fake_run)
-    b = seen["batch"].splitlines()
-    assert b[0] == '-mkdir "/var/www/cwx/v1"'
-    assert b[1].startswith('put "') and b[1].endswith('/v1/meta.json" "/var/www/cwx/v1/.meta.json.tmp"')
-    assert b[2] == 'rename "/var/www/cwx/v1/.meta.json.tmp" "/var/www/cwx/v1/meta.json"'
-    assert "BatchMode=yes" in seen["cmd"] and "StrictHostKeyChecking=yes" in seen["cmd"]
-    assert seen["cmd"][-1] == "cwxfeed@vps.example"
+        d = Path(d)
+        remote, seed = d / "remote.git", d / "seed"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
+        subprocess.run(["git", "clone", "-q", str(remote), str(seed)], check=True, capture_output=True)
+        (seed / "README.md").write_text("feed")
+        subprocess.run(["git", "-C", str(seed), *github_feed.AUTHOR, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(seed), *github_feed.AUTHOR, "commit", "-q", "-m", "init"], check=True)
+        subprocess.run(["git", "-C", str(seed), "push", "-q", "origin", "HEAD:main"], check=True)
+        out = d / "feed" / "v1"
+        out.mkdir(parents=True)
+        (out / "meta.json").write_text('{"a": 1}')
+        gcfg = {"repo": str(remote), "branch": "main", "key_file": "k", "known_hosts": "kh"}
+        assert "pushed 1 files" in github_feed.publish(gcfg, out, d / "clone", "v1.0", "now")
+        assert "unchanged" in github_feed.publish(gcfg, out, d / "clone", "v1.0", "later")
+        (out / "meta.json").write_text('{"a": 2}')
+        assert "pushed" in github_feed.publish(gcfg, out, d / "clone", "v1.1", "later")
+        shown = subprocess.run(["git", "-C", str(remote), "show", "main:v1/meta.json"], capture_output=True, text=True)
+        log = subprocess.run(["git", "-C", str(remote), "log", "--format=%s", "main"], capture_output=True, text=True)
+        assert shown.stdout == '{"a": 2}' and log.stdout.splitlines() == ["feed v1.1, later", "feed v1.0, now", "init"]
+    assert "BatchMode=yes" in github_feed.ssh_command(gcfg) and "StrictHostKeyChecking=yes" in github_feed.ssh_command(gcfg)
