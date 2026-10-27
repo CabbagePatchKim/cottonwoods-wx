@@ -176,3 +176,12 @@ verify:
                            # NOAA (ghcn:) sites ignore window_end_utc_hour and use their own observation time
                            # (ALTA: 6 pm MST = 01 UTC), so GFS's 3 h steps can't line up with them; HRRR can
   event_swe_in: 0.10       # liquid threshold that counts as a "measurable" event, model and obs
+
+# Website feed upload (scripts/publish_feed.py -> src/cottonwoods/upload.py). Approved releases only; previews are
+# never uploaded. Leave commented out until the friend's VPS details are confirmed by the owner.
+# feed_upload:
+#   host: example.com              # the VPS
+#   port: 22
+#   user: cwxfeed                  # dedicated upload account (SFTP-only, locked to the feed folder)
+#   key_file: ~/.ssh/cwx_feed_ed25519
+#   remote_dir: /var/www/site/cwx  # feed lands in <remote_dir>/v1/*.json -> https://<site>/cwx/v1/storms.json

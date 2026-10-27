@@ -166,6 +166,10 @@ WEBSITE FEED (owner, 2026-10-27; after the HTML report, shares its summary data)
         data path (git-ignored); repoint task "Cottonwoods models" to prod\scripts\run_models.bat (the whole pass,
         incl. archiving, then runs approved code). Later releases: `git -C ..\cottonwoods-wx-prod checkout vX.Y`.
      3. Run publish_feed.py from prod once to confirm it prints the tag.
-   STILL OPEN: uploading data/feed/v1 to the friend's site (need: host type, how their site wants the files - repo,
-   bucket or URL - and a token). Never upload before the owner confirms the destination.
+   UPLOAD (built 2026-10-27, not configured): friend's basic VPS. upload.py pushes data/feed/v1 by SFTP (Windows
+   OpenSSH, key ~/.ssh/cwx_feed_ed25519, BatchMode + StrictHostKeyChecking, temp name then rename) after an approved
+   publish only. Needs from the friend: host, port, upload user (SFTP-only, chrooted to the feed folder, our public
+   key installed), remote_dir, public URL (CORS header if the page is on another domain). Then: owner's first manual
+   `sftp -i ~/.ssh/cwx_feed_ed25519 user@host` to accept the host key (fingerprint checked with the friend), fill
+   config feed_upload. Never upload before the owner confirms the destination.
 Deferred: server-side subsetting (NOMADS / GeoMet), only if bandwidth becomes a problem.

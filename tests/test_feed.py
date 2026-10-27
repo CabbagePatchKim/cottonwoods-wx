@@ -103,3 +103,25 @@ def test_only_a_clean_annotated_release_tag_may_publish():
         (root / "src" / "cottonwoods" / "extra.py").unlink()
         assert _refused(root, str(Path(d).parent / "elsewhere" / "src" / "cottonwoods" / "__init__.py"))  # other code
         assert release.dev_version(root).startswith("dev-")
+
+
+def test_upload_puts_each_file_under_a_temp_name_then_renames_and_never_prompts():
+    from cottonwoods import upload
+    ucfg = {"host": "vps.example", "user": "cwxfeed", "key_file": "C:/keys/k", "remote_dir": "/var/www/cwx/"}
+    with tempfile.TemporaryDirectory() as d:
+        out = Path(d) / "v1"
+        out.mkdir()
+        for n in ("meta.json", "storms.json"):
+            (out / n).write_text("{}")
+        seen = {}
+
+        def fake_run(cmd, **kw):
+            seen["cmd"], seen["batch"] = cmd, Path(cmd[cmd.index("-b") + 1]).read_text(encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        assert "2 files" in upload.upload_feed(ucfg, out, run=fake_run)
+    b = seen["batch"].splitlines()
+    assert b[0] == '-mkdir "/var/www/cwx/v1"'
+    assert b[1].startswith('put "') and b[1].endswith('/v1/meta.json" "/var/www/cwx/v1/.meta.json.tmp"')
+    assert b[2] == 'rename "/var/www/cwx/v1/.meta.json.tmp" "/var/www/cwx/v1/meta.json"'
+    assert "BatchMode=yes" in seen["cmd"] and "StrictHostKeyChecking=yes" in seen["cmd"]
+    assert seen["cmd"][-1] == "cwxfeed@vps.example"
