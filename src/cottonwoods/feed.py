@@ -26,6 +26,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import timefmt
+from .units import FT_PER_M
 from .report import model_days, recent_changes, regime_adjusted, storm_models, storm_notes
 
 SCHEMA_VERSION = 1
@@ -75,7 +76,7 @@ def build_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> dict:
             sl = r["snow_level_m"]
             models.append({"model": r["model"], **_run(r["init"]), "covers_full_storm": r["full"],
                            "run_ends": iso(r["valid_to"]),
-                           "snow_level_ft": {"start": _num(sl[0] * 3.281, -2), "end": _num(sl[1] * 3.281, -2)} if sl else None,
+                           "snow_level_ft": {"start": _num(sl[0] * FT_PER_M, -2), "end": _num(sl[1] * FT_PER_M, -2)} if sl else None,
                            "flow": r["flow"] or None, "modes": r["modes"] or None,
                            "points": {p: _amounts(c) if r["full"] else None for p, c in r["points"].items()}})
         out.append({"id": st.storm_id, "start": iso(st.fc_start), "end": iso(st.fc_end),

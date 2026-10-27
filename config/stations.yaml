@@ -139,6 +139,9 @@ archive:
   hrrr_max_fxx: 48
   gfs_max_fxx: 240
   gfs_step_hours: 3
+  # Parallel downloads per server (timed 2026-10-27: NOAA/AWS 12 h of GFS 38 s with 6 -> 24 s with 12; IFS 18 -> 14 s;
+  # Canada no faster beyond 8 because decoding, not downloading, is its limit). gdex stays low: a free shared server.
+  download_workers: {noaa: 12, ecmwf: 12, canada: 8, gdex: 4}
   recent_cycles: 8                       # latest cycles each scheduled pass tries (8 = 2 days): runs missed while
                                          # the PC was off get caught up; already-archived runs are skipped instantly
   # Longer automatic catch-up for models whose source deletes old runs (Environment Canada keeps ~30 days). 3 days

@@ -166,7 +166,7 @@ def archive_run(
     spec = REGISTRY[model]
     fxx = spec.fxx_list(init, cfg)
     # Tests pass a fake `puller` so no download happens; normally we look up the real one for this model.
-    pull = puller or get_puller(model)
+    pull = puller or get_puller(model, cfg)
     points = run_points(model, cfg)
     df = pull(init, fxx, points, save_dir)
     if df is None or df.empty:

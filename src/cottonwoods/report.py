@@ -14,8 +14,8 @@ from . import regimes, timefmt
 from .config import PROCESSED_DIR
 from .storms import hand_obs_totals, manual_totals, run_flow, run_modes
 from .windows import window_total
+from .units import FT_PER_M, MM_PER_IN
 
-MM_PER_IN = 25.4
 # Display order: short-range high-res first, then global, then ensembles
 MODEL_ORDER = ["HRRR", "NAMNEST", "NAM", "RDPS", "GFS", "GDPS", "IFS", "GEFS", "ENS"]
 
@@ -75,9 +75,13 @@ def model_days(fc: pd.DataFrame, cfg: dict, point: str, days: int = 10, start: p
     return _by_model_order(out)
 
 
+def model_rank(model: str) -> int:
+    """Position in the display order (MODEL_ORDER); unknown models go last."""
+    return MODEL_ORDER.index(model) if model in MODEL_ORDER else len(MODEL_ORDER)
+
+
 def _by_model_order(rows: list[dict]) -> list[dict]:
-    rank = {m: i for i, m in enumerate(MODEL_ORDER)}
-    return sorted(rows, key=lambda r: rank.get(r["model"], 99))
+    return sorted(rows, key=lambda r: model_rank(r["model"]))
 
 
 def model_table(fc: pd.DataFrame, cfg: dict, point: str, days: int = 10, start: pd.Timestamp | None = None) -> pd.DataFrame:
@@ -226,7 +230,7 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> str:
                    "covers": "full storm" if r["full"] else f"to {timefmt.clock(r['valid_to'])}"}
             row.update({p: _point_text(c) for p, c in r["points"].items()})
             if r["snow_level_m"]:
-                a, b = (m * 3.281 / 1000 for m in r["snow_level_m"])
+                a, b = (m * FT_PER_M / 1000 for m in r["snow_level_m"])
                 row["snow level"] = f"{a:.1f}k->{b:.1f}k ft"
             if r["flow"]:
                 row["flow"] = r["flow"]
@@ -293,8 +297,7 @@ def render_verified(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataF
                           "lead": runs["lead_hr"].map(lambda h: f"{h:.0f} h before"),
                           "water": runs["water_in"].map(lambda w: f"{w:.2f}\""),
                           "snow": runs["snow_in"].map(lambda x: f"{x:.0f}\"" if pd.notna(x) else "")})
-        rank = {m: i for i, m in enumerate(MODEL_ORDER)}
-        tables.append(t.sort_values("model", key=lambda c: c.map(lambda m: rank.get(m, 99))))
+        tables.append(t.sort_values("model", key=lambda c: c.map(model_rank)))
         lines.append(("TABLE", len(tables) - 1))
     rendered = _aligned(tables)
     return "\n".join(rendered[x[1]] if isinstance(x, tuple) else x for x in lines) + "\n"

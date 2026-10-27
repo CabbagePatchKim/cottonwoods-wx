@@ -18,18 +18,19 @@ from .fields import open_grib, parallel_hours
 from .points import nearest_index
 
 
-def pull_run(init: datetime, fxx_list, points: dict[str, dict], save_dir: str | None = None) -> pd.DataFrame:
+def pull_run(init: datetime, fxx_list, points: dict[str, dict], save_dir: str | None = None, *,
+             workers: int, gdex_workers: int) -> pd.DataFrame:
     """One GFS run: GDEX first, AWS (Herbie) if GDEX doesn't have it. Same model data either way."""
     from . import gfs_gdex
 
     try:
-        return gfs_gdex.pull_run(init, fxx_list, points)
+        return gfs_gdex.pull_run(init, fxx_list, points, workers=gdex_workers)
     except gfs_gdex.NotInArchive:
-        return _pull_run_aws(init, fxx_list, points, save_dir)
+        return _pull_run_aws(init, fxx_list, points, save_dir, workers=workers)
 
 
-def _pull_run_aws(init: datetime, fxx_list, points: dict[str, dict], save_dir: str | None = None,
-                  workers: int = 6) -> pd.DataFrame:
+def _pull_run_aws(init: datetime, fxx_list, points: dict[str, dict], save_dir: str | None = None, *,
+                  workers: int) -> pd.DataFrame:
     """GFS from AWS: forecast hours downloaded in parallel threads, decoded one at a time (fields.parallel_hours)."""
     import re
 

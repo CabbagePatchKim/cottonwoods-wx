@@ -8,11 +8,10 @@ Docs: https://eccc-msc.github.io/open-data/msc-data/readme_en/
 """
 from __future__ import annotations
 
-import os
-import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
 import requests
 
@@ -22,7 +21,6 @@ from .points import nearest_index
 
 BASE = "https://dd.weather.gc.ca"
 TIMEOUT = 120
-WORKERS = 8  # parallel downloads; Environment Canada's server handles this comfortably
 BATCH = 40  # files held in memory at once (see pull_run)
 GRIDS = {"RDPS": ("model_rdps/10km", "RLatLon0.09"), "GDPS": ("model_gdps/15km", "LatLon0.15")}
 
@@ -62,34 +60,57 @@ def _download(model: str, init: datetime, fxx: int, field: str, session) -> byte
     return r.content
 
 
-def _decode_points(content: bytes, points: dict[str, dict]) -> dict:
-    """Each point's nearest grid value from one GRIB file. Main thread only: ecCodes, the GRIB decoder,
-    crashes the whole program when several threads decode at once."""
-    import xarray as xr  # lazy, like the other pullers
+_GRIDS: dict = {}   # grid description -> (lats, lons, shape); a run's ~1,400 files share one or two grids
 
-    fd, path = tempfile.mkstemp(suffix=".grib2")
+
+def _grid(gid):
+    """Latitudes/longitudes of a message's grid, read once per grid: 1-D for a regular lat-lon grid (GDPS),
+    2-D for the rotated one (RDPS)."""
+    import eccodes
+
+    key = tuple(eccodes.codes_get(gid, k) for k in ("gridType", "Ni", "Nj", "latitudeOfFirstGridPointInDegrees",
+                                                    "longitudeOfFirstGridPointInDegrees"))
+    if key not in _GRIDS:
+        ni, nj = key[1], key[2]
+        if key[0] == "regular_ll":
+            _GRIDS[key] = (eccodes.codes_get_array(gid, "distinctLatitudes"),
+                           eccodes.codes_get_array(gid, "distinctLongitudes"), (nj, ni))
+        else:
+            _GRIDS[key] = (eccodes.codes_get_array(gid, "latitudes").reshape(nj, ni),
+                           eccodes.codes_get_array(gid, "longitudes").reshape(nj, ni), (nj, ni))
+    return _GRIDS[key]
+
+
+def _decode_points(content: bytes, points: dict[str, dict]) -> dict:
+    """Each point's nearest grid value from one single-field GRIB file, decoded straight from memory with ecCodes
+    (identical values to the cfgrib route it replaced, without a temp file or xarray: checked on GDPS and RDPS
+    fields 2026-10-27). Main thread only: ecCodes crashes the whole program when several threads decode at once."""
+    import eccodes  # lazy, like the other pullers
+
+    gid = eccodes.codes_new_from_message(content)
     try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(content)
-        # indexpath="" stops cfgrib leaving .idx files next to the temp file
-        with xr.open_dataset(path, engine="cfgrib", backend_kwargs={"indexpath": ""}) as ds:
-            var = list(ds.data_vars)[0]
-            vals, lats, lons = ds[var].values, ds["latitude"].values, ds["longitude"].values
-        out = {}
-        for name, pt in points.items():
-            idx, dist = nearest_index(lats, lons, pt["lat"], pt["lon"])
-            out[name] = (float(vals[idx]), dist)
-        return out
+        vals = eccodes.codes_get_values(gid)
+        if eccodes.codes_get(gid, "bitmapPresent"):
+            vals = np.where(vals == eccodes.codes_get(gid, "missingValue"), np.nan, vals)
+        lats, lons, shape = _grid(gid)
     finally:
-        os.remove(path)
+        eccodes.codes_release(gid)
+    vals = vals.reshape(shape)
+    out = {}
+    for name, pt in points.items():
+        idx, dist = nearest_index(lats, lons, pt["lat"], pt["lon"])
+        out[name] = (float(vals[idx]), dist)
+    return out
 
 
 def _read_points(model: str, init: datetime, fxx: int, field: str, points: dict[str, dict], session) -> dict:
     return _decode_points(_download(model, init, fxx, field, session), points)
 
 
-def pull_run(model: str, init: datetime, fxx_list, points: dict[str, dict], save_dir: str | None = None) -> pd.DataFrame:
-    """All forecast hours of one RDPS or GDPS run, in the same row format as the HRRR/GFS pullers."""
+def pull_run(model: str, init: datetime, fxx_list, points: dict[str, dict], save_dir: str | None = None, *,
+             workers: int) -> pd.DataFrame:
+    """All forecast hours of one RDPS or GDPS run, in the same row format as the HRRR/GFS pullers.
+    workers: parallel downloads (config archive.download_workers.canada)."""
     fxx_list = [int(f) for f in fxx_list]
     fields = _fields()
     session = requests.Session()
@@ -111,7 +132,7 @@ def pull_run(model: str, init: datetime, fxx_list, points: dict[str, dict], save
     # Download in parallel threads, decode one file at a time here (see _decode_points).
     # Batches of BATCH files: downloads run ahead of decoding, so without batches a GDPS run (600 files of
     # 1-4 MB) could sit in memory all at once. A batch is downloaded, decoded and dropped before the next.
-    with ThreadPoolExecutor(WORKERS) as pool:
+    with ThreadPoolExecutor(workers) as pool:
         for i in range(0, len(jobs), BATCH):
             for (fxx, col, field), content in pool.map(get, jobs[i:i + BATCH]):
                 if content is not None:

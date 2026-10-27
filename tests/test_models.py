@@ -153,3 +153,34 @@ def test_fast_nearest_index_matches_a_full_search():
         first = points.nearest_index(la2, lo2, lat0, lon0)
         assert first[0] == np.unravel_index(np.argmin(full2), full2.shape)
         assert points.nearest_index(la2, lo2, lat0, lon0) == first            # cached answer is the same
+
+
+def test_each_puller_gets_its_servers_download_workers_from_config():
+    from cottonwoods.config import load_config
+    from cottonwoods.models.registry import get_puller
+    cfg = load_config()
+    w = cfg["archive"]["download_workers"]
+    assert get_puller("HRRR", cfg).keywords == {"workers": w["noaa"]}
+    assert get_puller("GFS", cfg).keywords == {"workers": w["noaa"], "gdex_workers": w["gdex"]}
+    assert get_puller("IFS", cfg).keywords == {"workers": w["ecmwf"]} and get_puller("IFS", cfg).args == ("IFS",)
+    assert get_puller("ENS", cfg).keywords == {"workers": w["ecmwf"]}
+    assert get_puller("GDPS", cfg).keywords == {"workers": w["canada"]} and get_puller("GDPS", cfg).args == ("GDPS",)
+
+
+def test_canada_files_decode_from_memory_to_the_nearest_points_value():
+    import eccodes
+    import numpy as np
+    from cottonwoods.models import canada
+    gid = eccodes.codes_grib_new_from_samples("regular_ll_sfc_grib2")
+    eccodes.codes_set_key_vals(gid, {"Ni": 4, "Nj": 3, "latitudeOfFirstGridPointInDegrees": 41.0,
+                                     "latitudeOfLastGridPointInDegrees": 40.0, "longitudeOfFirstGridPointInDegrees": 248.0,
+                                     "longitudeOfLastGridPointInDegrees": 249.5, "iDirectionIncrementInDegrees": 0.5,
+                                     "jDirectionIncrementInDegrees": 0.5})
+    vals = np.arange(12, dtype=float) + 260.0           # row-major: lat 41.0, 40.5, 40.0 x lon 248.0 .. 249.5
+    eccodes.codes_set_values(gid, vals)
+    msg = eccodes.codes_get_message(gid)
+    eccodes.codes_release(gid)
+    out = canada._decode_points(msg, {"alta": {"lat": 40.59, "lon": -111.64}})
+    value, dist = out["alta"]
+    assert abs(value - 265.0) < 1e-6                     # nearest cell: lat 40.5 (row 1), lon 248.5 = -111.5 (col 1)
+    assert dist < 25

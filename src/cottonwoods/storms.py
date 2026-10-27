@@ -36,8 +36,8 @@ from . import modes, regimes, timefmt
 from .windows import window_total
 from .archive.io import write_df
 from .config import ARCHIVE_DIR
+from .units import MM_PER_IN
 
-MM_PER_IN = 25.4
 COLS = ["storm_id", "point", "status", "fc_start", "fc_end", "defining_model", "defining_init", "outside_note",
         "fc_flow", "fc_modes", "fc_periods", "fc_subperiods", "obs_start", "obs_end", "final_start", "final_end",
         "obs_water_in", "obs_flow", "note", "updated_at"]
@@ -198,28 +198,52 @@ def load_storms(root=None) -> pd.DataFrame:
     return df
 
 
+def _overlaps(storms: pd.DataFrame, start_col: str, end_col: str, s, e) -> pd.Series:
+    return (storms[start_col] <= e) & (storms[end_col] >= s)
+
+
+def _apply_window(storms: pd.DataFrame, i, w: dict, now, **fields) -> None:
+    """Copy a model window's values onto tracked storm i (plus any extra fields), stamped now."""
+    for k, v in {**w, **fields}.items():
+        storms.at[i, k] = v
+    storms.at[i, "updated_at"] = now
+
+
+def _without_legacy_duplicates(storms: pd.DataFrame) -> pd.DataFrame:
+    """Storms tracked before revival existed could leave a dropped row and a live row with the same id; keep the
+    live one."""
+    live_ids = set(storms.loc[storms["status"] != "dropped", "storm_id"])
+    return storms[~((storms["status"] == "dropped") & storms["storm_id"].isin(live_ids))].reset_index(drop=True)
+
+
+def _new_storm(storms: pd.DataFrame, w: dict, point: str, now, **extra) -> pd.DataFrame:
+    """storms with a new forecast storm for window w appended; its id is the start time, made unique if taken."""
+    base, ids = f"{w['fc_start']:%Y%m%d%H}", set(storms["storm_id"])
+    sid = base if base not in ids else next(f"{base}{c}" for c in "bcdefghijk" if f"{base}{c}" not in ids)
+    row = {c: pd.NaT if c in TIME_COLS else np.nan for c in COLS}
+    row.update(w, storm_id=sid, point=point, status="forecast", updated_at=now, **extra)
+    return pd.concat([storms, pd.DataFrame([row])], ignore_index=True)
+
+
+def _drop_stale(storms: pd.DataFrame, point: str, now, touched: set) -> None:
+    """Future storms no model's newest run shows any more. (Storms already under way are kept for verification.)"""
+    stale = (storms["point"] == point) & (storms["status"] == "forecast") & (storms["fc_start"] > now) \
+        & ~storms.index.isin(touched)
+    storms.loc[stale, "status"] = "dropped"
+    storms.loc[stale, "note"] = f"no model's newest run shows it any more ({timefmt.clock(now)})"
+    storms.loc[stale, "updated_at"] = now
+
+
 def update_forecast_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Timestamp) -> pd.DataFrame:
-    """Refresh tracked storms from the newest runs: update, add, split, merge and drop (see the module docstring)."""
+    """Refresh tracked storms from the newest runs: update, add, split, merge, revive and drop (see the module
+    docstring)."""
     scfg = cfg["storms"]
     point = scfg["point"]
-    storms = storms.copy()
+    storms = _without_legacy_duplicates(storms.copy())
     touched: set = set()   # rows updated or created in this pass
     # Overlaps are judged against each storm's window as it was BEFORE this pass: updating a storm from the first
     # event must not hide that a second event also overlaps it (that's a split, not a new unrelated storm).
     before = storms[["fc_start", "fc_end"]].copy()
-
-    # Storms tracked before revival existed could leave a dropped row and a live row with the same id; keep the live one
-    live_ids = set(storms.loc[storms["status"] != "dropped", "storm_id"])
-    storms = storms[~((storms["status"] == "dropped") & storms["storm_id"].isin(live_ids))].reset_index(drop=True)
-
-    def new_id(start):
-        base, ids = f"{start:%Y%m%d%H}", set(storms["storm_id"])
-        return base if base not in ids else next(f"{base}{c}" for c in "bcdefghijk" if f"{base}{c}" not in ids)
-
-    def blank_row(w, **extra):
-        row = {c: pd.NaT if c in TIME_COLS else np.nan for c in COLS}
-        row.update(w, storm_id=new_id(w["fc_start"]), point=point, status="forecast", updated_at=now, **extra)
-        return row
 
     windows = [w for w in storm_windows(model_events(fc, point, scfg)) if w["fc_end"] >= now - pd.Timedelta(days=3)]
     for w in sorted(windows, key=lambda x: x["fc_start"]):
@@ -227,52 +251,40 @@ def update_forecast_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, no
         w["fc_flow"] = run_flow(g, point, w["fc_start"], w["fc_end"], cfg)
         w["fc_modes"] = run_modes(g, point, w["fc_start"], w["fc_end"], cfg)
         w["fc_subperiods"] = run_subperiods(g, point, w["fc_start"], w["fc_end"], cfg)
-        is_open = (storms["point"] == point) & (storms["status"] == "forecast") & storms.index.isin(before.index)
+        here = storms["point"] == point
+        is_open = here & (storms["status"] == "forecast") & storms.index.isin(before.index)
         span = before.reindex(storms.index)
-        hits = storms[is_open & (span["fc_start"] <= w["fc_end"]) & (span["fc_end"] >= w["fc_start"])]
+        hits = storms[is_open & _overlaps(span, "fc_start", "fc_end", w["fc_start"], w["fc_end"])]
         hits = hits.loc[span.loc[hits.index, "fc_start"].sort_values().index]
         if hits.empty:
-            already_verified = ((storms["point"] == point) & (storms["status"] == "verified")
-                                & (storms["final_start"] <= w["fc_end"]) & (storms["final_end"] >= w["fc_start"])).any()
-            dropped = storms[(storms["point"] == point) & (storms["status"] == "dropped")
-                             & (storms["fc_start"] <= w["fc_end"]) & (storms["fc_end"] >= w["fc_start"])
-                             & ~storms.index.isin(touched)]
-            if not already_verified and len(dropped):
+            if (here & (storms["status"] == "verified")
+                    & _overlaps(storms, "final_start", "final_end", w["fc_start"], w["fc_end"])).any():
+                continue
+            dropped = storms[here & (storms["status"] == "dropped") & ~storms.index.isin(touched)
+                             & _overlaps(storms, "fc_start", "fc_end", w["fc_start"], w["fc_end"])]
+            if len(dropped):
                 # a storm the models dropped and now show again: the same storm, revived (not a new one)
                 back = dropped.sort_values("updated_at").index[-1]
-                for k, v in w.items():
-                    storms.at[back, k] = v
-                storms.at[back, "status"] = "forecast"
-                storms.at[back, "note"] = f"back in the models after being dropped ({timefmt.clock(now)})"
-                storms.at[back, "updated_at"] = now
+                _apply_window(storms, back, w, now, status="forecast",
+                              note=f"back in the models after being dropped ({timefmt.clock(now)})")
                 touched.add(back)
-            elif not already_verified:
-                storms = pd.concat([storms, pd.DataFrame([blank_row(w)])], ignore_index=True)
+            else:
+                storms = _new_storm(storms, w, point, now)
                 touched.add(storms.index[-1])
             continue
         keep = hits.index[0]
         if keep in touched:
             # this storm was already matched to an earlier event in this pass: newer runs show it as two events
-            storms = pd.concat([storms, pd.DataFrame([blank_row(w, note=f"split from {storms.at[keep, 'storm_id']}")])],
-                               ignore_index=True)
+            storms = _new_storm(storms, w, point, now, note=f"split from {storms.at[keep, 'storm_id']}")
             touched.add(storms.index[-1])
             continue
-        for k, v in w.items():
-            storms.at[keep, k] = v
-        storms.at[keep, "updated_at"] = now
+        _apply_window(storms, keep, w, now)
         touched.add(keep)
         for other in hits.index[1:]:
             if other not in touched:   # one event now spans two tracked storms: fold the later one in
-                storms.at[other, "status"] = "merged"
-                storms.at[other, "note"] = f"merged into {storms.at[keep, 'storm_id']} ({timefmt.clock(now)})"
-                storms.at[other, "updated_at"] = now
-
-    # Future storms no model's newest run shows any more. (Storms already under way are kept for verification.)
-    stale = (storms["point"] == point) & (storms["status"] == "forecast") & (storms["fc_start"] > now) \
-        & ~storms.index.isin(touched)
-    storms.loc[stale, "status"] = "dropped"
-    storms.loc[stale, "note"] = f"no model's newest run shows it any more ({timefmt.clock(now)})"
-    storms.loc[stale, "updated_at"] = now
+                _apply_window(storms, other, {}, now, status="merged",
+                              note=f"merged into {storms.at[keep, 'storm_id']} ({timefmt.clock(now)})")
+    _drop_stale(storms, point, now, touched)
     return storms
 
 
@@ -318,14 +330,20 @@ def score_storm(storm: pd.Series, fc_all: pd.DataFrame, osteps: pd.DataFrame, cf
     return pd.DataFrame(rows)
 
 
+def storm_span(storm: pd.Series) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """The storm's window: the observed (final) one once verified, else the forecast one."""
+    s = storm.final_start if pd.notna(storm.final_start) else storm.fc_start
+    e = storm.final_end if pd.notna(storm.final_end) else storm.fc_end
+    return s, e
+
+
 def manual_totals(storm: pd.Series, totals: pd.DataFrame, cfg: dict) -> dict | None:
     """Hand-entered totals (data/entries/storm_totals.csv) for this storm: rows at its point overlapping its window,
     give or take storms.manual_match_hours (hand-entered times are approximate). Several rows (e.g. daily totals) are
     summed. {"new_snow_in", "water_in", "sources"}, or None if nothing was entered."""
     if totals is None or totals.empty:
         return None
-    s = storm.final_start if pd.notna(storm.final_start) else storm.fc_start
-    e = storm.final_end if pd.notna(storm.final_end) else storm.fc_end
+    s, e = storm_span(storm)
     slack = pd.Timedelta(hours=cfg["storms"]["manual_match_hours"])
     m = totals[(totals["site"] == storm.point) & (totals["start_utc"] < e + slack) & (totals["end_utc"] > s - slack)]
     if m.empty:
@@ -346,8 +364,7 @@ def hand_obs_totals(storm: pd.Series, readings: pd.DataFrame, cfg: dict, source:
     readings in the window."""
     if readings is None or readings.empty:
         return None
-    s = storm.final_start if pd.notna(storm.final_start) else storm.fc_start
-    e = storm.final_end if pd.notna(storm.final_end) else storm.fc_end
+    s, e = storm_span(storm)
     slack = pd.Timedelta(hours=cfg["storms"]["manual_match_hours"])
     r = readings[(readings["start_utc"] >= s - slack) & (readings["end_utc"] <= e + slack)]
     if r.empty:

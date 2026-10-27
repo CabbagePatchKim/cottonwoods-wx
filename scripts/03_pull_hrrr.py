@@ -12,7 +12,7 @@ import pandas as pd
 from cottonwoods.archive.forecasts import derive_run_fields
 from cottonwoods.config import PROCESSED_DIR, RAW_DIR, ensure_dirs, load_config
 from cottonwoods.journal import load_forecasts
-from cottonwoods.models.hrrr import pull_run
+from cottonwoods.models.registry import get_puller
 from cottonwoods.models.registry import check_cycle
 
 # argparse turns command-line flags into attributes: `--max-fxx 18` becomes args.max_fxx == 18
@@ -41,7 +41,7 @@ else:
 # Download forecast hours 1..max_fxx and pull values at each point. GRIB files are cached in data/raw/herbie,
 # so a re-run for the same storm is much faster.
 check_cycle(init, cfg)  # stops here for e.g. an 03z run, which only reaches 18 h
-df = pull_run(init, range(1, args.max_fxx + 1), cfg["points"], save_dir=str(RAW_DIR / "herbie"))
+df = get_puller("HRRR", cfg)(init, range(1, args.max_fxx + 1), cfg["points"], save_dir=str(RAW_DIR / "herbie"))
 if df.empty:
     raise SystemExit("Nothing pulled. Check network access and Herbie/cfgrib/eccodes installs.")
 

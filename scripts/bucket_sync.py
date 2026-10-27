@@ -15,7 +15,6 @@ or the same NAME=value lines in a file passed with --env-file (kept outside the 
 import argparse
 import os
 from datetime import datetime, timezone
-from pathlib import Path
 
 from cottonwoods import bucket
 from cottonwoods.config import DATA_DIR, load_config
@@ -27,10 +26,7 @@ ap.add_argument("--only", nargs="+", help="push: only these paths under data/, e
 args = ap.parse_args()
 
 if args.env_file:
-    for line in Path(args.env_file).read_text(encoding="utf-8").splitlines():
-        if "=" in line and not line.lstrip().startswith("#"):
-            k, v = line.split("=", 1)
-            os.environ[k.strip()] = v.strip()
+    bucket.load_env_file(args.env_file)
 
 problems = bucket.check_env()
 if problems:

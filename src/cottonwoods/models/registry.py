@@ -98,24 +98,32 @@ STREAMS: dict[str, list[str]] = {
 }
 
 
-def get_puller(model: str):
-    """Import lazily so offline code never needs herbie installed."""
+def stream_of(model: str) -> str:
+    """The server stream a model comes from ('noaa', 'ecmwf', 'canada')."""
+    return next(s for s, ms in STREAMS.items() if model in ms)
+
+
+def get_puller(model: str, cfg: dict):
+    """The model's puller, with its server's parallel downloads (config archive.download_workers) filled in.
+    Imported lazily so offline code never needs herbie installed."""
+    w = cfg["archive"]["download_workers"]
+    workers = w[stream_of(model)]
     if model == "HRRR":
         from .hrrr import pull_run
-    elif model == "GFS":
+        return partial(pull_run, workers=workers)
+    if model == "GFS":
         from .gfs import pull_run
-    elif model in ("RDPS", "GDPS"):
+        return partial(pull_run, workers=workers, gdex_workers=w["gdex"])
+    if model in ("RDPS", "GDPS"):
         from . import canada
-        pull_run = partial(canada.pull_run, model)
-    elif model in ("NAM", "NAMNEST", "IFS"):
+        return partial(canada.pull_run, model, workers=workers)
+    if model in ("NAM", "NAMNEST", "IFS"):
         from . import herbie_generic
-        pull_run = partial(herbie_generic.pull_run, model)
-    elif model in ("GEFS", "ENS"):
+        return partial(herbie_generic.pull_run, model, workers=workers)
+    if model in ("GEFS", "ENS"):
         from . import herbie_generic
-        pull_run = partial(herbie_generic.pull_ensemble, model)
-    else:
-        raise KeyError(f"No puller for model {model!r}. Add one in models/registry.py")
-    return pull_run
+        return partial(herbie_generic.pull_ensemble, model, workers=workers)
+    raise KeyError(f"No puller for model {model!r}. Add one in models/registry.py")
 
 
 def recent_cycles(model: str, cfg: dict, now_utc: datetime, n: int = 2) -> list[datetime]:

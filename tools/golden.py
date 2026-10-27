@@ -6,14 +6,17 @@
 Snapshots go to data/processed/golden/ (ignored by git with the rest of data/).
 
 Covers: every archived run re-derived from its raw pulled columns (all derived columns: profile, phase, Kuchera,
-regimes, modes), the storm report text and the model report text, at a fixed 'now'.
+regimes, modes), the storm report text and the model report text, at a fixed 'now'. The storm table is copied
+into the snapshot at save time, so a scheduled pass updating data/archive/storms.csv can't cause a false DIFF.
 """
+import shutil
 import sys
 
 import pandas as pd
 
 from cottonwoods.archive.forecasts import forecast_dir
 from cottonwoods.archive.io import read_df
+from cottonwoods.storms import storms_path
 from cottonwoods.config import PROCESSED_DIR, load_config
 
 OUT = PROCESSED_DIR / "golden"
@@ -39,7 +42,7 @@ def reports(cfg):
     from cottonwoods.archive.forecasts import load_forecasts
     from cottonwoods.report import render
     fc = load_forecasts(cfg, start=NOW - pd.Timedelta(days=20))
-    st = storms.load_storms()
+    st = storms.load_storms(OUT)        # the snapshot's own copy (see save below)
     st = storms.update_forecast_storms(st, fc, cfg, NOW)
     render_storms = getattr(storms, "render_open", None)
     if render_storms is None:
@@ -49,9 +52,11 @@ def reports(cfg):
 
 
 cfg = load_config()
-runs, texts = derive(cfg), reports(cfg)
 if sys.argv[1] == "save":
     OUT.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(storms_path(), OUT / "storms.csv")
+runs, texts = derive(cfg), reports(cfg)
+if sys.argv[1] == "save":
     for k, v in runs.items():
         v.to_pickle(OUT / f"{k}.pkl")
     for k, v in texts.items():

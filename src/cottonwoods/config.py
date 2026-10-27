@@ -30,7 +30,8 @@ FEED_PREVIEW_DIR = DATA_DIR / "feed_preview"  # development previews of the feed
 # no hidden fallbacks, so a missing or misspelled setting stops the program with a clear message instead of quietly
 # using a default that may have drifted from what the config says.
 REQUIRED = {
-    "archive": ["format", "models", "cycles_utc", "hrrr_max_fxx", "gfs_max_fxx", "gfs_step_hours", "recent_cycles"],
+    "archive": ["format", "models", "cycles_utc", "hrrr_max_fxx", "gfs_max_fxx", "gfs_step_hours", "recent_cycles",
+                "download_workers"],
     "kuchera": ["top_level_hpa", "bottom_level_hpa", "slr_floor", "slr_cap"],
     "precip_type": ["snow_level_tw_c", "mix_low_tw_c", "mix_high_tw_c", "rh_moist", "rh_dry", "max_nudge", "snow_min_slr"],
     "regimes": ["cold_700mb_c", "temp_bands_700mb_c", "lake_delta_c", "flow_bins", "other_label", "min_phase_hours", "factor_sites",

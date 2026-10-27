@@ -28,10 +28,7 @@ def newest_storms() -> tuple[pd.DataFrame, str]:
     env_file = Path.home() / ".cwx_r2.env"
     try:
         from cottonwoods import bucket
-        for line in env_file.read_text(encoding="utf-8").splitlines():
-            if "=" in line and not line.lstrip().startswith("#"):
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip())
+        bucket.load_env_file(env_file)
         if bucket.check_env():
             raise RuntimeError("bucket settings incomplete")
         from botocore.config import Config

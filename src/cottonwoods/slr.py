@@ -7,6 +7,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .units import MM_PER_IN
+
 T_REF_K = 271.16  # about -2 C. Kelvin = Celsius + 273.15; the GRIB model data is in Kelvin.
 
 
@@ -56,4 +58,4 @@ def layer_tmax(temps_k: pd.DataFrame, bottom_hpa: int = 850, top_hpa: int = 500,
 
 
 def qpf_mm_to_in(mm):  # QPF = quantitative precipitation forecast (liquid); models output millimeters
-    return mm / 25.4
+    return mm / MM_PER_IN

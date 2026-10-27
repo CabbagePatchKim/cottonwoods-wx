@@ -20,8 +20,8 @@ import numpy as np
 import pandas as pd
 
 from .archive.obs import drop_unreliable_water
+from .units import MM_PER_IN
 
-MM_PER_IN = 25.4
 
 # Terms used below:
 #   window   - a 24 h period ending at window_end_utc_hour (default 12 UTC = 5 am MST), or at a NOAA site's

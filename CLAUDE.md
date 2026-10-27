@@ -33,15 +33,17 @@ Config and shared
 - `config/stations.yaml`: ALL settings. `config.load_config()` checks every required key (`config.REQUIRED`) and fails
   loudly; code has NO fallback defaults for required settings. Optional sections (synoptic, ghcn, soundings,
   model_cells, catchup_days) are read with `.get`.
+- `units.py`: MM_PER_IN, FT_PER_M (the only definitions).
 - `timefmt.py`: every time shown to people: Mountain (MDT/MST by date), 24-hour. Data stays UTC.
 - `windows.py`: the one window-total rule (strict for daily report, prorated for storms).
 
 Pulling model runs (`models/`)
 - `registry.py`: every model's schedule (cycles 00/06/12/18z shared; GDPS 00/12z), forecast hours, posting lag,
-  ensemble size, server STREAMS, and `get_puller`.
+  ensemble size, server STREAMS, and `get_puller(model, cfg)`, which binds the server's parallel downloads from
+  config archive.download_workers (pullers have no worker defaults of their own).
 - Pullers, all returning the same columns (`fields.py` lists them): `hrrr.py`, `gfs.py` (+ `gfs_gdex.py` NCAR subsets,
   AWS fallback), `herbie_generic.py` (NAM, NAMNEST, IFS, and ensembles GEFS/ENS precip-only with `member`),
-  `canada.py` (RDPS/GDPS, MSC Datamart, ~30-day retention). `accum.py` turns precip buckets into steps.
+  `canada.py` (RDPS/GDPS, MSC Datamart, ~30-day retention; files decoded from memory with ecCodes, grid cached). `accum.py` turns precip buckets into steps.
 - `fields.py`: field lists, `point_fields`, `open_grib` (cfgrib.open_datasets; xarray.open_dataset silently drops
   wind), `parallel_hours` (download in threads, decode serially: ecCodes is NOT thread-safe).
 
@@ -112,9 +114,12 @@ Before finishing a working session, check the code didn't get messier, and clean
 5. Commit the session's work as a checkpoint (owner's standing rule): `git add -A && git commit` with a message
    summarizing the session, then report `git diff --stat <previous checkpoint>..HEAD` to the owner.
 
-Watch list from the last review (2026-10-27): functions just over 60 lines - report.render_storms (split it when the
-timeline section is added), gfs._pull_run_aws, ghcn.fetch, profile.station_profile (cohesive; fine for now).
-era5.request_pressure_levels is unused on purpose (planned ERA5 regime work).
+Watch list from the last review (2026-10-27, second review): functions just over 60 lines - gfs._pull_run_aws
+(68), profile.station_profile (68), ghcn.fetch (62), regimes.phases (62): cohesive, fine for now. Speed: a pass is
+bound by the NOAA stream (GFS ~12 min + GEFS ~7 min per run); GDPS is decode-bound (each file a whole-globe field),
+so the remaining big speed lever is server-side subsetting (deferred: NOMADS filter / MSC GeoMet).
+era5.request_pressure_levels is unused on purpose (planned ERA5 regime work). tools/golden.py keeps its own copy
+of storms.csv, so a scheduled pass can't cause a false DIFF.
 
 ## Status (2026-10-27)
 Running live: all nine models archived every 3 h with station-profile snow, regimes, modes, 2x2 cells; observations

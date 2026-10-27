@@ -23,7 +23,6 @@ from .points import nearest_index
 
 NCSS = "https://thredds.rda.ucar.edu/thredds/ncss/grid/files/g/d084001"
 TIMEOUT = 90
-WORKERS = 4  # parallel requests: fast enough, and polite to a free public server
 
 
 class NotInArchive(Exception):
@@ -126,8 +125,10 @@ def _rows_from_ds(ds, init: datetime, fxx: int, points: dict[str, dict]) -> tupl
     return acc, extra
 
 
-def pull_run(init: datetime, fxx_list, points: dict[str, dict], save_dir: str | None = None) -> pd.DataFrame:
-    """All forecast hours of one GFS run from GDEX. Raises NotInArchive if GDEX doesn't have the run."""
+def pull_run(init: datetime, fxx_list, points: dict[str, dict], save_dir: str | None = None, *,
+             workers: int) -> pd.DataFrame:
+    """All forecast hours of one GFS run from GDEX. Raises NotInArchive if GDEX doesn't have the run.
+    workers: parallel requests (config archive.download_workers.gdex; kept low, it's a free public server)."""
     fxx_list = [int(f) for f in fxx_list]
     # Check the first hour on its own: if GDEX lacks the run, stop before firing dozens of requests.
     session = requests.Session()
@@ -142,7 +143,7 @@ def pull_run(init: datetime, fxx_list, points: dict[str, dict], save_dir: str | 
             failed.append((fxx, repr(e)))
             return fxx, None
 
-    with ThreadPoolExecutor(WORKERS) as pool:
+    with ThreadPoolExecutor(workers) as pool:
         for fxx, ds in pool.map(get, fxx_list[1:]):
             if ds is not None:
                 results[fxx] = ds

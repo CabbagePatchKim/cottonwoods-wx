@@ -38,6 +38,14 @@ def check_env(env=os.environ) -> list[str]:
     return problems
 
 
+def load_env_file(path: Path) -> None:
+    """NAME=value lines (e.g. ~/.cwx_r2.env) into the environment, for anything not already set there."""
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        if "=" in line and not line.lstrip().startswith("#"):
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
+
+
 def client():
     import boto3   # only needed when syncing; the rest of the project doesn't depend on it
     return boto3.client("s3", endpoint_url=os.environ["CWX_S3_ENDPOINT"].strip(), region_name="auto",
