@@ -140,4 +140,10 @@ incl. Alta, archived as text) as an automated Alta-total source.
    weighting models by pattern skill verified against analyses + SLC soundings. Point archive stays as is.
 6. Learning layer last: per-model bias by lead/regime and by PATTERN (from 5b), weighted blend, calibrated ensembles, tuned pessimistic bin;
    the program's own frozen "CWX" forecast each cycle, scored like a model. Keep only what beats raw models.
+WEBSITE FEED (owner, 2026-10-27; after the HTML report, shares its summary data): a STATIC JSON "API" written after
+   each pass (e.g. storms.json, storm/<id>.json, latest_runs.json, noaa_alta.json, scores.json) and published to a
+   free static host (GitHub Pages / Netlify / Cloudflare Pages); no always-on server (laptop sleeps). Open questions
+   for the owner: audience (private / friends / public), existing site or build one, host account + token for
+   auto-publish (confirm before anything goes public). Public needs attribution (ECMWF, NCAR GDEX, MSC), Collins
+   CC BY-NC (non-commercial), "not an official forecast" disclaimer, nothing from alta.com.
 Deferred: server-side subsetting (NOMADS / GeoMet), only if bandwidth becomes a problem.
