@@ -144,6 +144,13 @@ published 12 h data exists (Hive doi:10.7278/S50d-nsy5-8bje, CC BY-NC); Collins 
 route (api.weather.gov lists CLN but serves no observations; never automate the NWS page).
 
 ## Tomorrow's agenda (start here, 2026-10-28)
+0. FIRST THING (owner asked 2026-10-27): report on BOTH passes before anything else.
+   a. Laptop pass started 10/27 17:30 MDT (data/logs/models.log from line 4744): did all five steps finish
+      ("----- <script> exit N (time)" lines)? Per-run [archive] times vs the old averages (GFS 756 s, GDPS 868 s,
+      GEFS 405 s, RDPS 222 s, NAM 62 s; first new ones: RDPS 154 s, NAM 46 s). Feed step must NOT publish.
+   b. Cloud: scheduled runs since 10/27 23:30Z (api.github.com .../actions/workflows/pass.yml/runs), the first
+      v1.0 publish, then fetch https://cabbagepatchkim.github.io/cwx-feed/v1/{storms,daily,meta}.json (code_version
+      v1.0) and SEND THE OWNER THE THREE URLS (they're waiting for them for the friend's site).
 1. Cloud health: did scheduled runs fire (Actions list via api.github.com, no login needed)? Pull the bucket
    (`scripts/bucket_sync.py pull` with PYTHONPATH incl. ~/.cwx_pylib, `--env-file ~/.cwx_r2.env`) and read
    logs/cloud/models_*.log: per-step results, "Running approved release v1.0", "pushed ... cwx-feed". If no scheduled
