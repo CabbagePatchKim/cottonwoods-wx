@@ -15,8 +15,8 @@ from helpers import fake_ensemble, fake_puller, make_cfg
 NOW = pd.Timestamp("2026-11-01 18:00")
 
 
-def _feed():
-    """A feed built from one fake deterministic run and one fake ensemble run, wet the whole time."""
+def _world():
+    """One fake deterministic run and one fake ensemble run, wet the whole time, and the storm they make."""
     cfg = make_cfg()
     init = datetime(2026, 11, 1, 12)
     orig = registry.REGISTRY["GEFS"]
@@ -30,6 +30,11 @@ def _feed():
     finally:
         registry.REGISTRY["GEFS"] = orig
     st = storms.update_forecast_storms(storms.load_storms(Path(tempfile.gettempdir()) / "no_such_dir"), fc, cfg, NOW)
+    return cfg, fc, st
+
+
+def _feed():
+    cfg, fc, st = _world()
     return cfg, feed.build_feed(st, fc, cfg, NOW, "v9.9", ["WARNING test"])
 
 
@@ -60,6 +65,15 @@ def test_feed_v1_format_is_pinned():
     day = f["daily"]["points"]["alta"][0]
     assert {"model", "cycle", "init", "ensemble", "days"} <= set(day)
     assert {"start", "end", "amounts"} <= set(day["days"][0])
+
+
+def test_runs_ending_before_the_storm_ends_have_no_amounts():
+    cfg, fc, st = _world()
+    st.loc[st["status"] == "forecast", "fc_end"] += pd.Timedelta(days=1)    # storm outlasts both 48 h runs
+    s = feed.build_storms(st, fc, cfg)["storms"][0]
+    for m in s["models"]:
+        assert m["covers_full_storm"] is False and m["run_ends"] is not None
+        assert all(v is None for v in m["points"].values())
 
 
 def test_feed_files_are_written_whole_under_v1():

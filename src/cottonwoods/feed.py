@@ -11,6 +11,8 @@ Format rules (the website relies on them; tests/test_feed.py pins them):
   - Times are ISO 8601 in Mountain time with the offset ("2026-10-30T12:00:00-06:00"); model runs also carry
     their cycle name ("10/27 06z").
   - Amounts are inches (water, snow), snow levels feet, rounded for display; missing values are null.
+  - A run that ends before the storm does (covers_full_storm false) has null amounts at every resort: its partial
+    total isn't a forecast for the storm, and a 0 would read like one. run_ends says how far it reached.
 """
 from __future__ import annotations
 
@@ -72,7 +74,7 @@ def build_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> dict:
                            "run_ends": iso(r["valid_to"]),
                            "snow_level_ft": {"start": _num(sl[0] * 3.281, -2), "end": _num(sl[1] * 3.281, -2)} if sl else None,
                            "flow": r["flow"] or None, "modes": r["modes"] or None,
-                           "points": {p: _amounts(c) for p, c in r["points"].items()}})
+                           "points": {p: _amounts(c) if r["full"] else None for p, c in r["points"].items()}})
         out.append({"id": st.storm_id, "start": iso(st.fc_start), "end": iso(st.fc_end),
                     "hours": _num((st.fc_end - st.fc_start) / pd.Timedelta(hours=1), 0),
                     "window_from": {"model": st.defining_model, **_run(st.defining_init)},
