@@ -180,7 +180,8 @@ verify:
 # Cloud archive (scripts/bucket_sync.py -> src/cottonwoods/bucket.py): the archive lives in a Cloudflare R2 bucket so
 # passes can run on GitHub Actions. Bucket name, endpoint and keys come from environment variables, never from here.
 cloud:
-  dirs: [archive, processed, reports]                 # folders under data/ that are synced
+  dirs: [archive, processed, reports, logs/cloud]     # folders under data/ that are synced (logs/cloud: the cloud
+                                                      # passes' monthly logs; the laptop's own data/logs is not synced)
   exclude: ["*.lock", "processed/golden/*", "*.tmp"]  # never synced
   pull_forecast_days: 25   # a pull skips model runs older than this (passes read <= 20 days); they stay in the bucket
 

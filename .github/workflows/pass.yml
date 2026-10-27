@@ -61,6 +61,16 @@ jobs:
         id: pull
         run: python scripts/bucket_sync.py pull
 
+      # Everything the pass prints also goes into a monthly log in the bucket (logs/cloud/models_YYYY-MM.log), so it
+      # can be read from the laptop after `bucket_sync.py pull`, without a GitHub login. Pulled above, appended here.
+      - name: Start this pass's log
+        run: |
+          mkdir -p data/logs/cloud
+          echo "LOG=data/logs/cloud/models_$(date -u +%Y-%m).log" >> "$GITHUB_ENV"
+          { echo "===== $(date -u '+%Y-%m-%d %H:%M UTC') code $(git describe --tags --always)" \
+                 "run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"; } \
+            >> "data/logs/cloud/models_$(date -u +%Y-%m).log"
+
       - name: Feed deploy key
         env:
           FEED_DEPLOY_KEY: ${{ secrets.FEED_DEPLOY_KEY }}
@@ -75,27 +85,34 @@ jobs:
       - name: Archive model runs
         id: models
         continue-on-error: true
-        run: python scripts/archive_forecasts.py
+        run: set -o pipefail; python scripts/archive_forecasts.py 2>&1 | tee -a "$LOG"
       - name: Observations (SNOTEL, NOAA)
         id: obs
         continue-on-error: true
-        run: python scripts/archive_obs.py --days 3
+        run: set -o pipefail; python scripts/archive_obs.py --days 3 2>&1 | tee -a "$LOG"
       - name: Soundings (SLC balloons)
         id: soundings
         continue-on-error: true
-        run: python scripts/archive_soundings.py
+        run: set -o pipefail; python scripts/archive_soundings.py 2>&1 | tee -a "$LOG"
       - name: Storms
         id: storms
         continue-on-error: true
-        run: python scripts/storms.py
+        run: set -o pipefail; python scripts/storms.py 2>&1 | tee -a "$LOG"
       - name: Model report
         id: report
         continue-on-error: true
-        run: python scripts/model_report.py
+        run: set -o pipefail; python scripts/model_report.py 2>&1 | tee -a "$LOG"
       - name: Website feed (approved releases only)
         id: feed
         continue-on-error: true
-        run: python scripts/publish_feed.py
+        run: set -o pipefail; python scripts/publish_feed.py 2>&1 | tee -a "$LOG"
+
+      - name: Log the step results
+        if: always() && steps.pull.outcome == 'success'
+        run: |
+          echo "----- steps: models ${{ steps.models.outcome }}, obs ${{ steps.obs.outcome }}," \
+               "soundings ${{ steps.soundings.outcome }}, storms ${{ steps.storms.outcome }}," \
+               "report ${{ steps.report.outcome }}, feed ${{ steps.feed.outcome }}" >> "$LOG"
 
       - name: Save the archive to the bucket
         if: always() && steps.pull.outcome == 'success'   # never push a half-fetched archive

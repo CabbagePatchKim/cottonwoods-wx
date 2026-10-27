@@ -178,4 +178,6 @@ CLOUD PASSES (owner approved 2026-10-27): passes move from the laptop to GitHub 
    owner's GitHub noreply address before the repo goes public. Cutover: seed the bucket from the laptop (push),
    run both for a day and compare, then disable the laptop tasks "Cottonwoods models" + "Cottonwoods soundings";
    afterwards the laptop is development only (`bucket_sync.py pull` for live data).
+   Cloud pass output is logged to the bucket: data/logs/cloud/models_YYYY-MM.log (header per pass with code version
+   and run URL, a step-results line at the end). START OF A SESSION: pull, then read that log for failures.
 Deferred: server-side subsetting (NOMADS / GeoMet), only if bandwidth becomes a problem.
