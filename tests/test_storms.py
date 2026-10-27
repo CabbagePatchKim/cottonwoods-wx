@@ -224,3 +224,25 @@ def test_hand_copied_collins_readings_prefer_boards_and_never_double_count():
     assert t["max_depth_in"] == 18 and t["sources"] == "collins (board)"
     hourly_only = hand_obs_totals(st, r[r["period_h"] == 1], cfg)
     assert hourly_only["new_snow_in"] == 3.0 and hourly_only["sources"] == "collins (hourly)"
+
+
+def test_a_board_missing_water_is_filled_from_its_hours_and_overlapping_boards_count_once():
+    from cottonwoods.archive.obs import load_hand_obs
+    from cottonwoods.storms import hand_obs_totals
+    cfg = make_cfg()
+    rows = np.array([[2026, 10, 31, 6, 12, 4.0, 0.35, 11, 25, 97],      # board 1800 Fri - 0600 Sat MDT
+                     [2026, 10, 31, 18, 12, 6.0, 0.48, 16, 21, 95],     # board 0600 - 1800 Sat
+                     [2026, 10, 31, 18, 24, 11.0, 0.90, 16, 21, 95],    # 24 h board over both: skipped
+                     [2026, 11, 1, 6, 12, 7.0, np.nan, 22, 17, 90],     # board 1800 Sat - 0600 Sun MST: no water
+                     [2026, 10, 31, 23, 1, 0.8, 0.05, 18, 19, 92],      # hours inside that board
+                     [2026, 11, 1, 6, 1, 0.5, 0.03, 22, 17, 90],
+                     [2026, 11, 1, 8, 1, 0.4, 0.02, 22, 17, 90]])       # after the last board: added
+    with tempfile.TemporaryDirectory() as d:
+        np.save(Path(d) / "collins_obs.npy", rows)
+        r = load_hand_obs(Path(d))
+    st = pd.Series({"point": "alta", "fc_start": pd.Timestamp("2026-10-31 00:00"), "fc_end": pd.Timestamp("2026-11-01 15:00"),
+                    "final_start": pd.Timestamp("2026-10-31 00:00"), "final_end": pd.Timestamp("2026-11-01 15:00")})
+    t = hand_obs_totals(st, r, cfg)
+    assert abs(t["new_snow_in"] - (4 + 6 + 7 + 0.4)) < 1e-9          # 12 h boards, plus the hour after the last one
+    assert abs(t["water_in"] - (0.35 + 0.48 + 0.05 + 0.03 + 0.02)) < 1e-9
+    assert t["sources"] == "collins (board, hourly)"

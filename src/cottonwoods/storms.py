@@ -337,9 +337,13 @@ def manual_totals(storm: pd.Series, totals: pd.DataFrame, cfg: dict) -> dict | N
 
 def hand_obs_totals(storm: pd.Series, readings: pd.DataFrame, cfg: dict, source: str = "collins") -> dict | None:
     """Storm totals from hand-copied readings (archive.obs.load_hand_obs) inside the storm's window, give or take
-    storms.manual_match_hours. Per variable, board readings (12 h or longer) are used when there are any, else the
-    hourly ones are summed: never both, so nothing is counted twice. Max depth is reported as well.
-    {"new_snow_in", "water_in", "max_depth_in", "sources"}, or None if there are no readings in the window."""
+    storms.manual_match_hours. Per variable, nothing is counted twice:
+      - boards (12 h or longer) come first; where boards overlap (a 24 h board and the two 12 h boards inside it)
+        the shorter ones are kept and the overlapping longer one is skipped;
+      - a board missing that variable is filled from the hourly readings inside its period;
+      - hourly readings outside every board's period (e.g. after the last board) are added.
+    Max depth is reported as well. {"new_snow_in", "water_in", "max_depth_in", "sources"}, or None if there are no
+    readings in the window."""
     if readings is None or readings.empty:
         return None
     s = storm.final_start if pd.notna(storm.final_start) else storm.fc_start
@@ -349,16 +353,30 @@ def hand_obs_totals(storm: pd.Series, readings: pd.DataFrame, cfg: dict, source:
     if r.empty:
         return None
 
+    boards = []                                          # non-overlapping boards, shortest periods first
+    for _, b in r[r["period_h"] >= 12].sort_values(["period_h", "end_utc"]).iterrows():
+        if not any(b.start_utc < k.end_utc and b.end_utc > k.start_utc for k in boards):
+            boards.append(b)
+
     def total(col):
-        for rows in (r[r["period_h"] >= 12], r[r["period_h"] < 12]):
-            rows = rows[rows[col].notna()]
-            if len(rows):
-                return float(rows[col].sum()), "board" if rows["period_h"].min() >= 12 else "hourly"
-        return np.nan, ""
+        hourly = r[(r["period_h"] < 12) & r[col].notna()]
+        covered = pd.Series(False, index=hourly.index)
+        amount, used = 0.0, set()
+        for b in boards:
+            inside = (hourly["start_utc"] >= b.start_utc) & (hourly["end_utc"] <= b.end_utc)
+            covered |= inside
+            if pd.notna(b[col]):
+                amount, used = amount + float(b[col]), used | {"board"}
+            elif inside.any():                           # board without this variable: its hours fill in
+                amount, used = amount + float(hourly.loc[inside, col].sum()), used | {"hourly"}
+        rest = hourly[~covered]
+        if len(rest):
+            amount, used = amount + float(rest[col].sum()), used | {"hourly"}
+        return (amount if used else np.nan), used
 
     snow, how_s = total("new_snow_in")
     water, how_w = total("water_in")
-    kinds = sorted({k for k in (how_s, how_w) if k})
+    kinds = sorted(how_s | how_w)
     return {"new_snow_in": snow, "water_in": water, "max_depth_in": r["depth_in"].max(),
             "sources": f"{source} ({', '.join(kinds)})" if kinds else source}
 
