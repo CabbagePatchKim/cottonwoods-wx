@@ -109,7 +109,14 @@ is UTC-8 (PST) all year; NOAA ALTA water before 10/2007 unreliable; Collins (CLN
 - Actuals missing: 2/16-2/18/2026 storms and 3/5/2026.
 
 ## Next build steps (agreed order)
-1. DONE 2026-10-27: stale-storm fix + merge/split/periods/parts. NEXT (owner, 2026-10-27): a STORM TIMELINE + RUN-TO-RUN TRENDS section in the storm report, per model per resort:
+1. DONE 2026-10-27: stale-storm fix + merge/split/periods/parts.
+   NEXT: REORGANIZED STORM REPORT, owner chose BOTH formats (2026-10-27): data/reports/storms_latest.html (opened in a
+   browser, rebuilt each pass, works offline: clean tables, color-coded bins, trend arrows, collapsible details) AND
+   the text version (log/history). Per storm, SUMMARY FIRST: window, confidence (ensemble agreement + deterministic
+   spread), flow/snow level/mode one-liners; per-resort table: owner's bin (lowest containing the median), median,
+   model range, trend since last cycle; timeline table; "changes since last cycle" sentence; details below
+   (today's per-model table, phases, modes, parts). Split report.render_storms (77 lines) while doing this.
+   Built together with: a STORM TIMELINE + RUN-TO-RUN TRENDS section in the storm report, per model per resort:
    snow ONSET (first 3 h-averaged snow rate >= ~0.1"/h; snow, not precip), PEAK snowfall rate time + in/h (3 h
    average, so 1 h and 3 h models compare fairly), snow END, snow/water totals; trends vs the model's previous run
    (onset/peak/end hours earlier/later, snow +/- in and %, water, snow level) and over the last 3-4 runs
