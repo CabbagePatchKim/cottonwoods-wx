@@ -1,7 +1,8 @@
 """The cloud archive sync (bucket.py), against an in-memory fake bucket."""
 import hashlib
+import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from cottonwoods import bucket
@@ -15,13 +16,15 @@ class FakeS3:
 
     def __init__(self):
         self.objects, self.uploads, self.downloads = {}, 0, 0
+        self.modified = datetime(2020, 1, 1, tzinfo=timezone.utc)   # when every object was "uploaded" (before any test file)
 
     def get_paginator(self, _):
         fake = self
 
         class Pages:
             def paginate(self, Bucket, Prefix):
-                yield {"Contents": [{"Key": k, "Size": len(v), "ETag": f'"{hashlib.md5(v).hexdigest()}"'}
+                yield {"Contents": [{"Key": k, "Size": len(v), "ETag": f'"{hashlib.md5(v).hexdigest()}"',
+                                     "LastModified": fake.modified}
                                     for k, v in fake.objects.items() if k.startswith(Prefix)]}
         return Pages()
 
@@ -67,7 +70,21 @@ def test_pull_fetches_missing_or_changed_files_but_skips_old_model_runs():
     with tempfile.TemporaryDirectory() as d:
         data = Path(d)
         _write(data, "archive/storms.csv", "old")
-        assert bucket.pull(s3, "b", data, CCFG, NOW) == (3, 1)
+        os.utime(data / "archive/storms.csv", (0, 0))                 # an old local copy: replaced
+        assert bucket.pull(s3, "b", data, CCFG, NOW) == (3, 1, 0)
         assert (data / "archive/storms.csv").read_text() == "new"
         assert not (data / "archive/forecasts/model=GFS/init=2026100100.parquet").exists()
-        assert bucket.pull(s3, "b", data, CCFG, NOW) == (0, 1)        # already up to date
+        assert bucket.pull(s3, "b", data, CCFG, NOW) == (0, 1, 0)     # already up to date
+        _write(data, "archive/storms.csv", "edited after the bucket's copy")   # newer locally: never overwritten
+        assert bucket.pull(s3, "b", data, CCFG, NOW) == (0, 1, 1)
+        assert (data / "archive/storms.csv").read_text() == "edited after the bucket's copy"
+
+
+def test_settings_problems_are_named_without_showing_values():
+    ok = {"CWX_BUCKET": "cwx-archive", "CWX_S3_ENDPOINT": "https://" + "a" * 32 + ".r2.cloudflarestorage.com",
+          "AWS_ACCESS_KEY_ID": "id", "AWS_SECRET_ACCESS_KEY": "topsecret"}
+    assert bucket.check_env(ok) == []
+    bad = {**ok, "CWX_S3_ENDPOINT": "https://<" + "a" * 32 + ">.r2.cloudflarestorage.com", "AWS_SECRET_ACCESS_KEY": ""}
+    problems = bucket.check_env(bad)
+    assert len(problems) == 2 and "AWS_SECRET_ACCESS_KEY is not set" in problems
+    assert not any("topsecret" in p or "aaaa" in p for p in problems)

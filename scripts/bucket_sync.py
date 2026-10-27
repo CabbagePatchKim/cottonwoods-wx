@@ -27,10 +27,14 @@ if args.env_file:
             k, v = line.split("=", 1)
             os.environ[k.strip()] = v.strip()
 
+problems = bucket.check_env()
+if problems:
+    raise SystemExit("[bucket] can't connect:\n  " + "\n  ".join(problems))
 ccfg = load_config()["cloud"]
-s3, name = bucket.client(), os.environ["CWX_BUCKET"]
+s3, name = bucket.client(), os.environ["CWX_BUCKET"].strip()
 if args.direction == "pull":
-    got, old = bucket.pull(s3, name, DATA_DIR, ccfg, datetime.now(timezone.utc).replace(tzinfo=None))
-    print(f"[bucket] pulled {got} files ({old} model runs older than {ccfg['pull_forecast_days']} days left in the bucket)")
+    got, old, kept = bucket.pull(s3, name, DATA_DIR, ccfg, datetime.now(timezone.utc).replace(tzinfo=None))
+    print(f"[bucket] pulled {got} files ({old} model runs older than {ccfg['pull_forecast_days']} days left in the "
+          f"bucket; {kept} local files newer than the bucket's kept)")
 else:
     print(f"[bucket] pushed {bucket.push(s3, name, DATA_DIR, ccfg)} new or changed files")
