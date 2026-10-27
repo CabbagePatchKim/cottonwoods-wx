@@ -163,7 +163,7 @@ WEBSITE FEED (owner, 2026-10-27; after the HTML report, shares its summary data)
    RELEASE PROCEDURE (only on the owner's explicit "approve", after showing `git diff <last tag>..HEAD --stat`):
      1. `git tag -a vX.Y -m "Approved by owner <date>"` in the dev folder.
      2. First release only: `git worktree add ..\cottonwoods-wx-prod vX.Y`; write prod\data_dir.txt = the dev folder's
-        data path (git-ignored); repoint task "Cottonwoods models" to prod\scriptsun_models.bat (the whole pass,
+        data path (git-ignored); repoint task "Cottonwoods models" to prod\scripts\run_models.bat (the whole pass,
 un_models.bat (the whole pass,
         incl. archiving, then runs approved code). Later releases: `git -C ..\cottonwoods-wx-prod checkout vX.Y`.
      3. Run publish_feed.py from prod once to confirm it prints the tag.
