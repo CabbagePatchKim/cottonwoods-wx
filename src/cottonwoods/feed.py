@@ -5,6 +5,10 @@ Files (feed format v1; SCHEMA_VERSION below), written to <feed folder>/v1/:
   storms.json  every tracked upcoming/ongoing storm: window, notes, each model's newest-run totals per resort
   daily.json   each model's newest run, day by day per resort (days end 0600 MDT / 0500 MST)
 
+v1 publishes MODEL-RUN DATA ONLY (owner, 2026-10-27): no observations (SNOTEL, NOAA ALTA, Collins, soundings) and
+no verification (verified storms, observed totals, scores). Those are still developed and used inside the program,
+but publishing them is a later, deliberate release. model_only() enforces this every time the feed is built.
+
 Format rules (the website relies on them; tests/test_feed.py pins them):
   - Within v1, fields may be ADDED but never renamed, removed or changed in meaning. A breaking change is a new
     v2 folder published alongside v1 until the site has switched.
@@ -21,6 +25,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -36,7 +41,10 @@ CREDITS = ["NOAA/NCEP (HRRR, NAM, GFS, GEFS) via NOAA Open Data Dissemination",
            "ECMWF open data (IFS, ENS), CC BY 4.0",
            "Environment and Climate Change Canada / MSC Datamart (RDPS, GDPS), Open Government Licence - Canada",
            "NCAR GDEX GFS archive, CC BY 4.0, doi:10.5065/D65D8PWK",
-           "Observations: USDA NRCS SNOTEL, NOAA NCEI GHCN-Daily, Iowa Environmental Mesonet (soundings)"]
+           "snow_in_regime adjustment factors: USDA NRCS SNOTEL history and Salt Lake City soundings "
+           "(Iowa Environmental Mesonet), 2010-2026"]
+# Keys that would mean observations or verification leaked into the feed (see the module docstring)
+NOT_MODEL_DATA = re.compile(r"(^obs|observ|verif|actual|score|collins|snotel|ghcn|sounding|^final_|measured)", re.I)
 
 
 def iso(ts) -> str | None:
@@ -114,14 +122,35 @@ def build_meta(fc: pd.DataFrame, cfg: dict, now: pd.Timestamp, code_version: str
             "warnings": warnings, "disclaimer": DISCLAIMER, "credits": CREDITS}
 
 
+def model_only(feed: dict) -> dict:
+    """The feed unchanged, or ValueError naming every key that looks like observations or verification (v1 is
+    model-run data only). Checks keys at every depth; text values such as the method notes are not keys."""
+    bad = []
+
+    def walk(x, path):
+        if isinstance(x, dict):
+            for k, v in x.items():
+                if NOT_MODEL_DATA.search(str(k)):
+                    bad.append(f"{path}{k}")
+                walk(v, f"{path}{k}.")
+        elif isinstance(x, list):
+            for v in x:
+                walk(v, f"{path}[].")
+    walk(feed, "")
+    if bad:
+        raise ValueError(f"feed v{SCHEMA_VERSION} is model-run data only; refusing to publish: {sorted(set(bad))[:10]}")
+    return feed
+
+
 def build_feed(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Timestamp, code_version: str,
                warnings: list[str]) -> dict[str, dict]:
-    """{"meta": ..., "storms": ..., "daily": ...}; every file carries schema_version and generated."""
+    """{"meta": ..., "storms": ..., "daily": ...}; every file carries schema_version and generated. Storms are the
+    ones still in the forecast only (verified ones are observations' territory), and model_only() checks the rest."""
     recent = fc[fc["init"] >= now - pd.Timedelta(days=2)]
     files = {"meta": build_meta(recent, cfg, now, code_version, warnings),
              "storms": build_storms(storms, fc, cfg),
              "daily": build_daily(recent, cfg, now)}
-    return {k: {"schema_version": SCHEMA_VERSION, "generated": iso(now), **v} for k, v in files.items()}
+    return model_only({k: {"schema_version": SCHEMA_VERSION, "generated": iso(now), **v} for k, v in files.items()})
 
 
 def write_feed(feed: dict[str, dict], folder: Path) -> Path:

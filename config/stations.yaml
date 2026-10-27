@@ -198,9 +198,9 @@ cloud:
 
 # Website feed on GitHub Pages (scripts/publish_feed.py -> src/cottonwoods/github_feed.py). Approved releases only;
 # previews are never pushed. Public URL: https://cabbagepatchkim.github.io/cwx-feed/v1/storms.json (meta, daily too).
-# Leave commented out until the deploy key is added (with write access) and the owner approves the first release.
-# feed_github:
-#   repo: git@github.com:CabbagePatchKim/cwx-feed.git
-#   branch: main
-#   key_file: ~/.ssh/cwx_feed_ed25519      # deploy key: write access to this one repository only
-#   known_hosts: ~/.ssh/known_hosts         # holds GitHub's published host key
+# Only an owner-approved release ever pushes (release.py); development code just writes previews.
+feed_github:
+  repo: git@github.com:CabbagePatchKim/cwx-feed.git
+  branch: main
+  key_file: ~/.ssh/cwx_feed_ed25519      # deploy key: write access to this one repository only
+  known_hosts: ~/.ssh/known_hosts         # holds GitHub's published host key

@@ -180,7 +180,10 @@ WEBSITE FEED (owner, 2026-10-27; after the HTML report, shares its summary data)
    unless its code is an owner-approved tag (e.g. v1.0, made by the owner or on the owner's explicit "approve") with no
    uncommitted changes; development code in main can never publish, even if run by hand. Forecast DATA still refreshes
    every pass; only the CODE producing it is frozen to the approved release.
-   BUILT 2026-10-27: feed.py, release.py, scripts/publish_feed.py, tests/test_feed.py (v1 contract + gate). Not live.
+   BUILT 2026-10-27: feed.py, release.py, scripts/publish_feed.py, tests/test_feed.py (v1 contract + gate).
+   v1 = MODEL-RUN DATA ONLY (owner, 2026-10-27): no observations, no verification in the feed; feed.model_only()
+   refuses any such key. Observation/verification work continues in development, unpublished. feed_github is on in
+   config (only an approved tag can push).
    RELEASE PROCEDURE (only on the owner's explicit "approve", after showing `git diff <last tag>..HEAD --stat`):
      1. Make sure the release commit has config `feed_github` switched on (it's commented out until the first release).
      2. `git tag -a vX.Y -m "Approved by owner <date>"`, then `git push origin main vX.Y`.

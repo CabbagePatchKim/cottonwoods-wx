@@ -145,3 +145,21 @@ def test_github_publish_commits_changed_files_and_skips_unchanged():
         log = subprocess.run(["git", "-C", str(remote), "log", "--format=%s", "main"], capture_output=True, text=True)
         assert shown.stdout == '{"a": 2}' and log.stdout.splitlines() == ["feed v1.1, later", "feed v1.0, now", "init"]
     assert "BatchMode=yes" in github_feed.ssh_command(gcfg) and "StrictHostKeyChecking=yes" in github_feed.ssh_command(gcfg)
+
+
+def test_v1_publishes_model_run_data_only():
+    cfg, fc, st = _world()
+    verified = st.iloc[[0]].assign(storm_id="old", status="verified", obs_water_in=1.5,
+                                   final_start=st.fc_start.iloc[0] - pd.Timedelta(days=5),
+                                   final_end=st.fc_end.iloc[0] - pd.Timedelta(days=5))
+    f = feed.build_feed(pd.concat([st, verified], ignore_index=True), fc, cfg, NOW, "v9.9", [])
+    assert [s["id"] for s in f["storms"]["storms"]] == st.storm_id.tolist()     # the verified storm is left out
+    text = json.dumps(f)
+    for word in ('"obs_', '"verified"', '"final_start', "collins"):     # fields and status, not prose like "unverified"
+        assert word not in text, word
+    try:
+        feed.model_only({"storms": {"storms": [{"id": "x", "obs_water_in": 1.0}]}})
+        raise AssertionError("an observation field must be refused")
+    except ValueError as e:
+        assert "storms.storms.[].obs_water_in" in str(e)
+
