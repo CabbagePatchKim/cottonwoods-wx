@@ -87,6 +87,8 @@ Before finishing a working session, check the code didn't get messier, and clean
 3. Fix behavior-preserving: `python tools/golden.py save` first, then `check` after every step (must be IDENTICAL);
    `python tests/run_offline.py` all passing; report intended behavior changes separately.
 4. Update this file (Architecture / Status) and tell the owner what was found and fixed (or that nothing was).
+5. Commit the session's work as a checkpoint (owner's standing rule): `git add -A && git commit` with a message
+   summarizing the session, then report `git diff --stat <previous checkpoint>..HEAD` to the owner.
 
 ## Status (2026-10-27)
 Running live: all nine models archived every 3 h with station-profile snow, regimes, modes, 2x2 cells; observations
