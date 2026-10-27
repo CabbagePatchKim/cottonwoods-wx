@@ -246,3 +246,21 @@ def test_a_board_missing_water_is_filled_from_its_hours_and_overlapping_boards_c
     assert abs(t["new_snow_in"] - (4 + 6 + 7 + 0.4)) < 1e-9          # 12 h boards, plus the hour after the last one
     assert abs(t["water_in"] - (0.35 + 0.48 + 0.05 + 0.03 + 0.02)) < 1e-9
     assert t["sources"] == "collins (board, hourly)"
+
+
+def test_session_reminder_lists_only_recent_verified_storms_without_collins_entries():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("collins_due", Path(__file__).resolve().parents[1] / "scripts" / "collins_due.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    cfg = make_cfg()
+    now = pd.Timestamp("2026-11-05")
+    t = pd.DataFrame({"storm_id": ["a", "b", "c", "d"], "point": "alta", "status": ["verified", "verified", "forecast", "verified"],
+                      "fc_start": pd.to_datetime(["2026-10-31", "2026-11-02", "2026-11-06", "2026-09-01"]),
+                      "fc_end": pd.to_datetime(["2026-11-01", "2026-11-03", "2026-11-07", "2026-09-02"]),
+                      "final_start": pd.to_datetime(["2026-10-31", "2026-11-02", None, "2026-09-01"]),
+                      "final_end": pd.to_datetime(["2026-11-01", "2026-11-03", None, "2026-09-02"])})
+    totals = pd.DataFrame({"site": ["alta"], "source": ["collins"], "new_snow_in": [9.0], "water_in": [0.7],
+                           "start_utc": [pd.Timestamp("2026-10-31 06:00")], "end_utc": [pd.Timestamp("2026-11-01")]})
+    need = mod.due(t, cfg, now, totals, pd.DataFrame())
+    assert need["storm_id"].tolist() == ["b"]          # a has entries, c isn't over, d is too old

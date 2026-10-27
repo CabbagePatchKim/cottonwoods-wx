@@ -79,6 +79,9 @@ reads off the NWS page by eye, and collins_obs.npy/.csv: individual hourly + 12 
 obs.OBS_ENTRY_COLS; storm totals: non-overlapping boards (shortest first), a board's missing value filled from its
 hours, hours outside every board added; sent with scripts/send_entries.bat). Storm report section "Verified in the last N
 days" (report.render_verified) shows SNOTEL + hand totals vs each model's last run before the storm.
+Collins reminder: SessionStart hook (.claude/settings.local.json, not in git) runs scripts/collins_due.py: storms
+verified in the last report_verified_days with no Collins entries -> prompt the owner at the start of the session
+(storm list from the bucket if reachable, else local). Offer to type the readings into data/entries for them.
 Collins automation: NOT possible without a Synoptic token (api.weather.gov lists CLN but serves no observations;
 the NWS page uses an NWS Synoptic key - never automate it, rendered or not). Laptop bucket access: boto3 in
 ~/.cwx_pylib (PYTHONPATH), not the main environment.
