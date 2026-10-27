@@ -113,6 +113,13 @@ is UTC-8 (PST) all year; NOAA ALTA water before 10/2007 unreliable; Collins (CLN
    average, so 1 h and 3 h models compare fairly), snow END, snow/water totals; trends vs the model's previous run
    (onset/peak/end hours earlier/later, snow +/- in and %, water, snow level) and over the last 3-4 runs
    (convergence); ensembles: wet fraction + mean water by run. Mountain 24 h times. Uses existing data only.
+   ALSO (owner, 2026-10-27): show NOAA ALTA (USC00420072) OBSERVED precip prominently in the reports - daily water
+   (PRCP), new snow (SNOW), depth, and per-storm totals, labeled with its observer day (24 h ending 1800 MST) - so the
+   owner can compare it by eye with Alta Collins on https://www.weather.gov/wrh/timeseries?site=CLN&hourly=true
+   (viewing only; never scrape that page, it uses an NWS-issued Synoptic key).
+Synoptic: skipped for now (free tier is now a 14-day trial). Collins live data stays configured but idle; Collins
+history comes from the Hive 2000-2023 dataset. Possible later: NWS SLC public information statements (storm totals
+incl. Alta, archived as text) as an automated Alta-total source.
 3. Better snow ratio: import the Collins dataset; Veals et al. 2025 V1/V3 (github pveals/Veals_etal_2025) next to
    Kuchera; Alta-only retrain; fit the wet-bulb thresholds and dry-air nudge to Collins + SLC soundings.
 4. Owner's bins in the reports (lowest bin containing the estimate) and bin verification (in / over / under).
