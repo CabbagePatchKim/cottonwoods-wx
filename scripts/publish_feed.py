@@ -6,8 +6,11 @@
 Without --preview this stops unless the code running is an owner-approved release (cottonwoods/release.py):
 development code can't feed the website, even when run by hand. An approved feed is then pushed to the owner's GitHub
 Pages repository if config has a `feed_github` section (cottonwoods/github_feed.py); previews are never pushed.
+Pushing also needs CWX_PUBLISH=1, which only the cloud pass sets (.github/workflows/pass.yml): the laptop can sit on
+an approved tag too (right after a release), and two machines with different archives must not both publish.
 """
 import argparse
+import os
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -40,7 +43,9 @@ if fc.empty:
 data = feed.build_feed(storms.load_storms(), fc, cfg, now, version, staleness(cfg, now))
 out = feed.write_feed(data, folder)
 print(f"feed {version} written to {out} ({', '.join(f'{k}.json' for k in data)})")
-if not args.preview and cfg.get("feed_github"):
+if not args.preview and cfg.get("feed_github") and os.environ.get("CWX_PUBLISH") != "1":
+    print("approved release, but publishing is off on this machine (CWX_PUBLISH=1 is set only in the cloud pass)")
+elif not args.preview and cfg.get("feed_github"):
     try:
         print(github_feed.publish(cfg["feed_github"], out, DATA_DIR / "feed_repo", version, data["meta"]["generated"]))
     except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:

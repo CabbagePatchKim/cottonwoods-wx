@@ -28,6 +28,7 @@ jobs:
     env:
       PYTHONUTF8: "1"
       PYTHONPATH: src            # import this checkout's code (the approval gate checks it)
+      CWX_PUBLISH: "1"           # the one machine that pushes the website feed (approved releases only)
       CWX_BUCKET: ${{ secrets.R2_BUCKET }}
       CWX_S3_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
