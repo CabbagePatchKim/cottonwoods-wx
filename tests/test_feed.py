@@ -59,12 +59,15 @@ def test_feed_v1_format_is_pinned():
     assert {"model", "cycle", "init", "covers_full_storm", "run_ends", "snow_level_ft", "flow", "modes",
             "points"} <= set(by["HRRR"])
     assert set(by["HRRR"]["points"]) == set(cfg["points"])
-    assert {"type", "water_in", "snow_in"} <= set(by["HRRR"]["points"]["alta"])
+    assert {"type", "water_in", "snow_in", "snow_in_regime"} <= set(by["HRRR"]["points"]["alta"])
     assert by["HRRR"]["points"]["alta"]["type"] == "deterministic"
     assert {"type", "members_wet", "members", "mean_water_in"} <= set(by["GEFS"]["points"]["alta"])
     day = f["daily"]["points"]["alta"][0]
     assert {"model", "cycle", "init", "ensemble", "days"} <= set(day)
     assert {"start", "end", "amounts"} <= set(day["days"][0])
+    hrrr = next(r for r in f["daily"]["points"]["alta"] if r["model"] == "HRRR")
+    assert {"water_in", "snow_in", "snow_in_regime"} <= set(hrrr["days"][0]["amounts"])
+    assert "snow_regime_method" in m
 
 
 def test_runs_ending_before_the_storm_ends_have_no_amounts():

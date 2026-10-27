@@ -50,7 +50,8 @@ def latest_runs(fc: pd.DataFrame) -> pd.DataFrame:
 
 def model_days(fc: pd.DataFrame, cfg: dict, point: str, days: int = 10, start: pd.Timestamp | None = None) -> list[dict]:
     """The numbers behind model_table, one dict per model (newest run), in display order. Each day is a dict:
-    deterministic {"water_in", "snow_in"} (NaN where missing), ensembles {"members_wet", "members", "mean_water_in"},
+    deterministic {"water_in", "snow_in", "snow_in_regime"} (NaN where missing; snow_in_regime only exists if fc went
+    through regime_adjusted), ensembles {"members_wet", "members", "mean_water_in"},
     or None where the run doesn't cover the whole day. Used by the text report and the website feed."""
     fc = latest_runs(fc[fc["point"] == point])
     start = start or pd.Timestamp.now(tz="UTC").tz_localize(None)
@@ -68,7 +69,8 @@ def model_days(fc: pd.DataFrame, cfg: dict, point: str, days: int = 10, start: p
             else:
                 water = window_total(g, s, e, strict=True) / MM_PER_IN
                 snow = window_total(g, s, e, "snow_in", strict=True) if "snow_in" in g.columns else np.nan
-                cells.append(None if np.isnan(water) else {"water_in": water, "snow_in": snow})
+                adj = window_total(g, s, e, "snow_in_adj", strict=True) if "snow_in_adj" in g.columns else np.nan
+                cells.append(None if np.isnan(water) else {"water_in": water, "snow_in": snow, "snow_in_regime": adj})
         out.append({"model": model, "init": g["init"].iloc[0], "ensemble": ens, "windows": wins, "days": cells})
     return _by_model_order(out)
 
@@ -144,7 +146,8 @@ def regime_adjusted(fc: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, bool]:
 
 def storm_models(st, fc: pd.DataFrame, cfg: dict) -> list[dict]:
     """The numbers behind one storm's table: every model's newest run that reaches the storm, totalled over its
-    window, in display order. Per point: deterministic {"water_in", "snow_in"}, ensembles {"members_wet",
+    window, in display order. Per point: deterministic {"water_in", "snow_in" (plain Kuchera), "snow_in_regime"
+    (regime-adjusted, NaN if no factors)}, ensembles {"members_wet",
     "members", "mean_water_in"}, or None if the run was pulled before the point existed. snow_level_m is
     (first, last) over the wet steps at the storm's point, or None. Used by the text report and the website feed."""
     s, e = st.fc_start, st.fc_end
@@ -165,9 +168,10 @@ def storm_models(st, fc: pd.DataFrame, cfg: dict) -> list[dict]:
                 per = gp.groupby("member").apply(lambda m: window_total(m, s, e), include_groups=False) / MM_PER_IN
                 r["points"][p] = {"members_wet": int((per >= thr).sum()), "members": len(per), "mean_water_in": per.mean()}
             else:
-                col = "snow_in_adj" if "snow_in_adj" in gp.columns and gp["snow_in_adj"].notna().any() else "snow_in"
+                has_adj = "snow_in_adj" in gp.columns and gp["snow_in_adj"].notna().any()
                 r["points"][p] = {"water_in": window_total(gp, s, e) / MM_PER_IN,
-                                  "snow_in": window_total(gp, s, e, col) if col in gp.columns else np.nan}
+                                  "snow_in": window_total(gp, s, e, "snow_in") if "snow_in" in gp.columns else np.nan,
+                                  "snow_in_regime": window_total(gp, s, e, "snow_in_adj") if has_adj else np.nan}
         gp = g[(g["point"] == st.point) & (g["valid_end"] > s) & (g["valid_start"] < e)]
         if "snow_level_m" in gp.columns:
             wet = gp[(gp["qpf_mm"] >= cfg["storms"]["wet_in"] * MM_PER_IN) & gp["snow_level_m"].notna()].sort_values("valid_end")
@@ -196,7 +200,8 @@ def _point_text(c: dict | None) -> str:
         return "-"
     if "members" in c:
         return f"{c['members_wet']}/{c['members']} mean {c['mean_water_in']:.2f}\""
-    return f"{c['water_in']:.2f}\" {c['snow_in']:.0f}\" snow" if not np.isnan(c["snow_in"]) else f"{c['water_in']:.2f}\""
+    snow = c["snow_in_regime"] if not np.isnan(c["snow_in_regime"]) else c["snow_in"]
+    return f"{c['water_in']:.2f}\" {snow:.0f}\" snow" if not np.isnan(snow) else f"{c['water_in']:.2f}\""
 
 
 def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> str:

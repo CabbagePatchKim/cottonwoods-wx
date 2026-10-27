@@ -11,6 +11,8 @@ Format rules (the website relies on them; tests/test_feed.py pins them):
   - Times are ISO 8601 in Mountain time with the offset ("2026-10-30T12:00:00-06:00"); model runs also carry
     their cycle name ("10/27 06z").
   - Amounts are inches (water, snow), snow levels feet, rounded for display; missing values are null.
+  - Deterministic snow comes twice: snow_in (plain Kuchera) and snow_in_regime (each step scaled by the resort's
+    history in that step's flow; null if no factors). Neither is verified yet; the site picks which to show.
   - A run that ends before the storm does (covers_full_storm false) has null amounts at every resort: its partial
     total isn't a forecast for the storm, and a 0 would read like one. run_ends says how far it reached.
 """
@@ -56,7 +58,8 @@ def _amounts(c: dict | None) -> dict | None:
     if "members" in c:
         return {"type": "ensemble", "members_wet": c["members_wet"], "members": c["members"],
                 "mean_water_in": _num(c["mean_water_in"], 2)}
-    return {"type": "deterministic", "water_in": _num(c["water_in"], 2), "snow_in": _num(c["snow_in"], 1)}
+    return {"type": "deterministic", "water_in": _num(c["water_in"], 2), "snow_in": _num(c["snow_in"], 1),
+            "snow_in_regime": _num(c["snow_in_regime"], 1)}
 
 
 def _run(init) -> dict:
@@ -85,6 +88,7 @@ def build_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> dict:
 
 
 def build_daily(fc: pd.DataFrame, cfg: dict, start: pd.Timestamp, days: int = 10) -> dict:
+    fc, _ = regime_adjusted(fc, cfg)
     points = {}
     for p in cfg["points"]:
         rows = model_days(fc, cfg, p, days, start)
@@ -100,7 +104,10 @@ def build_meta(fc: pd.DataFrame, cfg: dict, now: pd.Timestamp, code_version: str
             "units": {"water": "in", "snow": "in", "snow_level": "ft"},
             "ensemble_wet_threshold_in": cfg["verify"]["event_swe_in"],
             "snow_method": "Kuchera snow ratio per model step from the profile at each resort's elevation, "
-                           "wet-bulb snow/mix/rain, minimum ratio 3:1",
+                           "wet-bulb snow/mix/rain, minimum ratio 3:1 (snow_in)",
+            "snow_regime_method": "snow_in_regime: each model step's snow scaled by the resort's precip share in that "
+                                  "step's 700 mb flow and temperature, from SNOTEL + SLC balloons since 2010 "
+                                  "(1.10 = 10% more than usual); unverified",
             "points": {p: {"lat": v["lat"], "lon": v["lon"], "elev_ft": v["elev_ft"]} for p, v in cfg["points"].items()},
             "models": [{"model": m, **_run(t)} for m, t in newest.items()],
             "warnings": warnings, "disclaimer": DISCLAIMER, "credits": CREDITS}
