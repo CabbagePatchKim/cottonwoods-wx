@@ -172,6 +172,8 @@ storms:
   obs_wet_in: 0.1          # measurable per hour for SNOTEL: its gauge reports in 0.1" steps
   min_total_in: 0.10       # an "event" smaller than this isn't a storm
   subperiod_gap_hours: 6   # inside a storm, a dry gap this long splits it into reported parts (e.g. 2/16 a/b)
+  manual_match_hours: 12   # hand-entered storm totals (data/manual/storm_totals.csv) match a storm within this slack
+  report_verified_days: 10 # the storm report lists storms verified in the last this-many days
 
 # Verification: forecast windows vs observed windows
 verify:
@@ -186,7 +188,7 @@ verify:
 # Cloud archive (scripts/bucket_sync.py -> src/cottonwoods/bucket.py): the archive lives in a Cloudflare R2 bucket so
 # passes can run on GitHub Actions. Bucket name, endpoint and keys come from environment variables, never from here.
 cloud:
-  dirs: [archive, processed, reports, logs/cloud]     # folders under data/ that are synced (logs/cloud: the cloud
+  dirs: [archive, processed, reports, logs/cloud, entries]   # folders under data/ that are synced (logs/cloud: the cloud
                                                       # passes' monthly logs; the laptop's own data/logs is not synced)
   exclude: ["*.lock", "processed/golden/*", "*.tmp"]  # never synced
   pull_forecast_days: 25   # a pull skips model runs older than this (passes read <= 20 days); they stay in the bucket

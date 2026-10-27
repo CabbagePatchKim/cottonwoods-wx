@@ -318,6 +318,28 @@ def score_storm(storm: pd.Series, fc_all: pd.DataFrame, osteps: pd.DataFrame, cf
     return pd.DataFrame(rows)
 
 
+def manual_totals(storm: pd.Series, totals: pd.DataFrame, cfg: dict) -> dict | None:
+    """Hand-entered totals (data/entries/storm_totals.csv) for this storm: rows at its point overlapping its window,
+    give or take storms.manual_match_hours (hand-entered times are approximate). Several rows (e.g. daily totals) are
+    summed. {"new_snow_in", "water_in", "sources"}, or None if nothing was entered."""
+    if totals is None or totals.empty:
+        return None
+    s = storm.final_start if pd.notna(storm.final_start) else storm.fc_start
+    e = storm.final_end if pd.notna(storm.final_end) else storm.fc_end
+    slack = pd.Timedelta(hours=cfg["storms"]["manual_match_hours"])
+    m = totals[(totals["site"] == storm.point) & (totals["start_utc"] < e + slack) & (totals["end_utc"] > s - slack)]
+    if m.empty:
+        return None
+    return {"new_snow_in": pd.to_numeric(m["new_snow_in"], errors="coerce").sum(min_count=1),
+            "water_in": pd.to_numeric(m["water_in"], errors="coerce").sum(min_count=1),
+            "sources": ", ".join(sorted(m["source"].unique()))}
+
+
+def load_scores(root=None) -> pd.DataFrame:
+    p = (root or ARCHIVE_DIR) / "storm_scores.csv"
+    return pd.read_csv(p, parse_dates=["init"]) if p.exists() else pd.DataFrame()
+
+
 def append_scores(scores: pd.DataFrame, root=None) -> None:
     p = (root or ARCHIVE_DIR) / "storm_scores.csv"
     if p.exists():

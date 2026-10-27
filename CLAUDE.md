@@ -73,6 +73,14 @@ Storms, verification, reports
   `release.py`: the approval gate; `github_feed.py` pushes an approved feed to GitHub Pages. `scripts/publish_feed.py` (last step of run_models.bat; `--preview` for any code
   -> data/feed_preview/). `config.DATA_DIR` honors COTTONWOODS_DATA so a production copy shares one data folder.
 
+Hand entries: data/manual/ (in git: new_snow.csv daily readings for verify.py) and data/entries/ (NOT in git,
+bucket-synced so the cloud sees them without a release: storm_totals.csv, e.g. Alta Collins storm totals the owner
+reads off the NWS page by eye; sent with scripts/send_entries.bat). Storm report section "Verified in the last N
+days" (report.render_verified) shows SNOTEL + hand totals vs each model's last run before the storm.
+Collins automation: NOT possible without a Synoptic token (api.weather.gov lists CLN but serves no observations;
+the NWS page uses an NWS Synoptic key - never automate it, rendered or not). Laptop bucket access: boto3 in
+~/.cwx_pylib (PYTHONPATH), not the main environment.
+
 Observation clients (`obs/`): `snotel.py` (AWDB), `synoptic.py` (CLN, needs token), `ghcn.py` (NOAA coop),
 `sounding.py` (SLC balloons via IEM). Scheduled (until the cloud cutover): Windows tasks "Cottonwoods models" (every 3 h, run_models.bat) and
 "Cottonwoods soundings" (8 am/8 pm), both via `conhost --headless` (no window to close by accident).

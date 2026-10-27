@@ -3,6 +3,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from cottonwoods.archive import forecasts as fa
@@ -161,3 +162,34 @@ def test_a_dropped_storm_that_comes_back_is_revived_not_duplicated():
     st = update_forecast_storms(st, back, cfg, now + pd.Timedelta(hours=6))
     assert len(st) == 1 and st.status.iloc[0] == "forecast" and st.storm_id.iloc[0] == sid
     assert "back in the models" in st.note.iloc[0]
+
+
+def test_hand_entered_collins_totals_match_a_verified_storm_and_show_in_the_report():
+    from cottonwoods.archive.obs import load_storm_totals
+    from cottonwoods.report import render_verified
+    from cottonwoods.storms import manual_totals
+    cfg = make_cfg()
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "storm_totals.csv"
+        p.write_text("start,end,site,source,new_snow_in,water_in,notes\n"
+                     "2026-10-31,2026-11-01,Alta,Collins,10,0.80,day 1\n"
+                     "2026-11-01,2026-11-02 06:00,alta,collins,8,0.65,day 2\n"
+                     "2026-11-20,2026-11-21,alta,collins,5,,another storm\n")
+        totals = load_storm_totals(p)
+    assert totals["start_utc"].iloc[0] == pd.Timestamp("2026-10-31 12:00")    # 0600 MDT
+    assert totals["end_utc"].iloc[1] == pd.Timestamp("2026-11-02 13:00")      # 0600 MST: DST ended 11/1
+    st = pd.Series({"storm_id": "2026103112", "point": "alta", "status": "verified",
+                    "fc_start": pd.Timestamp("2026-10-31 12:00"), "fc_end": pd.Timestamp("2026-11-02 06:00"),
+                    "final_start": pd.Timestamp("2026-10-31 12:00"), "final_end": pd.Timestamp("2026-11-02 08:00"),
+                    "obs_water_in": 1.52})
+    m = manual_totals(st, totals, cfg)
+    assert m["new_snow_in"] == 18 and abs(m["water_in"] - 1.45) < 1e-9 and m["sources"] == "collins"
+    scores = pd.DataFrame({"storm_id": "2026103112", "model": ["GFS", "GFS", "GEFS", "GEFS"],
+                           "init": pd.to_datetime(["2026-10-30 12:00", "2026-10-31 06:00", "2026-10-31 06:00", "2026-10-31 06:00"]),
+                           "member": [np.nan, np.nan, 0, 1], "lead_to_start_hr": [24, 6, 6, 6],
+                           "fc_water_in": [1.0, 1.2, 0.5, 0.7], "fc_snow_in": [12, 14, np.nan, np.nan]})
+    text = render_verified(pd.DataFrame([st]), scores, totals, cfg, pd.Timestamp("2026-11-03"))
+    assert 'SNOTEL 1.52" water | collins: 18" snow, 1.45" water' in text
+    assert "10/31 06z" in text and '1.20"' in text and '14"' in text           # GFS: its LAST run before the storm
+    assert '0.60"' in text                                                      # GEFS: member mean
+    assert render_verified(pd.DataFrame([st]), scores, totals.iloc[2:], cfg, pd.Timestamp("2026-11-03")).count("not entered yet") == 1

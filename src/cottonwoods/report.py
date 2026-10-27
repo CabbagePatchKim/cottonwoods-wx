@@ -12,7 +12,7 @@ import pandas as pd
 
 from . import regimes, timefmt
 from .config import PROCESSED_DIR
-from .storms import run_flow, run_modes
+from .storms import manual_totals, run_flow, run_modes
 from .windows import window_total
 
 MM_PER_IN = 25.4
@@ -247,3 +247,53 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> str:
     rendered = _aligned(tables)
     lines = [rendered[x[1]] if isinstance(x, tuple) else x for x in lines]
     return "\n".join(lines) if lines else "No storms in the newest model runs.\n"
+
+
+# --- recently verified storms: observed vs the last forecast before each one ------------------------------------------
+
+def last_runs_before(scores: pd.DataFrame, storm_id: str) -> pd.DataFrame:
+    """Each model's newest scored run issued before the storm started: deterministic water + snow; ensembles their
+    mean water. Columns model, init, lead_hr, water_in, snow_in (NaN for ensembles)."""
+    sc = scores[(scores["storm_id"].astype(str) == str(storm_id)) & (scores["lead_to_start_hr"] > 0)]
+    rows = []
+    for model, g in sc.groupby("model"):
+        g = g[g["init"] == g["init"].max()]
+        ens = "member" in g.columns and g["member"].notna().any()
+        rows.append({"model": model, "init": g["init"].iloc[0], "lead_hr": g["lead_to_start_hr"].iloc[0],
+                     "water_in": g["fc_water_in"].mean(), "snow_in": np.nan if ens else g["fc_snow_in"].iloc[0]})
+    return pd.DataFrame(rows)
+
+
+def render_verified(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataFrame, cfg: dict, now) -> str:
+    """Storms verified in the last storms.report_verified_days: observed totals (SNOTEL water; hand-entered totals such
+    as Alta Collins snow and water) next to each model's last run before the storm began."""
+    days = cfg["storms"]["report_verified_days"]
+    v = storms[(storms["status"] == "verified") & (pd.to_datetime(storms["final_end"]) >= pd.Timestamp(now) - pd.Timedelta(days=days))]
+    if v.empty:
+        return ""
+    lines, tables = [f"=== Verified in the last {days} days (observed vs each model's last run before the storm)"], []
+    for _, st in v.sort_values("final_start").iterrows():
+        lines.append(f"--- Storm {st.storm_id}: {timefmt.clock(st.final_start, weekday=True)} - "
+                     f"{timefmt.clock(st.final_end, weekday=True)}")
+        obs = f"SNOTEL {st.obs_water_in:.2f}\" water" if pd.notna(st.obs_water_in) else "SNOTEL -"
+        man = manual_totals(st, totals, cfg)
+        if man:
+            parts = [f"{man['new_snow_in']:.0f}\" snow" if pd.notna(man["new_snow_in"]) else "",
+                     f"{man['water_in']:.2f}\" water" if pd.notna(man["water_in"]) else ""]
+            obs += f" | {man['sources']}: " + ", ".join(p for p in parts if p)
+        else:
+            obs += " | Collins: not entered yet (data/entries/storm_totals.csv)"
+        lines.append(f"    observed: {obs}")
+        runs = last_runs_before(scores, st.storm_id) if not scores.empty else pd.DataFrame()
+        if runs.empty:
+            lines.append("    (no scored runs)")
+            continue
+        t = pd.DataFrame({"model": runs["model"], "init": runs["init"].map(timefmt.run),
+                          "lead": runs["lead_hr"].map(lambda h: f"{h:.0f} h before"),
+                          "water": runs["water_in"].map(lambda w: f"{w:.2f}\""),
+                          "snow": runs["snow_in"].map(lambda x: f"{x:.0f}\"" if pd.notna(x) else "")})
+        rank = {m: i for i, m in enumerate(MODEL_ORDER)}
+        tables.append(t.sort_values("model", key=lambda c: c.map(lambda m: rank.get(m, 99))))
+        lines.append(("TABLE", len(tables) - 1))
+    rendered = _aligned(tables)
+    return "\n".join(rendered[x[1]] if isinstance(x, tuple) else x for x in lines) + "\n"

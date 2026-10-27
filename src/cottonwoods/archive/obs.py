@@ -16,7 +16,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from ..config import ARCHIVE_DIR, MANUAL_DIR
+from ..config import ARCHIVE_DIR, ENTRIES_DIR, MANUAL_DIR
+from ..timefmt import LOCAL_TZ
 from ..obs import ghcn, snotel, sounding, synoptic
 from .io import read_df, suffix_for, write_df
 
@@ -187,6 +188,35 @@ def load_obs(start=None, end=None, root: Path | None = None) -> pd.DataFrame:
     loaded = (load_snotel(start, end, root), load_synoptic(start, end, root), load_ghcn(start, end, root))
     frames = [f for f in loaded if not f.empty]
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+STORM_TOTAL_COLS = ["start", "end", "site", "source", "new_snow_in", "water_in", "notes"]
+
+
+def _local_to_utc(text: str) -> pd.Timestamp:
+    """'2026-10-31 14:00' Mountain time -> naive UTC. A date alone means 0600, the morning report time."""
+    text = str(text).strip()
+    t = pd.Timestamp(text) + (pd.Timedelta(hours=6) if len(text) <= 10 else pd.Timedelta(0))
+    return t.tz_localize(LOCAL_TZ, ambiguous=False, nonexistent="shift_forward").tz_convert("UTC").tz_localize(None)
+
+
+def load_storm_totals(path: Path | None = None) -> pd.DataFrame:
+    """data/entries/storm_totals.csv: storm totals entered by hand (e.g. Alta Collins, read off the NWS page by the
+    owner). start/end are Mountain local time; returned with start_utc/end_utc added for matching to storms.
+    data/entries is not in git (entries mustn't need a code release) and is synced through the bucket."""
+    p = path or (ENTRIES_DIR / "storm_totals.csv")
+    empty = pd.DataFrame(columns=STORM_TOTAL_COLS + ["start_utc", "end_utc"])
+    if not p.exists():
+        return empty
+    df = pd.read_csv(p, dtype={"start": str, "end": str, "site": str, "source": str, "notes": str})
+    df = df.dropna(subset=["start", "end", "site"])
+    if df.empty:
+        return empty
+    df["site"] = df["site"].str.strip().str.lower()
+    df["source"] = df["source"].fillna("manual").str.strip().str.lower()
+    df["start_utc"] = [_local_to_utc(t) for t in df["start"]]
+    df["end_utc"] = [_local_to_utc(t) for t in df["end"]]
+    return df
 
 
 def load_manual(path: Path | None = None) -> pd.DataFrame:
