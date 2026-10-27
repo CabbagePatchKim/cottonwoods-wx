@@ -48,7 +48,7 @@ Pulling model runs (`models/`)
 Archive (`archive/`)
 - `forecasts.py`: one file per run; `run_points` (resort points + coarse models' 2x2 `model_cells`); `archive_run`
   (completeness check); `derive_run_fields` = THE derivation entry point: regimes -> modes -> add_snowfall.
-- `runner.py`: an archive pass: PassLock, build_jobs (newest first; Canada 29-day catch-up), FailureLog
+- `runner.py`: an archive pass: PassLock, build_jobs (newest first; Canada 3-day catch-up), FailureLog
   (skip after 4 tries), run_jobs, split_streams/run_streams (one process per server), clear_caches.
   `scripts/archive_forecasts.py` is only its command line.
 - `obs.py`: SNOTEL (UTC-8!), Synoptic, NOAA coop, soundings stores; `drop_unreliable_water`.

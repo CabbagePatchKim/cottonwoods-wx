@@ -135,9 +135,10 @@ archive:
   gfs_step_hours: 3
   recent_cycles: 8                       # latest cycles each scheduled pass tries (8 = 2 days): runs missed while
                                          # the PC was off get caught up; already-archived runs are skipped instantly
-  # Longer automatic catch-up for models whose source deletes old runs: Environment Canada keeps only ~30 days,
-  # so scheduled passes retry any missing RDPS/GDPS run from the last 29 days (1 day of margin).
-  catchup_days: {RDPS: 29, GDPS: 29}
+  # Longer automatic catch-up for models whose source deletes old runs (Environment Canada keeps ~30 days). 3 days
+  # covers a weekend away or a laptop left closed; for longer gaps run a one-off backfill on purpose. (29 days was
+  # tried first: a month of GDPS alone is ~90 GB of downloads, mostly dry early-season runs of little value.)
+  catchup_days: {RDPS: 3, GDPS: 3}
 
 # Snow / mix / rain at each station, per model step, from the model's profile moved to the station's real
 # elevation (src/cottonwoods/profile.py). Wet-bulb (not air) temperature, because snow falling into dry air cools
