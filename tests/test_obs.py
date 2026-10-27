@@ -1,0 +1,109 @@
+"""Observations: SNOTEL, Synoptic, NOAA coop and balloon soundings (parsing and the obs archive)."""
+import tempfile
+from pathlib import Path
+
+import pandas as pd
+
+from cottonwoods.archive import obs as oa
+
+from helpers import make_cfg, snotel_frame, gauge_frame, ghcn_csv, fake_sounding
+
+
+def test_snotel_archive_converts_to_utc_and_replaces_revisions():
+    cfg = make_cfg()
+    trip = cfg["snotel"]["atwater"]["triplet"]
+    # TemporaryDirectory: a scratch folder that is deleted automatically when the `with` block ends.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        # lambda *a, **k: ... accepts any arguments and ignores them, standing in for the real fetch()
+        oa.archive_snotel(cfg, "2026-11-02", "2026-11-04", root=root,
+                          fetcher=lambda *a, **k: snotel_frame(trip, "2026-11-02 00:00", 10))
+        df = oa.load_snotel(root=root)
+        assert df["time_utc"].min() == pd.Timestamp("2026-11-02 08:00")  # 00:00 PST (SNOTEL's clock) -> 08:00 UTC
+        assert set(df["site"]) == {"atwater"}
+        # a later fetch with a revised value for the same hours must replace, not duplicate
+        revised = snotel_frame(trip, "2026-11-02 00:00", 10, base=20.0)
+        oa.archive_snotel(cfg, "2026-11-02", "2026-11-04", root=root, fetcher=lambda *a, **k: revised)
+        df = oa.load_snotel(root=root)
+        assert len(df) == 10 and df["value"].min() == 20.0
+
+
+def test_synoptic_archive_keeps_utc_and_maps_site():
+    cfg = make_cfg()
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        oa.archive_synoptic(cfg, "2026-11-02", "2026-11-04", root=root,
+                            fetcher=lambda *a, **k: gauge_frame("CLN", "2026-11-02 07:00", 10))
+        df = oa.load_synoptic(root=root)
+        assert df["time_utc"].min() == pd.Timestamp("2026-11-02 07:00")  # already UTC, no shift
+        assert set(df["site"]) == {"alta_collins"}
+        assert oa.load_snotel(root=root).empty and len(oa.load_obs(root=root)) == 10
+
+
+def test_ghcn_fetch_parses_obs_time_trace_and_quality_flags():
+    from cottonwoods.obs import ghcn
+
+    class R:
+        text = ghcn_csv([("2023-12-03", "2.02", ",,7,1800", "12.8", ",,7,1800"),
+                         ("2023-12-04", "0.00", "T,,7,1800", "0.0", "T,,7,1800"),   # trace
+                         ("2023-12-05", "9.99", ",X,7,1800", "", "")])              # failed QC -> dropped
+        def raise_for_status(self): pass
+
+    orig = ghcn.requests.get
+    ghcn.requests.get = lambda *a, **k: R()
+    try:
+        df = ghcn.fetch(["USC00420072"], "2023-12-03", "2023-12-05")
+    finally:
+        ghcn.requests.get = orig
+    p = df[df.element == "PRCP"].set_index("time_utc")
+    # the 12/3 value covers 6 pm MST 12/2 -> 6 pm MST 12/3, i.e. it ends 01 UTC 12/4
+    assert list(p.index) == [pd.Timestamp("2023-12-04 01:00"), pd.Timestamp("2023-12-05 01:00")]
+    assert p.value.iloc[0] == 2.02 and p.trace.iloc[1] and 9.99 not in set(df.value)
+
+
+def test_ghcn_fetch_handles_header_only_reply():
+    from cottonwoods.obs import ghcn
+
+    class R:
+        text = ghcn_csv([])            # NOAA hasn't posted these days yet
+        def raise_for_status(self): pass
+
+    orig = ghcn.requests.get
+    ghcn.requests.get = lambda *a, **k: R()
+    try:
+        assert ghcn.fetch(["USC00420072"], "2026-10-24", "2026-10-28").empty
+    finally:
+        ghcn.requests.get = orig
+
+
+def test_unreliable_noaa_water_is_dropped_but_snowfall_kept():
+    cfg = make_cfg()
+    cutoff = pd.Timestamp(cfg["ghcn"]["alta_noaa"]["water_reliable_from"])
+    obs = pd.DataFrame({"site": "alta_noaa", "station": "USC00420072",
+                        "element": ["PRCP", "SNOW", "PRCP", "SNOW"],
+                        "time_utc": [cutoff - pd.Timedelta(days=1)] * 2 + [cutoff + pd.Timedelta(days=1)] * 2,
+                        "value": [0.5, 9.0, 0.6, 7.0]})
+    kept = oa.drop_unreliable_water(obs, cfg)
+    assert list(kept.value) == [9.0, 0.6, 7.0]   # only the early PRCP row is gone
+
+
+def test_sounding_summary_values():
+    from cottonwoods.obs import sounding
+    s = sounding.summarize(fake_sounding("2023-12-08 12:00")).iloc[0]
+    assert abs(s.t700_c - -10.0) < 1e-9 and s.wdir700 == 270 and s.wspd700_kt == 30
+    assert abs(s.tmax_layer_c - (-10.0 + 6.5 * 0.54)) < 1e-6           # warmest at 750 mb (2450 m)
+    assert abs(s.freezing_level_m - (2990 - 10 / 6.5 * 1000)) < 1       # 0 C about 1.5 km below 700 mb
+    assert abs(s.dgz_depth_m - 6 / 6.5 * 1000) < 1                      # -12 to -18 C spans 6 C of cooling
+    assert 80 < s.rh700 < 90                                            # 2 C dewpoint depression
+
+
+def test_sounding_archive_replaces_refetched_levels():
+    cfg = make_cfg()
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        oa.archive_soundings(cfg, "2023-12-08", "2023-12-09", root=root,
+                             fetcher=lambda *a, **k: fake_sounding("2023-12-08 12:00"))
+        oa.archive_soundings(cfg, "2023-12-08", "2023-12-09", root=root,
+                             fetcher=lambda *a, **k: fake_sounding("2023-12-08 12:00", t700=-12.0))
+        df = oa.load_soundings(root=root)
+    assert len(df) == 8 and df[df.pressure_hpa == 700].temp_c.iloc[0] == -12.0

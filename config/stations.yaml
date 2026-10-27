@@ -1,0 +1,176 @@
+# Station and extraction config.
+# SNOTEL triplets are "<station id>:UT:SNTL". Triplets, coordinates and elevations below were
+# verified 2026-10-26 against the AWDB /stations endpoint (scripts/01_find_stations.py).
+
+snotel:
+  snowbird:       {name: "Snowbird",       triplet: "766:UT:SNTL", verified: true,
+                   lat: 40.56914, lon: -111.65852, elev_ft: 9170}
+  brighton:       {name: "Brighton",       triplet: "366:UT:SNTL", verified: true,
+                   lat: 40.59936, lon: -111.58167, elev_ft: 8790}
+  mill_d_north:   {name: "Mill-D North",   triplet: "628:UT:SNTL", verified: true,
+                   lat: 40.65883, lon: -111.63683, elev_ft: 8940}
+  atwater:        {name: "Atwater",        triplet: "1308:UT:SNTL", verified: true,
+                   lat: 40.59124, lon: -111.63775, elev_ft: 8750}
+
+# Non-NRCS stations, pulled from the Synoptic (MesoWest) API; needs SYNOPTIC_TOKEN in the environment.
+# Alta Collins is Alta's own reference site (the one Alta reports from). No snow pillow, so it is
+# verified on its precip gauge (PREC), not SWE. UNVERIFIED: confirm CLN's variable names on first pull.
+synoptic:
+  alta_collins:   {name: "Alta Collins",   stid: "CLN", verified: false,
+                   url: "https://www.weather.gov/wrh/timeseries?site=CLN"}
+
+# NOAA GHCN-Daily cooperative observer stations (free, no token). One reading per day, a 24 h total ending at
+# the observer's time (obs_hour_local, local standard time). Verified on daily PRCP; SNOW gives observed snowfall.
+# ALTA is at the Atwater SNOTEL spot (8,710 ft), lower than Alta's Collins plot: its seasonal snow runs about
+# 75-87% of Alta's reported totals (checked 2017-18 to 2025-26).
+ghcn:
+  # water_reliable_from: PRCP before this date is ignored (snowfall is kept). 2004-05 to 2006-07 show ratios of
+  # 16-21:1 and 38-66 missing days a season, most likely gauge undercatch; 2007-08 on looks normal (8-13:1).
+  alta_noaa:      {name: "ALTA (NOAA coop)", station: "USC00420072", obs_hour_local: 18, elev_ft: 8710,
+                   records_since: 1905, water_reliable_from: "2007-10-01"}
+
+# Weather balloons (radiosondes), from the Iowa Environmental Mesonet archive; no token. Launched ~23 and ~11 UTC
+# for the 00z and 12z soundings, which line up with two of the four model cycles. Collected by
+# scripts/archive_soundings.py (scheduled twice a day). Salt Lake City is the only launch site near the Wasatch.
+soundings:
+  slc:            {name: "Salt Lake City", station: "KSLC", wmo: 72572, elev_ft: 4226}
+
+# Model extraction points (lat, lon, real elevation in ft): the four Cottonwood resorts at MID-MOUNTAIN, where
+# their snow is reported. Elevation drives the station profile (temps, wet-bulb, snow / rain).
+#   alta      Collins study plot (Alta's official snow site), 9,662 ft
+#   snowbird  Snowbird SNOTEL site (mid-mountain, Gad Valley), 9,170 ft
+#   solitude  approximate mid-mountain, ~9,200 ft (base 7,988 / summit 10,488) - CONFIRM with owner
+#   brighton  approximate mid-mountain, ~9,600 ft (base 8,755 / summit 10,500) - CONFIRM with owner
+# obs: observed sites (keys under snotel:, synoptic: or ghcn:) each point is verified against, scored separately.
+# Mill-D North SNOTEL (8,940 ft, upper Big Cottonwood) is the nearest SNOTEL to Solitude.
+points:
+  alta:     {lat: 40.5764, lon: -111.6383, elev_ft: 9662, obs: [atwater, alta_collins, alta_noaa]}
+  snowbird: {lat: 40.56914, lon: -111.65852, elev_ft: 9170, obs: [snowbird]}
+  solitude: {lat: 40.6130, lon: -111.5960, elev_ft: 9200, obs: [mill_d_north]}
+  brighton: {lat: 40.5930, lon: -111.5880, elev_ft: 9600, obs: [brighton]}
+
+# The 2x2 block of grid points around the Cottonwoods for each COARSE model. The resorts all sit nearest the same
+# one or two of these, so every run of these models also stores all four (with each cell's own profile), so
+# nearest / mean / wettest / best-fit-to-observations can be compared later without re-pulling. Coordinates are the
+# models' exact grid points (checked against real files 2026-10-27), so each cell is read with zero distance.
+# Stored as points named like "gfs_40.50N_111.75W"; verification and the reports skip them for now.
+model_cells:
+  GFS:  {lats: [40.50, 40.75], lons: [-111.75, -111.50]}   # 0.25 deg (~28 x 21 km)
+  IFS:  {lats: [40.50, 40.75], lons: [-111.75, -111.50]}   # ECMWF HRES, 0.25 deg
+  ENS:  {lats: [40.50, 40.75], lons: [-111.75, -111.50]}   # ECMWF ensemble, 0.25 deg
+  GDPS: {lats: [40.50, 40.65], lons: [-111.75, -111.60]}   # 0.15 deg (~17 x 13 km)
+  GEFS: {lats: [40.50, 41.00], lons: [-112.00, -111.50]}   # 0.5 deg (~55 x 42 km: the cells reach the valley and Park City)
+
+# Observed event thresholds
+obs_thresholds:
+  snotel_swe_in: 0.10      # "measurable" SWE increase over the window
+  new_snow_in: 1.0         # "measurable" snowfall on the ground
+
+# Kuchera settings
+kuchera:
+  top_level_hpa: 500
+  bottom_level_hpa: 850    # NOTE: 850 mb is below real terrain near Alta; revisit for the modified SLR
+  slr_floor: null          # null = unclamped, set e.g. 3 to clamp
+  slr_cap: null
+
+# Flow-regime thresholds (used by regimes.py; tune against the archive)
+regimes:
+  cold_700mb_c: -10.0
+  lake_delta_c: 16.0       # lake-surface temp minus 700 mb temp above this = lake-enhancement potential
+  # Per-step flow regimes (src/cottonwoods/regimes.py). Regimes change through a storm, so every model step and
+  # every balloon sounding gets its own label; a storm is a sequence of phases ("SW warm 65% -> NW cold 35%").
+  flow_bins:               # 700 mb wind direction (deg it blows FROM) -> label, [from, to) and wrapping past north
+    - [190, 245, SW]
+    - [245, 285, W]
+    - [285, 325, NW]
+    - [325, 20, N]
+  other_label: S/E         # any direction not in a bin above
+  min_phase_hours: 6       # a regime lasting less than this is merged into its neighbor (one odd step isn't a phase)
+  # Resort factors by regime (scripts/regime_factors.py -> data/processed/regime_factors.csv): each resort's share of
+  # precip in that flow vs its all-flow share, from SNOTEL + SLC soundings. The SNOTEL site standing in for each point:
+  factor_sites: {alta: atwater, snowbird: snowbird, solitude: mill_d_north, brighton: brighton}
+  factor_min_days: 20      # fewer wet days than this in a flow+temperature group -> use the flow-only factor
+  # Precip mode per model step (regimes.add_precip_modes): frontal / post-frontal / cellular / lake-effect.
+  # The front is found in each run's own series: the largest 6 h drop in 700 mb temp (>= front_drop_c) with a
+  # wind veer (>= front_veer_deg). Steps within front_window_hours of it are frontal; stable steps BEFORE it count
+  # as frontal too (warm-advection / stratiform snow ahead of the front).
+  front_drop_c: 2.0
+  front_veer_deg: 30
+  front_window_hours: 3
+  cellular_cape_jkg: 100         # unstable: CAPE at least this, or a 700-500 mb lapse rate at least cellular_lapse.
+  cellular_lapse_c_per_km: 7.5   # (50 J/kg flagged 62% of GFS's warm SW steps: coarse models compute CAPE from
+                                 # their low valley ground, which inflates it)
+  event_gap_hours: 12            # the front is searched for within each precip event (same 12 h gap as storms:)
+  event_wet_mm: 0.254            # a step counts toward an event at 0.01" (same as storms.wet_in)
+  # Lake-effect (Great Salt Lake), post-frontal steps only: lake minus 700 mb temp >= lake_delta_c (above), 700 mb
+  # flow off the lake toward the Wasatch, and moist low levels
+  lake_flow_deg: [285, 360]
+  lake_min_rh700: 70
+  # Lake surface temperature (C) by month: a CLIMATOLOGY STAND-IN until a live lake-temperature source is added
+  lake_temp_c_by_month: {9: 20, 10: 14, 11: 8, 12: 3, 1: 1, 2: 2, 3: 6, 4: 11, 5: 17}
+
+# SNOTEL hourly timestamps are PACIFIC standard time (UTC-8) all year, no DST, even for Utah stations.
+# VERIFIED 2026-10-27: AWDB station metadata says dataTimeZone -8.0 for Snowbird, Atwater, Brighton and Mill-D North,
+# and a week of SNOTEL hourly temperature matched HRRR's UTC analyses best at UTC-8 (r 0.48; UTC-7 only 0.31).
+snotel_settings:
+  tz_offset_hours: -8
+
+# Utah local STANDARD time (MST, UTC-7): the NOAA coop observer's daily reading time (ALTA reads at 18:00 MST) and
+# the local date of hand-entered snow reports. Not the same as SNOTEL's clock above. (Report DISPLAY times are
+# handled separately, with daylight saving, in src/cottonwoods/timefmt.py.)
+local_settings:
+  standard_offset_hours: -7
+
+# Forecast archiving
+archive:
+  format: parquet          # parquet | csv  (csv only for machines without pyarrow)
+  # Every model archived by the scheduled pass (scripts/run_models.bat). Remove one to stop archiving it.
+  # IFS = ECMWF HRES; GEFS and ENS (ECMWF ensemble) are archived as precip only, one row per member.
+  models: [HRRR, NAMNEST, NAM, RDPS, GFS, GDPS, IFS, GEFS, ENS]
+  # Every model, past and present, is archived/pulled ONLY at these init hours, so models are compared run for run.
+  # (HRRR's 00/06/12/18z runs are also the only ones that reach 48 h; its other hourly runs stop at 18 h.)
+  cycles_utc: [0, 6, 12, 18]
+  hrrr_max_fxx: 48
+  gfs_max_fxx: 240
+  gfs_step_hours: 3
+  recent_cycles: 8                       # latest cycles each scheduled pass tries (8 = 2 days): runs missed while
+                                         # the PC was off get caught up; already-archived runs are skipped instantly
+  # Longer automatic catch-up for models whose source deletes old runs: Environment Canada keeps only ~30 days,
+  # so scheduled passes retry any missing RDPS/GDPS run from the last 29 days (1 day of margin).
+  catchup_days: {RDPS: 29, GDPS: 29}
+
+# Snow / mix / rain at each station, per model step, from the model's profile moved to the station's real
+# elevation (src/cottonwoods/profile.py). Wet-bulb (not air) temperature, because snow falling into dry air cools
+# it: snow can stick with the air at +1 to +3 C. Starting values; to be fitted to Alta observations.
+precip_type:
+  # Starting values (NWS WR Technical Attachment 19-01, Salt Lake City soundings); to be fitted to Alta observations
+  snow_level_tw_c: 0.5     # snow level = height of the 0.5 C wet-bulb (NWS Western Region / National Blend standard)
+  mix_low_tw_c: 0.0        # station wet-bulb at or below this: snow
+  mix_high_tw_c: 1.0       # at or above this: rain. In between: wet snow / mix, snow fraction falls linearly
+  rh_moist: 80             # dry-air nudge: none when the layer from the station to the freezing level is this humid,
+  rh_dry: 40               # rising to max_nudge at this RH or drier (wet-bulb moved toward air temp, snow level
+  max_nudge: 0.5           # toward the freezing level; 0.5 = halfway). Simple first version, uncalibrated
+  snow_min_slr: 3          # snow steps never get a ratio below this (warm air drives Kuchera to ~0 even when the
+                           # wet-bulb says snow; wet snow is dense, not absent). 3:1 because heavy wet snow and
+                           # graupel do reach ~3:1; Veals et al. 2025 treat <= 2:1 as likely measurement error
+
+# Storm events (src/cottonwoods/storms.py, scripts/storms.py). A storm runs from the first measurable step to
+# the last one before gap_hours of dry time, so lake-effect bands behind the front stay part of the storm.
+# Its timeframe is the LONGEST event among the newest run of each deterministic model, used for all models.
+# Verified against SNOTEL once observed precip has been dry for gap_hours.
+storms:
+  point: alta              # point whose model runs define storm windows (totals are reported for every point)
+  gap_hours: 12
+  wet_in: 0.01             # measurable precip per model step
+  obs_wet_in: 0.1          # measurable per hour for SNOTEL: its gauge reports in 0.1" steps
+  min_total_in: 0.10       # an "event" smaller than this isn't a storm
+
+# Verification: forecast windows vs observed windows
+verify:
+  window_hours: 24
+  window_end_utc_hour: 12  # 12 UTC = 5 am MST, near ski-area/UAC morning reports. Use a multiple of 3 (model step
+                           # edges); windows that straddle a step are dropped, not prorated
+  swe_tolerance_hours: 1   # how far from the window edge a SNOTEL reading may be
+                           # NOAA (ghcn:) sites ignore window_end_utc_hour and use their own observation time
+                           # (ALTA: 6 pm MST = 01 UTC), so GFS's 3 h steps can't line up with them; HRRR can
+  event_swe_in: 0.10       # liquid threshold that counts as a "measurable" event, model and obs

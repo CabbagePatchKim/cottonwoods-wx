@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cottonwoods-wx"
+version = "0.1.0"
+description = "Data pulls and verification tooling for Cottonwood Canyons snowfall forecasting"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "pandas",
+  "pyarrow",
+  "pyyaml",
+  "requests",
+  "xarray",
+  "cfgrib",
+  "herbie-data",
+  "metpy",
+  "cdsapi",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+notebook = ["matplotlib", "jupyterlab"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

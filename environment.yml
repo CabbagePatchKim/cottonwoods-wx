@@ -1,0 +1,24 @@
+# cfgrib needs the eccodes C library; conda-forge is the least painful way to get it.
+#   mamba env create -f environment.yml && conda activate cottonwoods-wx
+name: cottonwoods-wx
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - eccodes
+  - cfgrib
+  - xarray
+  - numpy
+  - pandas
+  - pyarrow
+  - pyyaml
+  - requests
+  - metpy
+  - pytest
+  - matplotlib
+  - jupyterlab
+  - pip
+  - pip:
+      - herbie-data
+      - cdsapi
+      - -e .
