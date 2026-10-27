@@ -16,6 +16,27 @@ from .storms import run_flow, run_modes
 from .windows import window_total
 
 MM_PER_IN = 25.4
+# Display order: short-range high-res first, then global, then ensembles
+MODEL_ORDER = ["HRRR", "NAMNEST", "NAM", "RDPS", "GFS", "GDPS", "IFS", "GEFS", "ENS"]
+
+
+def _in_model_order(t: pd.DataFrame) -> pd.DataFrame:
+    rank = t["model"].map({m: i for i, m in enumerate(MODEL_ORDER)}).fillna(99)
+    return t.assign(_o=rank).sort_values("_o").drop(columns="_o")
+
+
+def _aligned(tables: list[pd.DataFrame]) -> list[str]:
+    """Render tables as left-aligned text with the SAME column widths across all of them (2 spaces apart), so every
+    storm block in a report lines up the same way."""
+    widths: dict[str, int] = {}
+    for t in tables:
+        for c in t.columns:
+            widths[c] = max(widths.get(c, 0), len(str(c)), *(len(str(v)) for v in t[c]))
+    out = []
+    for t in tables:
+        rows = [list(t.columns)] + t.astype(str).values.tolist()
+        out.append("\n".join("  ".join(str(v).ljust(widths[c]) for c, v in zip(t.columns, r)).rstrip() for r in rows))
+    return out
 
 
 def day_windows(start: pd.Timestamp, days: int, end_hour: int) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
@@ -55,12 +76,10 @@ def model_table(fc: pd.DataFrame, cfg: dict, point: str, days: int = 10, start: 
                 else:
                     row[label] = f"{water:.2f}" + (f" {snow:.0f}\"" if not np.isnan(snow) else "")
         rows.append(row)
-    order = ["HRRR", "NAMNEST", "NAM", "RDPS", "GFS", "GDPS", "IFS", "GEFS", "ENS"]
     out = pd.DataFrame(rows)
     if out.empty:
         return out
-    out["_o"] = out["model"].map({m: i for i, m in enumerate(order)}).fillna(99)
-    return out.sort_values("_o").drop(columns="_o").reset_index(drop=True)
+    return _in_model_order(out).reset_index(drop=True)
 
 
 def staleness(cfg: dict, now, root=None, grace_hours: float = 4.0, lookback_cycles: int = 8) -> list[str]:
@@ -107,7 +126,7 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> str:
     """Each storm still in the future/ongoing, with every model's newest run totalled over the storm window.
 
     Deterministic: water (in) and Kuchera snow (in). Ensembles: members reaching the event threshold / N and
-    mean water. A run that ends before the window does is marked "(partial, to MM/DD HHMM)". Times are Mountain.
+    mean water. A run that ends before the window does shows "to MM/DD HHMM" in its `covers` column. Times are Mountain.
     """
     thr = cfg["verify"]["event_swe_in"]
     factors = regimes.load_factors(PROCESSED_DIR / "regime_factors.csv")
@@ -116,6 +135,7 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> str:
         fc = regimes.apply_factors(fc, factors, cfg["regimes"])
     lines = ["Snow is regime-adjusted per step (each resort's history in that step's flow, regime_factors.csv)."
              if adjusted else "Snow is NOT regime-adjusted (run scripts/regime_factors.py).", ""]
+    tables: list[pd.DataFrame] = []
     for _, st in storms[storms["status"] == "forecast"].sort_values("fc_start").iterrows():
         s, e = st.fc_start, st.fc_end
         lines.append(f"=== Storm {st.storm_id}: {timefmt.clock(s, weekday=True)} - {timefmt.clock(e, weekday=True)} "
@@ -138,8 +158,8 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> str:
             g = g[g["init"] == g["init"].max()]
             if g["valid_end"].max() <= s:
                 continue  # newest run doesn't reach the storm
-            partial = "" if g["valid_end"].max() >= e else f" (partial, to {timefmt.clock(g['valid_end'].max())})"
-            row = {"model": model, "init": timefmt.run(g["init"].iloc[0])}
+            covers = "full storm" if g["valid_end"].max() >= e else f"to {timefmt.clock(g['valid_end'].max())}"
+            row = {"model": model, "init": timefmt.run(g["init"].iloc[0]), "covers": covers}
             for p in cfg["points"]:
                 gp = g[g["point"] == p]
                 if gp.empty:
@@ -147,12 +167,12 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> str:
                     continue
                 if "member" in gp.columns and gp["member"].notna().any():
                     per = gp.groupby("member").apply(lambda m: window_total(m, s, e), include_groups=False) / MM_PER_IN
-                    row[p] = f"{int((per >= thr).sum())}/{len(per)} mean {per.mean():.2f}\"{partial}"
+                    row[p] = f"{int((per >= thr).sum())}/{len(per)} mean {per.mean():.2f}\""
                 else:
                     water = window_total(gp, s, e) / MM_PER_IN
                     col = "snow_in_adj" if "snow_in_adj" in gp.columns and gp["snow_in_adj"].notna().any() else "snow_in"
                     snow = window_total(gp, s, e, col) if col in gp.columns else np.nan
-                    row[p] = f"{water:.2f}\" {snow:.0f}\" snow{partial}" if not np.isnan(snow) else f"{water:.2f}\"{partial}"
+                    row[p] = f"{water:.2f}\" {snow:.0f}\" snow" if not np.isnan(snow) else f"{water:.2f}\""
             # Snow level at the storm's point while it's precipitating: first wet step -> last wet step, in ft
             gp = g[(g["point"] == st.point) & (g["valid_end"] > s) & (g["valid_start"] < e)]
             if "snow_level_m" in gp.columns:
@@ -167,16 +187,20 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> str:
             if modes:
                 row["modes"] = modes
             rows.append(row)
-        order = ["HRRR", "NAMNEST", "NAM", "RDPS", "GFS", "GDPS", "IFS", "GEFS", "ENS"]
-        t = pd.DataFrame(rows)
-        if not t.empty:
-            t = t.assign(_o=t["model"].map({m: i for i, m in enumerate(order)}).fillna(99)).sort_values("_o").drop(columns="_o")
-            t = t.fillna("")  # ensembles have no snow level or flow (precip only)
-        lines.append(t.to_string(index=False) if not t.empty else "(no model reaches this storm)")
+        # Same columns, same order, for every storm (blank where a model has no value, e.g. ensembles' snow level)
+        cols = ["model", "init", "covers", *cfg["points"], "snow level", "flow", "modes"]
+        t = pd.DataFrame(rows).reindex(columns=cols).fillna("")
+        if t.empty:
+            lines.append("(no model reaches this storm)")
+        else:
+            tables.append(_in_model_order(t))
+            lines.append(("TABLE", len(tables) - 1))  # filled in below, once all tables' widths are known
         lines.append("")
     # Storms dropped or merged in the last day, so a forecast that vanished is visible rather than silently gone
     recent = storms[storms["status"].isin(["dropped", "merged"])
                     & (pd.to_datetime(storms["updated_at"]) >= pd.Timestamp(storms["updated_at"].max()) - pd.Timedelta(days=1))]
     for _, st in recent.sort_values("fc_start").iterrows():
         lines.append(f"--- Storm {st.storm_id} ({timefmt.clock(st.fc_start, weekday=True)}) {st.status.upper()}: {st.note}")
+    rendered = _aligned(tables)
+    lines = [rendered[x[1]] if isinstance(x, tuple) else x for x in lines]
     return "\n".join(lines) if lines else "No storms in the newest model runs.\n"
