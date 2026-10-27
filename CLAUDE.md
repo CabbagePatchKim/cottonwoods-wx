@@ -146,4 +146,9 @@ WEBSITE FEED (owner, 2026-10-27; after the HTML report, shares its summary data)
    for the owner: audience (private / friends / public), existing site or build one, host account + token for
    auto-publish (confirm before anything goes public). Public needs attribution (ECMWF, NCAR GDEX, MSC), Collins
    CC BY-NC (non-commercial), "not an official forecast" disclaimer, nothing from alta.com.
+   RELEASES before going live (owner, 2026-10-27): the site must not change just because code is being developed.
+   Scheduled passes + feed run from a PRODUCTION folder (git worktree pinned to an owner-approved tag, e.g. v1.0);
+   development continues in main; owner approves each release (show git diff first). Feed carries schema_version /
+   /v1/ paths: additive changes only within v1, breaking changes as v2 alongside v1. Contract tests pin the v1 format.
+   Archive/data stay shared between folders so a release never loses history.
 Deferred: server-side subsetting (NOMADS / GeoMet), only if bandwidth becomes a problem.
