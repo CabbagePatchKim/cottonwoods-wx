@@ -18,7 +18,7 @@ from cottonwoods.report import render_storms
 from cottonwoods.archive.forecasts import load_forecasts
 from cottonwoods.archive.obs import load_snotel, load_soundings
 from cottonwoods.obs.sounding import summarize
-from cottonwoods.config import ROOT, load_config
+from cottonwoods.config import REPORTS_DIR, load_config
 
 cfg = load_config()
 now = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
@@ -37,6 +37,6 @@ for _, st in newly.iterrows():
              f"observed {st.obs_water_in:.2f}\" water (SNOTEL), observed flow {st.obs_flow}. "
              f"Scores in data/archive/storm_scores.csv\n")
 print(text)
-out = ROOT / "data" / "reports"
+out = REPORTS_DIR
 out.mkdir(parents=True, exist_ok=True)
 (out / "storms_latest.txt").write_text(text, encoding="utf-8")

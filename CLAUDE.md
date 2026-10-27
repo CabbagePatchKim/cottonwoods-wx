@@ -64,7 +64,11 @@ Storms, verification, reports
   Detect events (12 h dry gap), storm windows (LONGEST deterministic event), storm table, verify
   against SNOTEL once 12 h dry, scores. `verify.py`: the separate DAILY-window verification (24 h windows ending
   12 UTC; NOAA ALTA at its 6 pm). Both are intentional: storms = event totals, verify = day-by-day skill.
-- `report.py`: the daily model table, staleness warnings, and the storm report (`render_storms`).
+- `report.py`: the daily model table, staleness warnings, and the storm report. Numbers and text are separate:
+  `model_days` / `storm_models` compute, `model_table` / `render_storms` format; the feed reuses the numbers.
+- `feed.py`: website feed v1 (meta/storms/daily .json, Mountain ISO times, inches, null for missing);
+  `release.py`: the approval gate. `scripts/publish_feed.py` (last step of run_models.bat; `--preview` for any code
+  -> data/feed_preview/). `config.DATA_DIR` honors COTTONWOODS_DATA so a production copy shares one data folder.
 
 Observation clients (`obs/`): `snotel.py` (AWDB), `synoptic.py` (CLN, needs token), `ghcn.py` (NOAA coop),
 `sounding.py` (SLC balloons via IEM). Scheduled: Windows tasks "Cottonwoods models" (every 3 h, run_models.bat) and
@@ -155,4 +159,13 @@ WEBSITE FEED (owner, 2026-10-27; after the HTML report, shares its summary data)
    unless its code is an owner-approved tag (e.g. v1.0, made by the owner or on the owner's explicit "approve") with no
    uncommitted changes; development code in main can never publish, even if run by hand. Forecast DATA still refreshes
    every pass; only the CODE producing it is frozen to the approved release.
+   BUILT 2026-10-27: feed.py, release.py, scripts/publish_feed.py, tests/test_feed.py (v1 contract + gate). Not live.
+   RELEASE PROCEDURE (only on the owner's explicit "approve", after showing `git diff <last tag>..HEAD --stat`):
+     1. `git tag -a vX.Y -m "Approved by owner <date>"` in the dev folder.
+     2. First release only: `git worktree add ..\cottonwoods-wx-prod vX.Y`; write prod\data_dir.txt = the dev folder's
+        data path (git-ignored); repoint task "Cottonwoods models" to prod\scriptsun_models.bat (the whole pass,
+        incl. archiving, then runs approved code). Later releases: `git -C ..\cottonwoods-wx-prod checkout vX.Y`.
+     3. Run publish_feed.py from prod once to confirm it prints the tag.
+   STILL OPEN: uploading data/feed/v1 to the friend's site (need: host type, how their site wants the files - repo,
+   bucket or URL - and a token). Never upload before the owner confirms the destination.
 Deferred: server-side subsetting (NOMADS / GeoMet), only if bandwidth becomes a problem.

@@ -12,7 +12,7 @@ import argparse
 from datetime import datetime, timedelta, timezone
 
 from cottonwoods.archive.forecasts import load_forecasts
-from cottonwoods.config import ROOT, load_config
+from cottonwoods.config import REPORTS_DIR, load_config
 from cottonwoods import timefmt
 from cottonwoods.report import render, staleness
 
@@ -35,7 +35,7 @@ body = render(fc, cfg, args.points or list(cfg["points"]), args.days) if not fc.
 
 text = header + "\n" + body
 print(text)
-out = ROOT / "data" / "reports"
+out = REPORTS_DIR
 out.mkdir(parents=True, exist_ok=True)
 (out / "models_latest.txt").write_text(text, encoding="utf-8")
 (out / f"models_{now:%Y%m%d_%H%M}.txt").write_text(text, encoding="utf-8")

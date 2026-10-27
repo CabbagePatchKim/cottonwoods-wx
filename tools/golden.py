@@ -9,15 +9,14 @@ Covers: every archived run re-derived from its raw pulled columns (all derived c
 regimes, modes), the storm report text and the model report text, at a fixed 'now'.
 """
 import sys
-from pathlib import Path
 
 import pandas as pd
 
 from cottonwoods.archive.forecasts import forecast_dir
 from cottonwoods.archive.io import read_df
-from cottonwoods.config import load_config
+from cottonwoods.config import PROCESSED_DIR, load_config
 
-OUT = Path(__file__).resolve().parents[1] / "data" / "processed" / "golden"
+OUT = PROCESSED_DIR / "golden"
 NOW = pd.Timestamp("2026-10-27 05:00")
 DERIVED = ["tmax_k", "slr_kuchera", "snow_in", "snow_in_raw", "z_ground_m", "t_stn_c", "tw_stn_c", "tw_eff_c",
            "rh_sub", "dry_nudge", "tmax_stn_k", "freezing_level_m", "snow_level_m", "snow_frac", "flow_dir700",

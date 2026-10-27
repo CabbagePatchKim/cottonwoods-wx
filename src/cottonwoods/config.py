@@ -2,6 +2,7 @@
 # Lets type hints like `Path | None` work on older Pythons. You'll see this line at the top of most modules.
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import yaml
@@ -11,11 +12,17 @@ import yaml
 # no matter which folder you run them from.
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ROOT / "config" / "stations.yaml"
-JOURNAL_DIR = ROOT / "data" / "journal"
-RAW_DIR = ROOT / "data" / "raw"
-PROCESSED_DIR = ROOT / "data" / "processed"
-ARCHIVE_DIR = ROOT / "data" / "archive"
-MANUAL_DIR = ROOT / "data" / "manual"
+# The data folder. Normally the project's own data/; the PRODUCTION copy (an approved release in its own folder,
+# see CLAUDE.md "Website feed") sets COTTONWOODS_DATA to the development folder's data/, so both share one archive.
+DATA_DIR = Path(os.environ.get("COTTONWOODS_DATA") or ROOT / "data")
+JOURNAL_DIR = DATA_DIR / "journal"
+RAW_DIR = DATA_DIR / "raw"
+PROCESSED_DIR = DATA_DIR / "processed"
+ARCHIVE_DIR = DATA_DIR / "archive"
+MANUAL_DIR = DATA_DIR / "manual"
+REPORTS_DIR = DATA_DIR / "reports"
+FEED_DIR = DATA_DIR / "feed"              # the published website feed (approved releases only)
+FEED_PREVIEW_DIR = DATA_DIR / "feed_preview"  # development previews of the feed, never published
 
 
 # Settings the code reads directly, by section. The config file is the ONLY source of these values: the code has

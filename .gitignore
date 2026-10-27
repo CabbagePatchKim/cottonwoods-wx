@@ -15,3 +15,6 @@ data/reports/
 .ipynb_checkpoints/
 # kept in git on purpose: data/journal/ and data/manual/ (owner-entered), config/, src/, scripts/, tests/, tools/
 *.bak
+data/feed/
+data/feed_preview/
+data_dir.txt
