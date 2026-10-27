@@ -335,6 +335,34 @@ def manual_totals(storm: pd.Series, totals: pd.DataFrame, cfg: dict) -> dict | N
             "sources": ", ".join(sorted(m["source"].unique()))}
 
 
+def hand_obs_totals(storm: pd.Series, readings: pd.DataFrame, cfg: dict, source: str = "collins") -> dict | None:
+    """Storm totals from hand-copied readings (archive.obs.load_hand_obs) inside the storm's window, give or take
+    storms.manual_match_hours. Per variable, board readings (12 h or longer) are used when there are any, else the
+    hourly ones are summed: never both, so nothing is counted twice. Max depth is reported as well.
+    {"new_snow_in", "water_in", "max_depth_in", "sources"}, or None if there are no readings in the window."""
+    if readings is None or readings.empty:
+        return None
+    s = storm.final_start if pd.notna(storm.final_start) else storm.fc_start
+    e = storm.final_end if pd.notna(storm.final_end) else storm.fc_end
+    slack = pd.Timedelta(hours=cfg["storms"]["manual_match_hours"])
+    r = readings[(readings["start_utc"] >= s - slack) & (readings["end_utc"] <= e + slack)]
+    if r.empty:
+        return None
+
+    def total(col):
+        for rows in (r[r["period_h"] >= 12], r[r["period_h"] < 12]):
+            rows = rows[rows[col].notna()]
+            if len(rows):
+                return float(rows[col].sum()), "board" if rows["period_h"].min() >= 12 else "hourly"
+        return np.nan, ""
+
+    snow, how_s = total("new_snow_in")
+    water, how_w = total("water_in")
+    kinds = sorted({k for k in (how_s, how_w) if k})
+    return {"new_snow_in": snow, "water_in": water, "max_depth_in": r["depth_in"].max(),
+            "sources": f"{source} ({', '.join(kinds)})" if kinds else source}
+
+
 def load_scores(root=None) -> pd.DataFrame:
     p = (root or ARCHIVE_DIR) / "storm_scores.csv"
     return pd.read_csv(p, parse_dates=["init"]) if p.exists() else pd.DataFrame()

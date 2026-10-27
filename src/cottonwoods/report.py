@@ -12,7 +12,7 @@ import pandas as pd
 
 from . import regimes, timefmt
 from .config import PROCESSED_DIR
-from .storms import manual_totals, run_flow, run_modes
+from .storms import hand_obs_totals, manual_totals, run_flow, run_modes
 from .windows import window_total
 
 MM_PER_IN = 25.4
@@ -264,9 +264,10 @@ def last_runs_before(scores: pd.DataFrame, storm_id: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def render_verified(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataFrame, cfg: dict, now) -> str:
-    """Storms verified in the last storms.report_verified_days: observed totals (SNOTEL water; hand-entered totals such
-    as Alta Collins snow and water) next to each model's last run before the storm began."""
+def render_verified(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataFrame, cfg: dict, now,
+                    readings: pd.DataFrame | None = None) -> str:
+    """Storms verified in the last storms.report_verified_days: observed totals (SNOTEL water; hand-entered storm totals
+    and hand-copied readings, e.g. Alta Collins snow and water) next to each model's last run before the storm."""
     days = cfg["storms"]["report_verified_days"]
     v = storms[(storms["status"] == "verified") & (pd.to_datetime(storms["final_end"]) >= pd.Timestamp(now) - pd.Timedelta(days=days))]
     if v.empty:
@@ -276,13 +277,13 @@ def render_verified(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataF
         lines.append(f"--- Storm {st.storm_id}: {timefmt.clock(st.final_start, weekday=True)} - "
                      f"{timefmt.clock(st.final_end, weekday=True)}")
         obs = f"SNOTEL {st.obs_water_in:.2f}\" water" if pd.notna(st.obs_water_in) else "SNOTEL -"
-        man = manual_totals(st, totals, cfg)
-        if man:
+        found = [m for m in (manual_totals(st, totals, cfg), hand_obs_totals(st, readings, cfg)) if m]
+        for man in found:
             parts = [f"{man['new_snow_in']:.0f}\" snow" if pd.notna(man["new_snow_in"]) else "",
                      f"{man['water_in']:.2f}\" water" if pd.notna(man["water_in"]) else ""]
             obs += f" | {man['sources']}: " + ", ".join(p for p in parts if p)
-        else:
-            obs += " | Collins: not entered yet (data/entries/storm_totals.csv)"
+        if not found:
+            obs += " | Collins: not entered yet (data/entries/)"
         lines.append(f"    observed: {obs}")
         runs = last_runs_before(scores, st.storm_id) if not scores.empty else pd.DataFrame()
         if runs.empty:

@@ -75,7 +75,8 @@ Storms, verification, reports
 
 Hand entries: data/manual/ (in git: new_snow.csv daily readings for verify.py) and data/entries/ (NOT in git,
 bucket-synced so the cloud sees them without a release: storm_totals.csv, e.g. Alta Collins storm totals the owner
-reads off the NWS page by eye; sent with scripts/send_entries.bat). Storm report section "Verified in the last N
+reads off the NWS page by eye, and collins_obs.npy/.csv: individual hourly + 12 h board readings, columns
+obs.OBS_ENTRY_COLS; storm totals prefer boards, hourly only fills gaps; sent with scripts/send_entries.bat). Storm report section "Verified in the last N
 days" (report.render_verified) shows SNOTEL + hand totals vs each model's last run before the storm.
 Collins automation: NOT possible without a Synoptic token (api.weather.gov lists CLN but serves no observations;
 the NWS page uses an NWS Synoptic key - never automate it, rendered or not). Laptop bucket access: boto3 in

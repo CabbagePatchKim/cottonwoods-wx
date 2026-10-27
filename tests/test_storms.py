@@ -193,3 +193,34 @@ def test_hand_entered_collins_totals_match_a_verified_storm_and_show_in_the_repo
     assert "10/31 06z" in text and '1.20"' in text and '14"' in text           # GFS: its LAST run before the storm
     assert '0.60"' in text                                                      # GEFS: member mean
     assert render_verified(pd.DataFrame([st]), scores, totals.iloc[2:], cfg, pd.Timestamp("2026-11-03")).count("not entered yet") == 1
+
+
+def test_hand_copied_collins_readings_prefer_boards_and_never_double_count():
+    from cottonwoods.archive.obs import load_hand_obs
+    from cottonwoods.storms import hand_obs_totals
+    cfg = make_cfg()
+    rows = np.array([[2026, 10, 31, 18, 12, 7.0, 0.60, 14, 25, 95],     # board: 0600-1800 MDT 10/31
+                     [2026, 11, 1, 6, 12, 5.0, np.nan, 18, 20, 96],     # board without water
+                     [2026, 10, 31, 7, 1, 1.0, 0.08, 9, 24, 97],        # hourly readings
+                     [2026, 10, 31, 8, 1, 1.5, 0.10, 10, 24, 97],
+                     [2026, 10, 31, 8, 1, 2.0, 0.12, 10, 24, 97]])      # same hour typed again: the last one wins
+    with tempfile.TemporaryDirectory() as d:
+        np.save(Path(d) / "collins_obs.npy", rows)
+        r = load_hand_obs(Path(d))
+        bad = rows.copy()
+        bad[0, 5] = -1
+        np.save(Path(d) / "collins_obs.npy", bad)
+        try:
+            load_hand_obs(Path(d))
+            raise AssertionError("a negative amount should be refused")
+        except ValueError:
+            pass
+    assert len(r) == 4 and r["end_utc"].iloc[0] == pd.Timestamp("2026-10-31 13:00")   # 0700 MDT
+    st = pd.Series({"point": "alta", "fc_start": pd.Timestamp("2026-10-31 12:00"), "fc_end": pd.Timestamp("2026-11-01 13:00"),
+                    "final_start": pd.Timestamp("2026-10-31 12:00"), "final_end": pd.Timestamp("2026-11-01 14:00")})
+    t = hand_obs_totals(st, r, cfg)
+    assert t["new_snow_in"] == 12.0                  # boards 7 + 5; the hourly 1 + 2 are NOT added on top
+    assert abs(t["water_in"] - 0.60) < 1e-9          # water from the one board that has it
+    assert t["max_depth_in"] == 18 and t["sources"] == "collins (board)"
+    hourly_only = hand_obs_totals(st, r[r["period_h"] == 1], cfg)
+    assert hourly_only["new_snow_in"] == 3.0 and hourly_only["sources"] == "collins (hourly)"

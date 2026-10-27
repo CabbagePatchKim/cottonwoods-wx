@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from ..config import ARCHIVE_DIR, ENTRIES_DIR, MANUAL_DIR
@@ -217,6 +218,39 @@ def load_storm_totals(path: Path | None = None) -> pd.DataFrame:
     df["start_utc"] = [_local_to_utc(t) for t in df["start"]]
     df["end_utc"] = [_local_to_utc(t) for t in df["end"]]
     return df
+
+
+# Column order of a hand-entered readings array (data/entries/collins_obs.npy); a CSV uses the same names as headers.
+OBS_ENTRY_COLS = ["year", "month", "day", "hour", "period_h", "new_snow_in", "water_in", "depth_in", "temp_f", "rh_pct"]
+
+
+def load_hand_obs(folder: Path | None = None, name: str = "collins_obs") -> pd.DataFrame:
+    """Readings copied by hand (Alta Collins, from the NWS page by eye): <name>.npy (columns in OBS_ENTRY_COLS order)
+    and/or <name>.csv (same names as headers). Each row is one PERIOD ending at year-month-day hour, Mountain local:
+    hourly (period_h 1) or board readings (12, 24). Amounts are totals for that period; NaN = not read.
+    Returns end_utc, start_utc and the values; a reading entered twice keeps the last one."""
+    folder = folder or ENTRIES_DIR
+    frames = []
+    if (folder / f"{name}.npy").exists():
+        arr = np.atleast_2d(np.load(folder / f"{name}.npy"))
+        if arr.shape[1] != len(OBS_ENTRY_COLS):
+            raise ValueError(f"{name}.npy has {arr.shape[1]} columns; expected {len(OBS_ENTRY_COLS)}: {OBS_ENTRY_COLS}")
+        frames.append(pd.DataFrame(arr, columns=OBS_ENTRY_COLS))
+    if (folder / f"{name}.csv").exists():
+        frames.append(pd.read_csv(folder / f"{name}.csv")[OBS_ENTRY_COLS])
+    if not frames:
+        return pd.DataFrame(columns=OBS_ENTRY_COLS + ["end_utc", "start_utc"])
+    df = pd.concat(frames, ignore_index=True).dropna(subset=["year", "month", "day", "hour", "period_h"])
+    bad = df[(df["hour"] < 0) | (df["hour"] > 23) | (df["period_h"] <= 0) | (df["period_h"] > 72)
+             | (df[["new_snow_in", "water_in", "depth_in"]] < 0).any(axis=1)]
+    if len(bad):
+        raise ValueError(f"{name}: impossible values in rows {list(bad.index)} (hour 0-23, period 1-72 h, no negative amounts)")
+    local = pd.to_datetime(dict(year=df["year"], month=df["month"], day=df["day"], hour=df["hour"]))
+    df["end_utc"] = local.dt.tz_localize(LOCAL_TZ, ambiguous=False, nonexistent="shift_forward") \
+        .dt.tz_convert("UTC").dt.tz_localize(None)
+    df["start_utc"] = df["end_utc"] - pd.to_timedelta(df["period_h"], unit="h")
+    return df.drop_duplicates(subset=["end_utc", "period_h"], keep="last").sort_values(["end_utc", "period_h"]) \
+        .reset_index(drop=True)
 
 
 def load_manual(path: Path | None = None) -> pd.DataFrame:

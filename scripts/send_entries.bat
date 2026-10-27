@@ -5,5 +5,5 @@ cd /d "%~dp0.."
 set PYTHONUTF8=1
 rem boto3 (bucket access) lives in its own folder so the main Python environment is left alone
 set PYTHONPATH=%CD%\src;%USERPROFILE%\.cwx_pylib
-"C:\Users\patri\Documents\GIS_Class_Documents\NR6960\python.exe" scripts\bucket_sync.py push --only entries/storm_totals.csv --env-file "%USERPROFILE%\.cwx_r2.env"
+"C:\Users\patri\Documents\GIS_Class_Documents\NR6960\python.exe" scripts\bucket_sync.py push --only entries/storm_totals.csv entries/collins_obs.csv entries/collins_obs.npy --env-file "%USERPROFILE%\.cwx_r2.env"
 pause

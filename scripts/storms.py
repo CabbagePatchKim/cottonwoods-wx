@@ -16,7 +16,7 @@ import pandas as pd
 from cottonwoods import storms, timefmt
 from cottonwoods.report import render_storms, render_verified
 from cottonwoods.archive.forecasts import load_forecasts
-from cottonwoods.archive.obs import load_snotel, load_soundings, load_storm_totals
+from cottonwoods.archive.obs import load_hand_obs, load_snotel, load_soundings, load_storm_totals
 from cottonwoods.obs.sounding import summarize
 from cottonwoods.config import REPORTS_DIR, load_config
 
@@ -31,7 +31,7 @@ if fc.empty:
 snd = load_soundings(start=now - timedelta(days=25))
 table = storms.run(fc, obs, cfg, now, soundings=summarize(snd) if not snd.empty else None)
 text = f"Storms, {timefmt.now_line(now)}. Times are Mountain (MDT/MST), 24-hour.\n\n" + render_storms(table, fc, cfg)
-verified = render_verified(table, storms.load_scores(), load_storm_totals(), cfg, now)
+verified = render_verified(table, storms.load_scores(), load_storm_totals(), cfg, now, readings=load_hand_obs())
 if verified:
     text += "\n" + verified
 newly = table[(table.status == "verified") & (table.updated_at == now)]
