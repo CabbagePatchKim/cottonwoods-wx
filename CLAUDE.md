@@ -55,7 +55,10 @@ Archive (`archive/`)
 
 Derivation (pure functions, all tested offline)
 - `profile.py`: profile at the station's real elevation, wet-bulb snow/mix/rain (NWS WR TA 19-01), dry-air nudge.
-- `slr.py`: Kuchera. `regimes.py`: per-step 700 mb flow, storm phases, resort regime factors.
+- `slr.py`: Kuchera. `regimes.py`: per-step 700 mb flow, storm phases, resort regime factors. Temperature: `band`
+  (warm > -4 / mild > -10 / cold, config temp_bands_700mb_c) is what's shown and the finest factor level; the 2-way
+  `thermal` (cold_700mb_c) is the factor fallback. factor_for: flow+band -> flow+thermal -> flow -> 1.0 (each needs
+  factor_min_days). Archived runs are relabelled on read (with_bands), so changing band edges needs no re-archive.
 - `modes.py`: precip mode per step (frontal / post-frontal / cellular / lake-effect).
 
 Storms, verification, reports

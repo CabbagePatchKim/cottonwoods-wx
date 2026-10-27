@@ -151,7 +151,7 @@ def run_flow(g: pd.DataFrame, point: str, s, e, cfg: dict) -> str:
     gp = g[(g["point"] == point) & (g["valid_end"] > s) & (g["valid_start"] < e)]
     if "regime" not in gp.columns:
         return ""
-    wet = gp[gp["qpf_mm"] >= cfg["storms"]["wet_in"] * MM_PER_IN]
+    wet = regimes.with_bands(gp[gp["qpf_mm"] >= cfg["storms"]["wet_in"] * MM_PER_IN], cfg["regimes"])
     return regimes.phase_string(regimes.phases(wet, cfg["regimes"]))
 
 
@@ -208,9 +208,17 @@ def update_forecast_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, no
     # event must not hide that a second event also overlaps it (that's a split, not a new unrelated storm).
     before = storms[["fc_start", "fc_end"]].copy()
 
+    # Storms tracked before revival existed could leave a dropped row and a live row with the same id; keep the live one
+    live_ids = set(storms.loc[storms["status"] != "dropped", "storm_id"])
+    storms = storms[~((storms["status"] == "dropped") & storms["storm_id"].isin(live_ids))].reset_index(drop=True)
+
+    def new_id(start):
+        base, ids = f"{start:%Y%m%d%H}", set(storms["storm_id"])
+        return base if base not in ids else next(f"{base}{c}" for c in "bcdefghijk" if f"{base}{c}" not in ids)
+
     def blank_row(w, **extra):
         row = {c: pd.NaT if c in TIME_COLS else np.nan for c in COLS}
-        row.update(w, storm_id=f"{w['fc_start']:%Y%m%d%H}", point=point, status="forecast", updated_at=now, **extra)
+        row.update(w, storm_id=new_id(w["fc_start"]), point=point, status="forecast", updated_at=now, **extra)
         return row
 
     windows = [w for w in storm_windows(model_events(fc, point, scfg)) if w["fc_end"] >= now - pd.Timedelta(days=3)]
@@ -226,7 +234,19 @@ def update_forecast_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, no
         if hits.empty:
             already_verified = ((storms["point"] == point) & (storms["status"] == "verified")
                                 & (storms["final_start"] <= w["fc_end"]) & (storms["final_end"] >= w["fc_start"])).any()
-            if not already_verified:
+            dropped = storms[(storms["point"] == point) & (storms["status"] == "dropped")
+                             & (storms["fc_start"] <= w["fc_end"]) & (storms["fc_end"] >= w["fc_start"])
+                             & ~storms.index.isin(touched)]
+            if not already_verified and len(dropped):
+                # a storm the models dropped and now show again: the same storm, revived (not a new one)
+                back = dropped.sort_values("updated_at").index[-1]
+                for k, v in w.items():
+                    storms.at[back, k] = v
+                storms.at[back, "status"] = "forecast"
+                storms.at[back, "note"] = f"back in the models after being dropped ({timefmt.clock(now)})"
+                storms.at[back, "updated_at"] = now
+                touched.add(back)
+            elif not already_verified:
                 storms = pd.concat([storms, pd.DataFrame([blank_row(w)])], ignore_index=True)
                 touched.add(storms.index[-1])
             continue

@@ -75,7 +75,13 @@ kuchera:
 
 # Flow-regime thresholds (used by regimes.py; tune against the archive)
 regimes:
-  cold_700mb_c: -10.0
+  cold_700mb_c: -10.0      # 2-way split (cold / warm): the regime factors' middle fallback level
+  # Displayed 700 mb temperature bands (reports, feed, phases) and the finest regime-factor level:
+  # [above, name] = the first band whose `above` the temperature exceeds; null = everything colder.
+  temp_bands_700mb_c:
+    - [-4.0, warm]
+    - [-10.0, mild]
+    - [null, cold]
   lake_delta_c: 16.0       # lake-surface temp minus 700 mb temp above this = lake-enhancement potential
   # Per-step flow regimes (src/cottonwoods/regimes.py). Regimes change through a storm, so every model step and
   # every balloon sounding gets its own label; a storm is a sequence of phases ("SW warm 65% -> NW cold 35%").

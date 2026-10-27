@@ -32,7 +32,7 @@ REQUIRED = {
     "archive": ["format", "models", "cycles_utc", "hrrr_max_fxx", "gfs_max_fxx", "gfs_step_hours", "recent_cycles"],
     "kuchera": ["top_level_hpa", "bottom_level_hpa", "slr_floor", "slr_cap"],
     "precip_type": ["snow_level_tw_c", "mix_low_tw_c", "mix_high_tw_c", "rh_moist", "rh_dry", "max_nudge", "snow_min_slr"],
-    "regimes": ["cold_700mb_c", "lake_delta_c", "flow_bins", "other_label", "min_phase_hours", "factor_sites",
+    "regimes": ["cold_700mb_c", "temp_bands_700mb_c", "lake_delta_c", "flow_bins", "other_label", "min_phase_hours", "factor_sites",
                 "factor_min_days", "front_drop_c", "front_veer_deg", "front_window_hours", "cellular_cape_jkg",
                 "cellular_lapse_c_per_km", "event_gap_hours", "event_wet_mm", "lake_flow_deg", "lake_min_rh700",
                 "lake_temp_c_by_month"],

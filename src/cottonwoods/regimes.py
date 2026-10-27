@@ -37,11 +37,25 @@ def flow_label(dir_deg: float, cfg: dict) -> str:
 
 
 def thermal_label(t700_c: float, cfg: dict) -> str:
+    """The two-way split (cold at or below cold_700mb_c, else warm). Kept for the regime factors' middle fallback
+    level; what people see is band_label."""
     return "?" if t700_c is None or not np.isfinite(t700_c) else ("cold" if t700_c <= cfg["cold_700mb_c"] else "warm")
 
 
+def band_label(t700_c: float, cfg: dict) -> str:
+    """The displayed temperature band from config temp_bands_700mb_c: [[above, name], ...], first band whose
+    `above` the temperature exceeds; `above` null = everything colder. Default: warm > -4, mild > -10, cold."""
+    if t700_c is None or not np.isfinite(t700_c):
+        return "?"
+    for above, name in cfg["temp_bands_700mb_c"]:
+        if above is None or t700_c > above:
+            return name
+    return "?"
+
+
 def add_step_regimes(df, cfg: dict):
-    """Add flow_dir700, flow_spd700_kt, flow, thermal and regime ('SW warm') to each row that has 700 mb wind."""
+    """Add flow_dir700, flow_spd700_kt, flow, thermal (2-way), band (3-way) and regime ('SW mild') to each row that
+    has 700 mb wind."""
     if not {"u_700_ms", "v_700_ms"} <= set(df.columns):
         return df
     out = df.copy()
@@ -50,8 +64,17 @@ def add_step_regimes(df, cfg: dict):
     t700 = out["t_700_k"] - 273.15 if "t_700_k" in out else np.nan
     out["flow"] = [flow_label(d, cfg) for d in out["flow_dir700"]]
     out["thermal"] = [thermal_label(t, cfg) for t in np.broadcast_to(t700, len(out))]
-    out["regime"] = out["flow"] + " " + out["thermal"]
+    out["band"] = [band_label(t, cfg) for t in np.broadcast_to(t700, len(out))]
+    out["regime"] = [f"{f} {b}" for f, b in zip(out["flow"], out["band"])]   # row by row: also works with no rows
     return out
+
+
+def with_bands(df, cfg: dict):
+    """df labelled with the current bands: runs archived before bands existed (or with other band edges) carry an
+    older `regime`, so labels are recomputed from their stored 700 mb wind and temperature when read."""
+    if not {"u_700_ms", "v_700_ms", "t_700_k"} <= set(df.columns):
+        return df
+    return add_step_regimes(df, cfg)
 
 
 def phases(steps, cfg: dict, weight_col: str = "qpf_mm") -> list[dict]:
@@ -61,8 +84,10 @@ def phases(steps, cfg: dict, weight_col: str = "qpf_mm") -> list[dict]:
     neighbor holding more water, repeatedly, so one odd step doesn't count as a regime change. Each phase:
     regime, start, end, water share (0-1), water-weighted 700 mb direction and temperature.
     """
+    if steps.empty or "regime" not in steps:
+        return []
     s = steps.sort_values("valid_start")
-    s = s[s["regime"].notna() & ~s["regime"].str.contains(r"\?", regex=True)]
+    s = s[s["regime"].notna() & ~s["regime"].astype(str).str.contains(r"\?", regex=True)]
     if s.empty:
         return []
     groups = []
@@ -117,8 +142,10 @@ def phases(steps, cfg: dict, weight_col: str = "qpf_mm") -> list[dict]:
 
 
 def phase_string(ph: list[dict]) -> str:
-    """'SW warm 65% -> NW cold 35%' (or '' when there are no phases)."""
-    return " -> ".join(f"{p['regime']} {100 * p['share']:.0f}%" for p in ph)
+    """'SW mild -6C 65% -> NW cold -12C 35%': each phase's water-weighted 700 mb temperature included ('' when
+    there are no phases)."""
+    return " -> ".join(f"{p['regime']}" + (f" {int(round(p['t700_c']))}C" if np.isfinite(p["t700_c"]) else "")   # int: no "-0C"
+                       + f" {100 * p['share']:.0f}%" for p in ph)
 
 
 def sounding_steps(summary, start, end, cfg: dict):
@@ -134,38 +161,50 @@ def sounding_steps(summary, start, end, cfg: dict):
     out = pd.DataFrame({"valid_start": s["time_utc"] - pd.Timedelta(hours=6), "valid_end": s["time_utc"] + pd.Timedelta(hours=6),
                         "u_700_ms": u.to_numpy(), "v_700_ms": v.to_numpy(), "t_700_k": (s["t700_c"] + 273.15).to_numpy(),
                         "w": 1.0})
-    out["regime"] = [f"{flow_label(d, cfg)} {thermal_label(t, cfg)}" for d, t in zip(s["wdir700"], s["t700_c"])]
+    out["regime"] = [f"{flow_label(d, cfg)} {band_label(t, cfg)}" for d, t in zip(s["wdir700"], s["t700_c"])]
     return out
 
 
 # --- resort factors by regime ----------------------------------------------------------------------
 
 def load_factors(path) -> pd.DataFrame:
-    """data/processed/regime_factors.csv: point, flow, thermal ('' = flow only), factor, n_days."""
+    """data/processed/regime_factors.csv: point, flow, thermal (2-way), band (3-way), factor, n_days. A row with
+    both thermal and band '' is the flow-only factor. Files from before bands get an empty band column."""
     from pathlib import Path
     p = Path(path)
-    return pd.read_csv(p, keep_default_na=False) if p.exists() else pd.DataFrame(columns=["point", "flow", "thermal", "factor", "n_days"])
+    cols = ["point", "flow", "thermal", "band", "factor", "n_days"]
+    f = pd.read_csv(p, keep_default_na=False) if p.exists() else pd.DataFrame(columns=cols)
+    if "band" not in f.columns:
+        f["band"] = ""
+    return f
 
 
-def factor_for(factors: pd.DataFrame, point: str, flow: str, thermal: str, min_days: int) -> float:
-    """Factor for one point and regime: flow+temperature if it has min_days wet days, else flow only (also needing
-    min_days), else 1.0. (Alta's N-flow factor rests on 4 days of Atwater data: too few to use.)"""
+def factor_for(factors: pd.DataFrame, point: str, flow: str, thermal: str, band: str, min_days: int) -> float:
+    """Factor for one point and regime, the finest level with min_days wet days of history: flow + band (3-way),
+    else flow + thermal (2-way), else flow only, else 1.0. (Alta's N-flow factor rests on 4 days of Atwater data:
+    too few to use.)"""
     f = factors[(factors["point"] == point) & (factors["flow"] == flow) & (factors["n_days"].astype(float) >= min_days)]
-    both = f[f["thermal"] == thermal]
-    if len(both):
-        return float(both["factor"].iloc[0])
-    only = f[f["thermal"] == ""]
-    return float(only["factor"].iloc[0]) if len(only) else 1.0
+    if "band" not in f.columns:
+        f = f.assign(band="")
+    for level in (f[(f["band"] == band) & (f["thermal"] == "")], f[(f["thermal"] == thermal) & (f["band"] == "")],
+                  f[(f["thermal"] == "") & (f["band"] == "")]):
+        if len(level):
+            return float(level["factor"].iloc[0])
+    return 1.0
 
 
 def apply_factors(df, factors: pd.DataFrame, cfg: dict):
     """Add regime_factor and snow_in_adj / qpf_mm_adj per step: each step scaled by ITS regime's factor."""
-    out = df.copy()
+    out = with_bands(df.copy(), cfg)
     if "flow" not in out or factors.empty:
         out["regime_factor"] = 1.0
     else:
-        out["regime_factor"] = [factor_for(factors, p, fl, th, cfg["factor_min_days"])
-                                for p, fl, th in zip(out["point"], out["flow"], out["thermal"])]
+        if "band" not in out:
+            out["band"] = "?"
+        # Look each distinct (point, flow, thermal, band) up once: a 20-day load has ~1M steps but a few dozen regimes
+        keys = list(zip(out["point"], out["flow"], out["thermal"], out["band"]))
+        table = {k: factor_for(factors, *k, cfg["factor_min_days"]) for k in set(keys)}
+        out["regime_factor"] = [table[k] for k in keys]
     out["qpf_mm_adj"] = out["qpf_mm"] * out["regime_factor"]
     if "snow_in" in out:
         out["snow_in_adj"] = out["snow_in"] * out["regime_factor"]

@@ -102,13 +102,15 @@ def pull(s3, bucket: str, data_dir: Path, ccfg: dict, now: datetime) -> tuple[in
     return got, old, kept
 
 
-def push(s3, bucket: str, data_dir: Path, ccfg: dict) -> int:
-    """Upload what's new or changed. Returns the number uploaded. Never deletes anything in the bucket."""
+def push(s3, bucket: str, data_dir: Path, ccfg: dict, only: list[str] | None = None) -> int:
+    """Upload what's new or changed. Returns the number uploaded. Never deletes anything in the bucket.
+    only: paths under data/ (e.g. ["processed/regime_factors.csv"]) to upload just those files. Use it from the
+    laptop once the cloud runs the passes, so the laptop's older archive files never overwrite the cloud's."""
     remote = remote_files(s3, bucket)
     sent = 0
     for f in sorted(Path(data_dir).rglob("*")):
         rel = f.relative_to(data_dir).as_posix()
-        if not f.is_file() or not wanted(rel, ccfg):
+        if not f.is_file() or not wanted(rel, ccfg) or (only is not None and rel not in only):
             continue
         if rel in remote and same(f, *remote[rel][:2]):
             continue

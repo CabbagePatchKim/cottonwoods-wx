@@ -145,3 +145,19 @@ def test_model_disagreement_and_parts_are_reported():
     g = run_steps("GFS", "2026-11-01", [(10, 20), (28, 40)])
     parts = st.run_subperiods(g, "alta", pd.Timestamp("2026-11-01 10:00"), pd.Timestamp("2026-11-01 16:00") + pd.Timedelta(hours=24), cfg)
     assert parts.count("|") == 1 and parts.endswith("55%")      # 10 h then 12 h of water: 45% | 55%
+
+
+def test_a_dropped_storm_that_comes_back_is_revived_not_duplicated():
+    from cottonwoods.storms import update_forecast_storms
+    cfg = make_cfg()
+    now = pd.Timestamp("2026-11-01 00:00")
+    first = run_steps("GFS", pd.Timestamp("2026-10-31 18:00"), [(30, 40)])
+    st = tracked(first, now)
+    sid = st.storm_id.iloc[0]
+    dry = run_steps("GFS", pd.Timestamp("2026-11-01 00:00"), [])
+    st = update_forecast_storms(st, dry, cfg, now)
+    assert st.status.tolist() == ["dropped"]
+    back = run_steps("GFS", pd.Timestamp("2026-11-01 06:00"), [(24, 34)])
+    st = update_forecast_storms(st, back, cfg, now + pd.Timedelta(hours=6))
+    assert len(st) == 1 and st.status.iloc[0] == "forecast" and st.storm_id.iloc[0] == sid
+    assert "back in the models" in st.note.iloc[0]

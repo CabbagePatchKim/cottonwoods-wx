@@ -59,6 +59,10 @@ def test_push_sends_only_new_or_changed_synced_files_and_never_deletes():
         (data / "archive/forecasts/model=GFS/init=2026111900.parquet").unlink()
         assert bucket.push(s3, "b", data, CCFG) == 1                  # the change goes up...
         assert "data/archive/forecasts/model=GFS/init=2026111900.parquet" in s3.objects   # ...and nothing is deleted
+        _write(data, "archive/storms.csv", "c")
+        _write(data, "processed/regime_factors.csv", "f")
+        assert bucket.push(s3, "b", data, CCFG, only=["processed/regime_factors.csv"]) == 1
+        assert s3.objects["data/archive/storms.csv"] == b"b"                        # --only left storms.csv alone
 
 
 def test_pull_fetches_missing_or_changed_files_but_skips_old_model_runs():

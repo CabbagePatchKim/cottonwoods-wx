@@ -7,7 +7,9 @@ For every wet day (mean of the reference SNOTEL sites >= 0.3"), the regime is th
 point's factor in a regime = its share of precip on those days / its share on all wet days. 1.10 means the resort
 gets 10% more than usual in that flow. Gauge siting biases cancel out, because each site is compared to itself.
 
-Writes data/processed/regime_factors.csv (point, flow, thermal, factor, n_days; thermal "" = all temperatures).
+Writes data/processed/regime_factors.csv (point, flow, thermal, band, factor, n_days): flow-only rows (thermal and
+band ""), flow + 2-way warm/cold rows, and flow + 3-way band rows (config temp_bands_700mb_c). Reports use the finest
+level with enough wet days (regimes.factor_for).
 Needs the balloon archive (scripts/archive_soundings.py --start 2010-11-01) and downloads SNOTEL daily totals.
 """
 from datetime import datetime, timezone
@@ -47,7 +49,8 @@ for day in inc.index:
     uu, vv, tt = u.reindex(t), v.reindex(t), snd["t700_c"].reindex(t)
     if uu.notna().any():
         d700 = float(regimes.wind_dir_deg(uu.mean(), vv.mean()))
-        rows.append({"day": day, "flow": regimes.flow_label(d700, rcfg), "thermal": regimes.thermal_label(tt.mean(), rcfg)})
+        rows.append({"day": day, "flow": regimes.flow_label(d700, rcfg), "thermal": regimes.thermal_label(tt.mean(), rcfg),
+                     "band": regimes.band_label(tt.mean(), rcfg)})
 x = inc.join(pd.DataFrame(rows).set_index("day"), how="inner")
 
 # Reference = mean of the sites with a long record (Atwater only starts in 2021; it's compared on its own days)
@@ -59,13 +62,20 @@ out = []
 for point, site in sites.items():
     xs = x[x[site].notna()]
     base = xs[site].sum() / xs["ref"].sum()                  # the site's share on all its wet days
-    for keys, g in list(xs.groupby("flow")) + list(xs.groupby(["flow", "thermal"])):
-        flow, thermal = (keys, "") if isinstance(keys, str) else keys
-        out.append({"point": point, "site": site, "flow": flow, "thermal": thermal,
+    levels = [(flow, "", "", g) for flow, g in xs.groupby("flow")]
+    levels += [(flow, th, "", g) for (flow, th), g in xs.groupby(["flow", "thermal"])]
+    levels += [(flow, "", bd, g) for (flow, bd), g in xs.groupby(["flow", "band"])]
+    for flow, thermal, band, g in levels:
+        out.append({"point": point, "site": site, "flow": flow, "thermal": thermal, "band": band,
                     "factor": round((g[site].sum() / g["ref"].sum()) / base, 3), "n_days": len(g)})
 res = pd.DataFrame(out)
 path = PROCESSED_DIR / "regime_factors.csv"
 res.to_csv(path, index=False)
 pd.set_option("display.width", 160)
-print(res[res.thermal == ""].pivot_table(index="flow", columns="point", values="factor").round(2).to_string())
+flow_only = res[(res.thermal == "") & (res.band == "")]
+print(flow_only.pivot_table(index="flow", columns="point", values="factor").round(2).to_string())
+bands = res[res.band != ""]
+print("\nflow + band: factor (wet days); used where days >=", rcfg["factor_min_days"])
+print(bands.assign(cell=bands.factor.map("{:.2f}".format) + " (" + bands.n_days.astype(str) + ")")
+      .pivot_table(index=["flow", "band"], columns="point", values="cell", aggfunc="first").to_string())
 print(f"\nwet days: {len(x)} ({x.index.min():%Y-%m} to {x.index.max():%Y-%m}); wrote {path}")

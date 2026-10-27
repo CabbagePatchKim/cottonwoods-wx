@@ -167,7 +167,20 @@ def test_storm_phases_track_a_veer_and_ignore_a_one_hour_flip():
     ph = regimes.phases(regimes.add_step_regimes(steps, cfg), cfg)
     assert [p["regime"] for p in ph] == ["SW warm", "NW cold"]
     assert abs(ph[0]["share"] - 13 / 21) < 1e-9 and ph[1]["t700_c"] < -11
-    assert regimes.phase_string(ph) == "SW warm 62% -> NW cold 38%"
+    assert regimes.phase_string(ph) == "SW warm -3C 62% -> NW cold -12C 38%"
+
+
+def test_temperature_bands_warm_mild_cold():
+    cfg = load_config()["regimes"]
+    assert [regimes.band_label(t, cfg) for t in (2.0, -3.9, -4.0, -9.9, -10.0, -15.0)] ==         ["warm", "warm", "mild", "mild", "cold", "cold"]
+    assert regimes.band_label(float("nan"), cfg) == "?"
+    # an old archived step labelled with the 2-way split gets the current band when read
+    old = regime_steps([(220, -6)]).assign(regime="SW warm")
+    assert regimes.with_bands(old, cfg)["regime"].iloc[0] == "SW mild"
+    assert regimes.with_bands(old.iloc[0:0], cfg).empty          # a run with no wet steps in the window
+    assert regimes.phases(regimes.with_bands(old.iloc[0:0], cfg), cfg) == []
+    near_zero = [{"regime": "SW warm", "share": 1.0, "t700_c": -0.4}]
+    assert regimes.phase_string(near_zero) == "SW warm 0C 100%"
 
 
 def test_regime_factors_apply_per_step():
@@ -179,6 +192,15 @@ def test_regime_factors_apply_per_step():
     out = regimes.apply_factors(steps, f, cfg)
     assert list(out.regime_factor) == [0.9, 0.9, 1.2, 1.2]     # SW steps get SW; cold NW steps get NW-cold
     assert abs(out.snow_in_adj.sum() - 4.2) < 1e-9
+
+
+def test_regime_factor_uses_the_finest_level_with_enough_history():
+    f = pd.DataFrame({"point": "alta", "flow": "NW", "thermal": ["", "warm", "", ""], "band": ["", "", "mild", "warm"],
+                      "factor": [1.10, 1.15, 1.30, 0.70], "n_days": [80, 60, 40, 5]})
+    assert regimes.factor_for(f, "alta", "NW", "warm", "mild", 20) == 1.30   # band has 40 days: used
+    assert regimes.factor_for(f, "alta", "NW", "warm", "warm", 20) == 1.15   # band has 5: 2-way warm instead
+    assert regimes.factor_for(f, "alta", "NW", "cold", "cold", 20) == 1.10   # nothing finer: flow only
+    assert regimes.factor_for(f, "alta", "SW", "warm", "mild", 20) == 1.0    # no history at all
 
 
 
