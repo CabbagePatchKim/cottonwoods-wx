@@ -71,7 +71,7 @@ Storms, verification, reports
   -> data/feed_preview/). `config.DATA_DIR` honors COTTONWOODS_DATA so a production copy shares one data folder.
 
 Observation clients (`obs/`): `snotel.py` (AWDB), `synoptic.py` (CLN, needs token), `ghcn.py` (NOAA coop),
-`sounding.py` (SLC balloons via IEM). Scheduled: Windows tasks "Cottonwoods models" (every 3 h, run_models.bat) and
+`sounding.py` (SLC balloons via IEM). Scheduled (until the cloud cutover): Windows tasks "Cottonwoods models" (every 3 h, run_models.bat) and
 "Cottonwoods soundings" (8 am/8 pm), both via `conhost --headless` (no window to close by accident).
 
 ## How to change this code (keep it maintainable)
@@ -161,14 +161,21 @@ WEBSITE FEED (owner, 2026-10-27; after the HTML report, shares its summary data)
    every pass; only the CODE producing it is frozen to the approved release.
    BUILT 2026-10-27: feed.py, release.py, scripts/publish_feed.py, tests/test_feed.py (v1 contract + gate). Not live.
    RELEASE PROCEDURE (only on the owner's explicit "approve", after showing `git diff <last tag>..HEAD --stat`):
-     1. `git tag -a vX.Y -m "Approved by owner <date>"` in the dev folder.
-     2. First release only: `git worktree add ..\cottonwoods-wx-prod vX.Y`; write prod\data_dir.txt = the dev folder's
-        data path (git-ignored); repoint task "Cottonwoods models" to prod\scripts\run_models.bat (the whole pass,
-        incl. archiving, then runs approved code). Later releases: `git -C ..\cottonwoods-wx-prod checkout vX.Y`.
-     3. Run publish_feed.py from prod once to confirm it prints the tag.
+     1. Make sure the release commit has config `feed_github` switched on (it's commented out until the first release).
+     2. `git tag -a vX.Y -m "Approved by owner <date>"`, then `git push origin main vX.Y`.
+     3. The next GitHub Actions pass runs that tag and publishes; check the run log shows "Running approved release".
    PUBLISHING (2026-10-27): friend declined to share VPS access, so the feed is PUBLIC on the owner's GitHub Pages:
    repo github.com/CabbagePatchKim/cwx-feed -> https://cabbagepatchkim.github.io/cwx-feed/v1/{meta,storms,daily}.json;
    the friend's site fetches it. github_feed.py: clone in data/feed_repo, copy, commit, push with deploy key
    ~/.ssh/cwx_feed_ed25519 (write access, this repo only). Config feed_github stays commented until the owner adds
    the deploy key, turns on Pages, and approves the first release. Never push preview/dev output.
+CLOUD PASSES (owner approved 2026-10-27): passes move from the laptop to GitHub Actions (.github/workflows/pass.yml,
+   every 3 h at :30 UTC, newest approved tag else main) in a PUBLIC code repo (free minutes), archive in a Cloudflare
+   R2 bucket (bucket.py / scripts/bucket_sync.py pull|push; never deletes; pulls skip runs > 25 days old).
+   tests.yml runs the offline tests on every push. Secrets: R2_BUCKET, R2_ENDPOINT, R2_ACCESS_KEY_ID,
+   R2_SECRET_ACCESS_KEY, FEED_DEPLOY_KEY (~/.ssh/cwx_feed_ci_ed25519, separate from the laptop's feed key).
+   Laptop pushes code with ~/.ssh/cwx_code_ed25519 (deploy key on the code repo). Commit emails rewritten to the
+   owner's GitHub noreply address before the repo goes public. Cutover: seed the bucket from the laptop (push),
+   run both for a day and compare, then disable the laptop tasks "Cottonwoods models" + "Cottonwoods soundings";
+   afterwards the laptop is development only (`bucket_sync.py pull` for live data).
 Deferred: server-side subsetting (NOMADS / GeoMet), only if bandwidth becomes a problem.

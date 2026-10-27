@@ -177,6 +177,13 @@ verify:
                            # (ALTA: 6 pm MST = 01 UTC), so GFS's 3 h steps can't line up with them; HRRR can
   event_swe_in: 0.10       # liquid threshold that counts as a "measurable" event, model and obs
 
+# Cloud archive (scripts/bucket_sync.py -> src/cottonwoods/bucket.py): the archive lives in a Cloudflare R2 bucket so
+# passes can run on GitHub Actions. Bucket name, endpoint and keys come from environment variables, never from here.
+cloud:
+  dirs: [archive, processed, reports]                 # folders under data/ that are synced
+  exclude: ["*.lock", "processed/golden/*", "*.tmp"]  # never synced
+  pull_forecast_days: 25   # a pull skips model runs older than this (passes read <= 20 days); they stay in the bucket
+
 # Website feed on GitHub Pages (scripts/publish_feed.py -> src/cottonwoods/github_feed.py). Approved releases only;
 # previews are never pushed. Public URL: https://cabbagepatchkim.github.io/cwx-feed/v1/storms.json (meta, daily too).
 # Leave commented out until the deploy key is added (with write access) and the owner approves the first release.

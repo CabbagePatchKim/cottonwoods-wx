@@ -1,0 +1,113 @@
+# The scheduled pass, on GitHub's machines instead of the laptop: every 3 hours, fetch the archive from the R2
+# bucket, archive every new model run + observations + soundings, track storms, write reports and the website feed,
+# then save the archive back to the bucket.
+#
+# It runs the NEWEST OWNER-APPROVED RELEASE (annotated tag vX.Y). Before the first release exists it runs main,
+# and publish_feed.py's approval gate refuses to publish, so development code can never reach the website.
+#
+# Secrets (repo Settings -> Secrets and variables -> Actions): R2_BUCKET, R2_ENDPOINT, R2_ACCESS_KEY_ID,
+# R2_SECRET_ACCESS_KEY, FEED_DEPLOY_KEY (private key with write access to the cwx-feed repo).
+name: model pass
+
+on:
+  schedule:
+    - cron: "30 2-23/3 * * *"   # 02:30, 05:30, ... 23:30 UTC (GitHub often starts these 5-30 min late)
+  workflow_dispatch: {}          # "Run workflow" button, for testing
+
+concurrency:
+  group: model-pass
+  cancel-in-progress: false      # never kill a running pass; the next one waits
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    timeout-minutes: 170
+    env:
+      PYTHONUTF8: "1"
+      PYTHONPATH: src            # import this checkout's code (the approval gate checks it)
+      CWX_BUCKET: ${{ secrets.R2_BUCKET }}
+      CWX_S3_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+    defaults:
+      run:
+        shell: bash -el {0}      # -l: activates the conda environment in every step
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0         # all commits and tags, to find the newest approved release
+
+      - name: Pick the code to run (newest approved release, else main)
+        run: |
+          tag=""
+          for t in $(git tag -l 'v*' --sort=-v:refname); do
+            if [ "$(git cat-file -t "$t")" = tag ]; then tag="$t"; break; fi
+          done
+          if [ -n "$tag" ]; then
+            git checkout -q "$tag"; echo "Running approved release $tag"
+          else
+            echo "No approved release yet: running main; the website feed will NOT publish"
+          fi
+
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: environment-ci.yml
+          cache-environment: true
+
+      - name: Fetch the archive from the bucket
+        id: pull
+        run: python scripts/bucket_sync.py pull
+
+      - name: Feed deploy key
+        env:
+          FEED_DEPLOY_KEY: ${{ secrets.FEED_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$FEED_DEPLOY_KEY" > ~/.ssh/cwx_feed_ed25519 && chmod 600 ~/.ssh/cwx_feed_ed25519
+          # GitHub's published host key (fingerprint SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU)
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > ~/.ssh/known_hosts
+
+      # The pass itself (same order as scripts/run_models.bat). Each step carries on if one fails, like the .bat,
+      # so the archive is still saved; the last step marks the run failed so it shows red in the Actions tab.
+      - name: Archive model runs
+        id: models
+        continue-on-error: true
+        run: python scripts/archive_forecasts.py
+      - name: Observations (SNOTEL, NOAA)
+        id: obs
+        continue-on-error: true
+        run: python scripts/archive_obs.py --days 3
+      - name: Soundings (SLC balloons)
+        id: soundings
+        continue-on-error: true
+        run: python scripts/archive_soundings.py
+      - name: Storms
+        id: storms
+        continue-on-error: true
+        run: python scripts/storms.py
+      - name: Model report
+        id: report
+        continue-on-error: true
+        run: python scripts/model_report.py
+      - name: Website feed (approved releases only)
+        id: feed
+        continue-on-error: true
+        run: python scripts/publish_feed.py
+
+      - name: Save the archive to the bucket
+        if: always() && steps.pull.outcome == 'success'   # never push a half-fetched archive
+        run: python scripts/bucket_sync.py push
+
+      - name: Mark the run failed if any step failed
+        if: always()
+        run: |
+          failed=""
+          for s in "models:${{ steps.models.outcome }}" "obs:${{ steps.obs.outcome }}" \
+                   "soundings:${{ steps.soundings.outcome }}" "storms:${{ steps.storms.outcome }}" \
+                   "report:${{ steps.report.outcome }}" "feed:${{ steps.feed.outcome }}"; do
+            case "$s" in *:failure) failed="$failed ${s%%:*}";; esac
+          done
+          if [ -n "$failed" ]; then echo "Failed steps:$failed"; exit 1; fi

@@ -1,0 +1,27 @@
+# Offline tests on every push and pull request (no network, synthetic data; see tests/run_offline.py).
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: "1"
+      PYTHONPATH: src
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: environment-ci.yml
+          cache-environment: true
+      - run: python tests/run_offline.py

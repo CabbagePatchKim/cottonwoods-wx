@@ -29,7 +29,8 @@ else:
     try:
         version, folder = release.approved_version(ROOT), FEED_DIR
     except release.NotApproved as e:
-        sys.exit(f"NOT PUBLISHED: {e}. Use --preview to look at the output.")
+        print(f"NOT PUBLISHED: {e}. Use --preview to look at the output.")
+        sys.exit(0)   # expected until a release is approved: not a failure
 
 cfg = load_config()
 now = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))

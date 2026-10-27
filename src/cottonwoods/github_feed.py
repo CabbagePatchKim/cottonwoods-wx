@@ -23,7 +23,8 @@ AUTHOR = ["-c", "user.name=cottonwoods-wx", "-c", "user.email=feed@cottonwoods-w
 def ssh_command(gcfg: dict) -> str:
     key = Path(gcfg["key_file"]).expanduser().as_posix()
     kh = Path(gcfg["known_hosts"]).expanduser().as_posix()
-    return (f'"{gcfg.get("ssh_exe", "C:/Windows/System32/OpenSSH/ssh.exe")}" -i "{key}" -o IdentitiesOnly=yes '
+    ssh = gcfg.get("ssh_exe") or ("C:/Windows/System32/OpenSSH/ssh.exe" if os.name == "nt" else "ssh")
+    return (f'"{ssh}" -i "{key}" -o IdentitiesOnly=yes '
             f'-o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="{kh}" -o ConnectTimeout=30')
 
 
