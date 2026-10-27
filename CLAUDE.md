@@ -151,4 +151,8 @@ WEBSITE FEED (owner, 2026-10-27; after the HTML report, shares its summary data)
    development continues in main; owner approves each release (show git diff first). Feed carries schema_version /
    /v1/ paths: additive changes only within v1, breaking changes as v2 alongside v1. Contract tests pin the v1 format.
    Archive/data stay shared between folders so a release never loses history.
+   APPROVAL GATE (owner, 2026-10-27): ONLY owner-approved versions may feed the API. The publish step refuses to run
+   unless its code is an owner-approved tag (e.g. v1.0, made by the owner or on the owner's explicit "approve") with no
+   uncommitted changes; development code in main can never publish, even if run by hand. Forecast DATA still refreshes
+   every pass; only the CODE producing it is frozen to the approved release.
 Deferred: server-side subsetting (NOMADS / GeoMet), only if bandwidth becomes a problem.
