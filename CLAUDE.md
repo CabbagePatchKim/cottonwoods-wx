@@ -90,6 +90,10 @@ Before finishing a working session, check the code didn't get messier, and clean
 5. Commit the session's work as a checkpoint (owner's standing rule): `git add -A && git commit` with a message
    summarizing the session, then report `git diff --stat <previous checkpoint>..HEAD` to the owner.
 
+Watch list from the last review (2026-10-27): functions just over 60 lines - report.render_storms (split it when the
+timeline section is added), gfs._pull_run_aws, ghcn.fetch, profile.station_profile (cohesive; fine for now).
+era5.request_pressure_levels is unused on purpose (planned ERA5 regime work).
+
 ## Status (2026-10-27)
 Running live: all nine models archived every 3 h with station-profile snow, regimes, modes, 2x2 cells; observations
 (SNOTEL, NOAA ALTA, soundings); storm tracking + verification; reports in data/reports/. Verified facts: SNOTEL hourly
@@ -103,10 +107,22 @@ is UTC-8 (PST) all year; NOAA ALTA water before 10/2007 unreliable; Collins (CLN
 - Actuals missing: 2/16-2/18/2026 storms and 3/5/2026.
 
 ## Next build steps (agreed order)
+1. NEXT (owner, 2026-10-27): stale-storm fix (storms no model's newest run shows any more -> status "dropped",
+   kept for the record), then a STORM TIMELINE + RUN-TO-RUN TRENDS section in the storm report, per model per resort:
+   snow ONSET (first 3 h-averaged snow rate >= ~0.1"/h; snow, not precip), PEAK snowfall rate time + in/h (3 h
+   average, so 1 h and 3 h models compare fairly), snow END, snow/water totals; trends vs the model's previous run
+   (onset/peak/end hours earlier/later, snow +/- in and %, water, snow level) and over the last 3-4 runs
+   (convergence); ensembles: wet fraction + mean water by run. Mountain 24 h times. Uses existing data only.
 3. Better snow ratio: import the Collins dataset; Veals et al. 2025 V1/V3 (github pveals/Veals_etal_2025) next to
    Kuchera; Alta-only retrain; fit the wet-bulb thresholds and dry-air nudge to Collins + SLC soundings.
 4. Owner's bins in the reports (lowest bin containing the estimate) and bin verification (in / over / under).
 5. Storm-day selector + backfill past storms.
-6. Learning layer last: per-model bias by lead/regime, weighted blend, calibrated ensembles, tuned pessimistic bin;
+5b. PATTERN archive (owner approved 2026-10-27; start early so a season accumulates before step 6): coarse regional
+   fields for the long-range models (GFS, ECMWF HRES, GDPS + GEFS/ENS mean & spread): 500 mb height + vorticity,
+   250 mb wind, MSLP, 850 mb temp, every 6 h, ~0.5-1 deg, box ~25-60N x 150-90W (upstream troughs to Plains).
+   Few MB/run; server-side subsetting is the right tool here. Enables trough position/timing comparisons between
+   models and runs (owner's 3-7 day "trend/convergence" method), pattern-based regime labels days ahead, and
+   weighting models by pattern skill verified against analyses + SLC soundings. Point archive stays as is.
+6. Learning layer last: per-model bias by lead/regime and by PATTERN (from 5b), weighted blend, calibrated ensembles, tuned pessimistic bin;
    the program's own frozen "CWX" forecast each cycle, scored like a model. Keep only what beats raw models.
 Deferred: server-side subsetting (NOMADS / GeoMet), only if bandwidth becomes a problem.

@@ -12,7 +12,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from .accum import deaccumulate, gfs_fallback_window, parse_acc_window
+from .accum import choose_precip, deaccumulate
 from . import fields as fl
 from .fields import open_grib, parallel_hours
 from .points import nearest_index
@@ -46,9 +46,11 @@ def _pull_run_aws(init: datetime, fxx_list, points: dict[str, dict], save_dir: s
 
     def download(fxx):
         h = Herbie(init, model="gfs", product="pgrb2.0p25", fxx=fxx, verbose=False, **kw)
-        # the first APCP message and its window (from the inventory text, else the bucket rule), as before
-        line = h.inventory("APCP:surface")["search_this"].iloc[0]
-        window = parse_acc_window(line) or gfs_fallback_window(fxx)
+        # the since-start total when the file has it (GFS has carried both since 2021), else the bucket
+        pick = choose_precip(list(h.inventory("APCP:surface")["search_this"]), fxx)
+        if pick is None:
+            raise RuntimeError(f"no precip message ending at f{fxx:03d}")
+        line, window = pick
         paths = [h.download(s, verbose=False) for s in (fl.NCEP_LEVELS_ALL_HGT, fl.NCEP_WIND, fl.NCEP_SURFACE)]
         # terrain never changes between forecast hours, so it's read with the first hour only
         hgt = h.download("HGT:surface", verbose=False) if fxx == fxx_list[0] else None

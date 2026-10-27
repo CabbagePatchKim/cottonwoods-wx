@@ -13,12 +13,6 @@ import pandas as pd
 from .fields import NCEP_EXTRA, NCEP_LEVELS, NCEP_SURFACE, open_grib, parallel_hours, point_fields
 from .points import nearest_index
 
-def _first_ds(obj):
-    # Herbie returns a list of xarray Datasets when a search matches fields on different grids or
-    # levels, and a single Dataset otherwise. This always hands back one Dataset.
-    return obj[0] if isinstance(obj, list) else obj
-
-
 def pull_run(init: datetime, fxx_list, points: dict[str, dict], save_dir: str | None = None,
              workers: int = 6) -> pd.DataFrame:
     """All forecast hours of one run: downloads in `workers` parallel threads, decoding one at a time.

@@ -20,15 +20,6 @@ def parse_acc_window(text: str) -> tuple[int, int] | None:
     return (int(m.group(1)), int(m.group(2))) if m else None
 
 
-def gfs_fallback_window(fxx: int) -> tuple[int, int]:
-    """GFS APCP bucket rule when the inventory can't be parsed: 6 h buckets that reset every 6 h.
-
-    f003 -> (0,3), f006 -> (0,6), f009 -> (6,9), f012 -> (6,12). Verify against a real inventory.
-    """
-    # // is integer division (rounds down). For f009: (9-1)//6 = 1, so the bucket starts at 6*1 = hour 6.
-    return (6 * ((fxx - 1) // 6), fxx)
-
-
 def deaccumulate(records: list[tuple[int, int, float]]) -> list[tuple[int, int, float]]:
     """Convert accumulation-window records into per-step amounts.
 
@@ -53,3 +44,25 @@ def deaccumulate(records: list[tuple[int, int, float]]) -> list[tuple[int, int, 
         out.append((prev, b, max(step, 0.0) if not math.isnan(step) else math.nan))
         prev = b
     return out
+
+
+def choose_precip(lines: list[str], fxx: int, cumulative_only: bool = False) -> tuple[str, tuple[int, int]] | None:
+    """Pick one precip message from inventory lines: the since-start total if present, else the latest bucket.
+
+    Prefer the since-start total: with buckets, one missing forecast hour breaks the chain and every later step
+    comes back unknown (a dropped connection at GFS f084 once cost 53 of 80 hours); with totals, a missing hour
+    only merges its two neighboring steps.
+
+    Returns (line, (start_hr, end_hr)). Lines without window text (ECMWF tp) are a total from hour 0.
+    """
+    found = []
+    for line in lines:
+        win = parse_acc_window(line)
+        found.append((line, win if win else (0, fxx)))
+    if not found:
+        return None
+    zero = [f for f in found if f[1][0] == 0 and f[1][1] == fxx]
+    if zero or cumulative_only:
+        return zero[0] if zero else None
+    ends = [f for f in found if f[1][1] == fxx]
+    return max(ends, key=lambda f: f[1][0]) if ends else None

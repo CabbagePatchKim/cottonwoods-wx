@@ -16,7 +16,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from .accum import deaccumulate, parse_acc_window
+from .accum import choose_precip, deaccumulate
 from . import fields as fl
 from .fields import open_grib, parallel_hours
 from .points import nearest_index
@@ -36,24 +36,6 @@ SPECS = {
     # ENS open data on this source holds the 50 perturbed members only (no control run)
     "ENS":     {"herbie": {"model": "ifs", "product": "enfo"}, "precip": r":tp:sfc:", "precip_m": True, "members": 50},
 }
-
-
-def choose_precip(lines: list[str], fxx: int, cumulative_only: bool = False) -> tuple[str, tuple[int, int]] | None:
-    """Pick one precip message from inventory lines: the since-start total if present, else the latest bucket.
-
-    Returns (line, (start_hr, end_hr)). Lines without window text (ECMWF tp) are a total from hour 0.
-    """
-    found = []
-    for line in lines:
-        win = parse_acc_window(line)
-        found.append((line, win if win else (0, fxx)))
-    if not found:
-        return None
-    zero = [f for f in found if f[1][0] == 0 and f[1][1] == fxx]
-    if zero or cumulative_only:
-        return zero[0] if zero else None
-    ends = [f for f in found if f[1][1] == fxx]
-    return max(ends, key=lambda f: f[1][0]) if ends else None
 
 
 def _values(ds, points: dict[str, dict], scale: float = 1.0, member_dim: str | None = None) -> dict:

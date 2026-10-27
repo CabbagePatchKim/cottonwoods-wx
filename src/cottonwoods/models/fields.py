@@ -103,16 +103,28 @@ def open_grib(path) -> list:
     return dsets
 
 
-def parallel_hours(download, decode, items, workers: int = 6, label: str = "") -> list:
+def parallel_hours(download, decode, items, workers: int = 6, label: str = "", retries: int = 2) -> list:
     """Run download(item) in `workers` threads and decode(item, downloaded) on this thread as each finishes.
 
-    Returns [(item, error)] for items whose download or decode failed (the rest are handled by decode).
+    A failed download is retried `retries` more times after a short pause: dropped connections ("forcibly closed by
+    the remote host") are common and usually succeed on a second try. Returns [(item, error)] for items whose
+    download or decode still failed (the rest are handled by decode).
     """
+    import time
     from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def with_retry(it):
+        for attempt in range(retries + 1):
+            try:
+                return download(it)
+            except Exception:  # noqa: BLE001
+                if attempt == retries:
+                    raise
+                time.sleep(2 + 3 * attempt)
 
     failed = []
     with ThreadPoolExecutor(workers) as pool:
-        futures = {pool.submit(download, it): it for it in items}
+        futures = {pool.submit(with_retry, it): it for it in items}
         for fut in as_completed(futures):
             it = futures[fut]
             try:

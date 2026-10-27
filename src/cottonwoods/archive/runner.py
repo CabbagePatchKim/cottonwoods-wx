@@ -42,7 +42,7 @@ class PassLock:
         self.held = True
         return True
 
-    def __exit__(self, *exc):
+    def __exit__(self, *_):
         if self.held:
             self.path.unlink(missing_ok=True)   # always release, even after an error
         return False
