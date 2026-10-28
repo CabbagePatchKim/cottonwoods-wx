@@ -50,7 +50,11 @@ Pulling model runs (`models/`)
   AWS fallback), `herbie_generic.py` (NAM, NAMNEST, IFS, and ensembles GEFS/ENS precip-only with `member`),
   `canada.py` (RDPS/GDPS, MSC Datamart, ~30-day retention; files decoded from memory with ecCodes, grid cached). `accum.py` turns precip buckets into steps.
 - `fields.py`: field lists, `point_fields`, `open_grib` (cfgrib.open_datasets; xarray.open_dataset silently drops
-  wind), `parallel_hours` (download in threads, decode serially: ecCodes is NOT thread-safe).
+  wind), `parallel_hours` (download in threads, decode serially: ecCodes is NOT thread-safe). THROTTLING (2026-10-28):
+  ECMWF's S3 bucket answered the cloud pass with 503 Slow Down and ENS 18z came back with 624/4800 values (members
+  silently missing). Now download_workers ecmwf 4 (was 12) and config archive.throttle (503/429/Slow Down: 3 more
+  tries, 30/60/90 s), bound to the Herbie pullers by get_puller. Laptop test: ENS 18z 4800/4800 in 105 s, IFS 18z
+  384/384 in 67 s with 4 workers (faster than 12: 157/173 s).
 
 Archive (`archive/`)
 - `forecasts.py`: one file per run; `run_points` (resort points + coarse models' 2x2 `model_cells`); `archive_run`

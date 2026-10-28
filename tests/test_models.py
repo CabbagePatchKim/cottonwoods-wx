@@ -162,8 +162,11 @@ def test_each_puller_gets_its_servers_download_workers_from_config():
     w = cfg["archive"]["download_workers"]
     assert get_puller("HRRR", cfg).keywords == {"workers": w["noaa"]}
     assert get_puller("GFS", cfg).keywords == {"workers": w["noaa"], "gdex_workers": w["gdex"]}
-    assert get_puller("IFS", cfg).keywords == {"workers": w["ecmwf"]} and get_puller("IFS", cfg).args == ("IFS",)
-    assert get_puller("ENS", cfg).keywords == {"workers": w["ecmwf"]}
+    thr = cfg["archive"]["throttle"]                            # Herbie (S3) pullers also wait out throttling
+    assert get_puller("IFS", cfg).keywords == {"workers": w["ecmwf"], "throttle": thr}
+    assert get_puller("IFS", cfg).args == ("IFS",)
+    assert get_puller("ENS", cfg).keywords == {"workers": w["ecmwf"], "throttle": thr}
+    assert get_puller("GEFS", cfg).keywords == {"workers": w["noaa"], "throttle": thr}
     assert get_puller("GDPS", cfg).keywords == {"workers": w["canada"]} and get_puller("GDPS", cfg).args == ("GDPS",)
 
 
@@ -184,3 +187,23 @@ def test_canada_files_decode_from_memory_to_the_nearest_points_value():
     value, dist = out["alta"]
     assert abs(value - 265.0) < 1e-6                     # nearest cell: lat 40.5 (row 1), lon 248.5 = -111.5 (col 1)
     assert dist < 25
+
+
+def test_parallel_hours_waits_out_a_throttling_server_and_gives_up_after_its_tries():
+    from cottonwoods.models.fields import parallel_hours
+    slow = "RuntimeError('Processing failed: 503 Server Error: Slow Down for url: https://ecmwf-forecasts.s3...')"
+    tries, got, waits = {}, {}, []
+
+    def download(item):
+        tries[item] = tries.get(item, 0) + 1
+        if item == 2 and tries[item] <= 2:
+            raise RuntimeError(slow)                            # throttled twice, then served
+        if item == 3:
+            raise RuntimeError(slow)                            # throttled every time
+        return item * 10
+
+    failed = parallel_hours(download, lambda it, v: got.update({it: v}), [1, 2, 3], workers=1,
+                            throttle={"retries": 3, "wait_s": 30}, sleep=waits.append)
+    assert got == {1: 10, 2: 20} and tries[2] == 3
+    assert [f[0] for f in failed] == [3] and tries[3] == 1 + 3 + 2   # 3 throttle waits, then the 2 quick retries
+    assert waits.count(30) == 2 and waits.count(60) == 2 and waits.count(90) == 1

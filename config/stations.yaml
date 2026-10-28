@@ -155,7 +155,12 @@ archive:
   gfs_step_hours: 3
   # Parallel downloads per server (timed 2026-10-27: NOAA/AWS 12 h of GFS 38 s with 6 -> 24 s with 12; IFS 18 -> 14 s;
   # Canada no faster beyond 8 because decoding, not downloading, is its limit). gdex stays low: a free shared server.
-  download_workers: {noaa: 12, ecmwf: 12, canada: 8, gdex: 4}
+  # ecmwf 12 -> 4 (2026-10-28): ECMWF's S3 bucket answered the cloud pass with 503 Slow Down, and ENS came back with
+  # most members missing (624 of 4800 values). Each ENS file is 50 separate member requests.
+  download_workers: {noaa: 12, ecmwf: 4, canada: 8, gdex: 4}
+  # A server throttling us (503 Slow Down / 429) gets a real pause: up to `retries` more tries, wait_s x try apart
+  # (30, 60, 90 s), on top of the quick retries for dropped connections (models/fields.parallel_hours).
+  throttle: {retries: 3, wait_s: 30}
   recent_cycles: 8                       # latest cycles each scheduled pass tries (8 = 2 days): runs missed while
                                          # the PC was off get caught up; already-archived runs are skipped instantly
   # Longer automatic catch-up for models whose source deletes old runs (Environment Canada keeps ~30 days). 3 days

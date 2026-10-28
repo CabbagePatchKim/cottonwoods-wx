@@ -10,6 +10,7 @@ profile.level_heights fills the other levels from the temperatures (hypsometric 
 """
 from __future__ import annotations
 
+import re
 import warnings
 
 import numpy as np
@@ -103,24 +104,37 @@ def open_grib(path) -> list:
     return dsets
 
 
-def parallel_hours(download, decode, items, workers: int = 6, label: str = "", retries: int = 2) -> list:
+THROTTLED = re.compile(r"\b(503|429)\b|slow ?down|too many requests", re.I)
+
+
+def parallel_hours(download, decode, items, workers: int = 6, label: str = "", retries: int = 2,
+                   throttle: dict | None = None, sleep=None) -> list:
     """Run download(item) in `workers` threads and decode(item, downloaded) on this thread as each finishes.
 
     A failed download is retried `retries` more times after a short pause: dropped connections ("forcibly closed by
-    the remote host") are common and usually succeed on a second try. Returns [(item, error)] for items whose
-    download or decode still failed (the rest are handled by decode).
+    the remote host") are common and usually succeed on a second try. A server THROTTLING us (503 Slow Down, 429;
+    ECMWF's S3 bucket did this to the cloud pass 10/28, leaving most ENS members missing) needs a real pause:
+    with `throttle` (config archive.throttle) those errors get throttle["retries"] tries, throttle["wait_s"] x try
+    apart. Returns [(item, error)] for items whose download or decode still failed (the rest are handled by decode).
     """
     import time
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    sleep = sleep or time.sleep
 
     def with_retry(it):
-        for attempt in range(retries + 1):
+        attempt = throttled = 0
+        while True:
             try:
                 return download(it)
-            except Exception:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
+                if throttle and THROTTLED.search(str(e)) and throttled < throttle["retries"]:
+                    throttled += 1
+                    sleep(throttle["wait_s"] * throttled)
+                    continue
                 if attempt == retries:
                     raise
-                time.sleep(2 + 3 * attempt)
+                sleep(2 + 3 * attempt)
+                attempt += 1
 
     failed = []
     with ThreadPoolExecutor(workers) as pool:

@@ -56,7 +56,7 @@ def _values(ds, points: dict[str, dict], scale: float = 1.0, member_dim: str | N
 
 
 def pull_run(model: str, init: datetime, fxx_list, points: dict[str, dict], save_dir: str | None = None, *,
-             workers: int) -> pd.DataFrame:
+             workers: int, throttle: dict | None = None) -> pd.DataFrame:
     """One run of a deterministic model (NAM, NAMNEST, IFS): per-step precip plus the profile fields.
 
     Forecast hours are downloaded in parallel threads and decoded one at a time (fields.parallel_hours).
@@ -93,7 +93,8 @@ def pull_run(model: str, init: datetime, fxx_list, points: dict[str, dict], save
             acc[name].append((a, b, p_vals[name][0]))
             extra[(name, b)] = {"grid_dist_km": p_vals[name][1], **fvals[name]}
 
-    parallel_hours(download, decode, [int(f) for f in fxx_list], workers, label=f"{model.lower()} {init:%Y-%m-%d %H}z")
+    parallel_hours(download, decode, [int(f) for f in fxx_list], workers, label=f"{model.lower()} {init:%Y-%m-%d %H}z",
+                   throttle=throttle)
 
     t0 = pd.Timestamp(init)
     rows = []
@@ -107,7 +108,7 @@ def pull_run(model: str, init: datetime, fxx_list, points: dict[str, dict], save
 
 
 def pull_ensemble(model: str, init: datetime, fxx_list, points: dict[str, dict], save_dir: str | None = None, *,
-                  workers: int) -> pd.DataFrame:
+                  workers: int, throttle: dict | None = None) -> pd.DataFrame:
     """One ensemble run (GEFS or ENS), precip only, one row per point x member x step (column `member`).
 
     GEFS keeps each member in its own file (c00 = control = member 0, p01..p30), so every (hour, member) pair is a
@@ -156,7 +157,7 @@ def pull_ensemble(model: str, init: datetime, fxx_list, points: dict[str, dict],
 
         items = [(f, m) for f in fxx_list for m in range(spec["members"])]
 
-    parallel_hours(download, decode, items, workers, label=f"{model.lower()} {init:%Y-%m-%d %H}z")
+    parallel_hours(download, decode, items, workers, label=f"{model.lower()} {init:%Y-%m-%d %H}z", throttle=throttle)
 
     t0 = pd.Timestamp(init)
     rows = []

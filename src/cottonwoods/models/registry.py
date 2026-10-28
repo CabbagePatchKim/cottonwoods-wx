@@ -119,10 +119,10 @@ def get_puller(model: str, cfg: dict):
         return partial(canada.pull_run, model, workers=workers)
     if model in ("NAM", "NAMNEST", "IFS"):
         from . import herbie_generic
-        return partial(herbie_generic.pull_run, model, workers=workers)
+        return partial(herbie_generic.pull_run, model, workers=workers, throttle=cfg["archive"]["throttle"])
     if model in ("GEFS", "ENS"):
         from . import herbie_generic
-        return partial(herbie_generic.pull_ensemble, model, workers=workers)
+        return partial(herbie_generic.pull_ensemble, model, workers=workers, throttle=cfg["archive"]["throttle"])
     raise KeyError(f"No puller for model {model!r}. Add one in models/registry.py")
 
 
