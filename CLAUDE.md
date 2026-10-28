@@ -185,6 +185,9 @@ Running live, TWO places for now (side-by-side check before cutover):
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
+- IN MAIN, NOT RELEASED (owner 2026-10-28: bundle with the next change, no v1.5 just for this): 82effa7 storm
+  report matches the feed (ended storms = one "ENDED: awaiting verification" line; runs starting after the storm
+  began show "-", not 0.00). render_storms now takes `now`. Cloud report keeps the old layout until the next release.
 - RELEASED v1.4 (owner approved 2026-10-28, tag on 5827cd1, pushed ~22:17Z, CI tests green; first pass #9 22:28Z
   manual by the owner: "code v1.4", all steps success, feed v1.4 published, no new runs that pass so the feed still
   showed pre-release nearest-cell 12z numbers; blended numbers arrive with each model's next run). Contents:
