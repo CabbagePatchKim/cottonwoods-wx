@@ -146,21 +146,23 @@ limits): ruff clean, vulture only the era5 item, no new long functions; nothing 
 after bin scores + obs retries): ruff/vulture clean; report.render_verified is 56 lines (split it with the HTML report
 rework); fixed season bin totals vanishing when no storm was verified in the last 10 days.
 
-## Status (end of session 2026-10-27, evening)
+## Status (end of session 2026-10-27, late night)
 Running live, TWO places for now (side-by-side check before cutover):
 - LAPTOP: Windows tasks "Cottonwoods models" (every 3 h at :30 local, run_models.bat, DEVELOPMENT code = main) and
-  "Cottonwoods soundings". Writes data/ locally. Never publishes (not a release; no CWX_PUBLISH).
+  "Cottonwoods soundings". Writes data/ locally. Never publishes (no CWX_PUBLISH), even on a release commit.
+  Battery rules turned OFF 2026-10-27 (tasks start and keep running on battery): the 20:30 pass died when the charger
+  was unplugged at 21:01 (StopIfGoingOnBatteries closed the headless console; later steps exit 0xC0000142).
+  "Run after a missed start" stays on, so a pass runs when the laptop is opened after missing one.
 - CLOUD: GitHub Actions github.com/CabbagePatchKim/cottonwoods-wx (PUBLIC), .github/workflows/pass.yml every 3 h at
-  :45 UTC (was :30 until 2026-10-27), runs the newest approved tag = v1.0 (81d37f2). Archive in Cloudflare R2 bucket cwx-archive; log in
-  bucket logs/cloud/models_YYYY-MM.log. Publishes the feed (CWX_PUBLISH=1 set only there).
-  First manual run 2026-10-27 21:04Z: green, 53 min, but it ran main 77ddabc (before the v1.0 tag), so NOTHING
-  is published yet: cwx-feed has only its initial commit; Pages is on (site root 200), /v1/*.json are 404.
-  The 23:30Z scheduled run never fired (checked 00:20Z). Schedule moved to :45 and pushed 00:20Z 10/28.
-- main is AHEAD of v1.0 (not released): 7a9350c lead limits (storms + deterministic daily to 168 h, ensembles to
-  240 h), 59fca5b :45 schedule. Laptop runs main, cloud runs v1.0, so their storm lists differ (11/9 IFS 282 h
-  storm dropped on the laptop only). v1.1 needs the owner's approve + a heads-up to the friend (daily.json
-  deterministic days 8-10 become null; same format).
-- FEED v1.0 (approved by owner 2026-10-27): MODEL-RUN DATA ONLY, public at
+  :45 UTC, runs the newest approved tag. Archive in Cloudflare R2 bucket; log in bucket
+  data/logs/cloud/models_YYYY-MM.log. Publishes the feed (CWX_PUBLISH=1 set only there).
+  First v1.0 publish: manual run 2026-10-28 03:13Z, green, 11 min, "pushed 3 files to cwx-feed". IFS 18z (not
+  posted yet) and ENS 18z (S3 503 Slow Down, 624/4800 values) failed there; fixed in v1.1. NO scheduled run had
+  fired yet as of 04:40Z 10/28 (both runs so far were manual).
+- RELEASED v1.1 (owner approved 2026-10-27, tag on ece413a, pushed 04:38Z 10/28): lead limits, gauge-noise fix,
+  bin scores, obs retries/catch-up, ECMWF throttle fix. The FEED still says v1.0 until the next cloud pass runs
+  v1.1 (scheduled 06:45Z, or "Run workflow"). Friend heads-up: daily.json deterministic days 8-10 become null.
+- FEED v1 (v1.0 approved 2026-10-27, v1.1 released 2026-10-27): MODEL-RUN DATA ONLY, public at
   https://cabbagepatchkim.github.io/cwx-feed/v1/{storms,daily,meta}.json (repo CabbagePatchKim/cwx-feed). The owner's
   friend's site reads those URLs. Release procedure: see "RELEASE PROCEDURE" below; laptop never publishes.
 Keys/secrets (values never in git or chat): ~/.ssh/cwx_feed_ed25519 (laptop feed key), ~/.ssh/cwx_feed_ci_ed25519
@@ -175,29 +177,24 @@ published 12 h data exists (Hive doi:10.7278/S50d-nsy5-8bje, CC BY-NC); Collins 
 route (api.weather.gov lists CLN but serves no observations; never automate the NWS page).
 
 ## Tomorrow's agenda (start here, 2026-10-28)
-0. FIRST THING (owner asked 2026-10-27): report on BOTH passes before anything else.
-   a. Laptop: 10/27 17:30 MDT pass was checked: all five steps exit 0 by 17:35, feed refused to publish (correct);
-      NAM 46 s, RDPS 154 s, GFS 216 s (old avg 756), ENS 271 s. Check the passes since (log after line 5466),
-      especially GDPS and GEFS times (none in that pass). Old averages: GFS 756 s, GDPS 868 s, GEFS 405 s.
-   b. Cloud: scheduled runs since 10/28 02:45Z (none had fired by 00:20Z; if none fired, ask the owner to press
-      "Run workflow" once: it runs v1.0 and does the first publish) (api.github.com .../actions/workflows/pass.yml/runs), the first
-      v1.0 publish, then fetch https://cabbagepatchkim.github.io/cwx-feed/v1/{storms,daily,meta}.json (code_version
-      v1.0) and SEND THE OWNER THE THREE URLS (they're waiting for them for the friend's site).
-1. Cloud health: did scheduled runs fire (Actions list via api.github.com, no login needed)? Pull the bucket
-   (`scripts/bucket_sync.py pull`, Windows paths needed: PYTHONPATH="C:\Users\patri\.cwx_pylib",
-   --env-file "C:\Users\patri\.cwx_r2.env"; the ~/ form fails with Windows Python) and read
-   logs/cloud/models_*.log: per-step results, "Running approved release v1.0", "pushed ... cwx-feed". If no scheduled
-   runs: investigate (GitHub delays/disables new schedules; manual "Run workflow" works). Also check how often a
-   :45 pass now finds HRRR/NAM and GFS/GDPS already posted (the reason for moving it from :30).
-2. Feed check: fetch the three public URLs; code_version must be v1.0; storms/daily sane. Give the owner the URLs.
-3. Speed: compare per-run archive times before/after download_workers (laptop data/logs/models.log "----- <script>
-   exit N (time)" lines + [archive] durations; cloud log). Laptop passes cut off after archiving earlier on
-   10/27 (likely my edits/memory use during passes): confirm passes now run all five steps.
-4. Side-by-side laptop vs cloud for a day, then CUTOVER (owner approval): disable laptop tasks "Cottonwoods models"
-   and "Cottonwoods soundings"; laptop becomes development only (pull from the bucket).
-5. Weekend storm (Fri 10/30 - Mon 11/2): first real verification ~11/2-11/3. The SessionStart hook will prompt the
-   owner for Alta Collins readings (data/entries/, scripts/send_entries.bat).
-6. Then the build plan below (HTML storm report + timeline/trends + NOAA ALTA display: DEVELOPMENT ONLY, unpublished;
+0. FIRST THING: report on BOTH passes before anything else.
+   a. Laptop: passes since the 21:09 MDT manual pass (data/logs/models.log): all five steps exit 0? any "[obs] ...
+      retrying" or "catching up" lines? GDPS/GEFS times (old averages GFS 756 s, GDPS 868 s, GEFS 405 s; 10/27 21:09
+      pass: GEFS 359 s, ENS 157 s, IFS 173 s with 12 ECMWF workers; now 4).
+   b. Cloud: did SCHEDULED runs fire on their own (api.github.com/repos/CabbagePatchKim/cottonwoods-wx/actions/
+      workflows/pass.yml/runs, event "schedule")? First v1.1 run: log header "code v1.1", ENS/IFS complete (no 503),
+      "pushed ... cwx-feed". Then meta.json code_version must be v1.1. Remind the owner to tell the friend.
+1. Tonight's storm (10/27 18:00 - 10/28 06:00 MDT): should verify ~18:00 10/28 as DRY (SNOTEL 0.0" with the gauge
+   fix) -> first bin scores (NAMNEST called ~2" regime-adjusted; HRRR/NAM/GFS/GDPS/RDPS 0). Check the storm report's
+   Verified section and data/processed/bin_scores.csv.
+2. Cutover once scheduled cloud runs are reliable for a day (owner approval): disable laptop tasks "Cottonwoods
+   models" and "Cottonwoods soundings"; laptop becomes development only (pull from the bucket).
+3. Weekend storm (Fri 10/30 - Mon 11/2; 10/27 runs: IFS 1.82" water / 16" Alta, GFS 1.29"/12", GDPS 0.80"/8", all
+   ensemble members wet): first real verification ~11/2-11/3. The SessionStart hook will prompt the owner for Alta
+   Collins readings (data/entries/, scripts/send_entries.bat); bin scores need them.
+4. Owner's improvement list (2026-10-27, not started): speed up the offline test suite (~10 min, should be ~1 min:
+   find the slow tests); store regime-adjusted snow in storm_scores too (score both); .gitattributes for line endings.
+5. Then the build plan below (HTML storm report + timeline/trends + NOAA ALTA display: DEVELOPMENT ONLY, unpublished;
    feed v1 stays model-only until the owner approves a release that adds anything).
 
 ## Open questions for the owner
