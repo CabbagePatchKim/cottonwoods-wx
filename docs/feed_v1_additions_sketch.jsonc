@@ -1,0 +1,79 @@
+// SKETCH (owner reviewed 2026-10-28, NOT BUILT): additive fields for feed v1 storms.json, to be built together with
+// the HTML storm report (same summary/trend/phase numbers). "// NEW" = addition; everything else is v1 as published.
+// Values: real 11:43 MDT 10/28 feed, except those marked illustrative. Open owner decisions are listed at the bottom.
+{
+  "id": "2026103109",
+  "status": "upcoming",                         // NEW: "upcoming" | "in_progress" | "ended"
+  "start": "2026-10-30T12:00:00-06:00",
+  "end": "2026-11-02T11:00:00-07:00",
+  "hours": 72,
+  "window_from": { "model": "IFS", "cycle": "10/27 12z", "init": "2026-10-27T06:00:00-06:00" },
+
+  "summary": {                                  // NEW: the consensus, so a site doesn't recompute it
+    "snow_basis": "snow_in_regime",
+    "points": {
+      "alta": {
+        "bin_in": [10, 14],                     // owner's bin: lowest bin containing the median
+        "median_snow_in": 12.8,
+        "range_snow_in": [4.7, 21.6],           // lowest / highest deterministic model
+        "models_counted": ["GFS", "GDPS", "IFS"],   // runs covering the whole storm
+        "models_short": ["NAMNEST", "NAM", "RDPS"], // runs ending before the storm does
+        "ensembles": [
+          { "model": "GEFS", "wet_fraction": 0.97, "mean_water_in": 0.75 },
+          { "model": "ENS",  "wet_fraction": 1.00, "mean_water_in": 2.01 }
+        ],
+        "confidence": "low",                    // rule TBD (decision 2)
+        "change_since_previous": { "median_snow_in": 3.1, "bin_in_before": [8, 12] }   // illustrative
+      }
+    }
+  },
+
+  "phases": {                                   // NEW: structured form of the "flow/modes/parts (IFS)" notes
+    "from_model": "IFS",
+    "flow": [
+      { "direction": "SW",  "band": "warm", "temp_700mb_c": -1, "share": 0.68 },
+      { "direction": "N",   "band": "mild", "temp_700mb_c": -5, "share": 0.30 },
+      { "direction": "S/E", "band": "mild", "temp_700mb_c": -4, "share": 0.01 }
+    ],
+    "modes": [ { "mode": "frontal", "share": 0.79 }, { "mode": "post-frontal", "share": 0.21 } ],
+    "parts": [
+      { "start": "2026-10-30T12:00:00-06:00", "end": "2026-10-30T15:00:00-06:00", "share": 0.01 },
+      { "start": "2026-10-31T00:00:00-06:00", "end": "2026-11-02T11:00:00-07:00", "share": 0.99 }
+    ]
+  },
+
+  "notes": [ "... unchanged text notes ..." ],
+
+  "models": [
+    {
+      "model": "IFS", "cycle": "10/27 12z", "init": "2026-10-27T06:00:00-06:00",
+      "covers_full_storm": true, "run_ends": "2026-11-03T05:00:00-07:00",
+      "snow_level_ft": { "start": 10100, "end": 7400 },
+      "flow": "SW warm -1C 68% -> N mild -5C 30% -> S/E mild -4C 1%",
+      "modes": "frontal 79% -> post-frontal 21%",
+      "flow_steps": [ "... same shape as phases.flow, this model's own ..." ],   // NEW
+      "points": {
+        "alta": {
+          "type": "deterministic", "water_in": 2.08, "snow_in": 21.1, "snow_in_regime": 21.6,
+          "previous": { "init": "2026-10-27T00:00:00-06:00",                   // NEW (illustrative values)
+                        "water_in": 1.82, "snow_in": 16.0, "snow_in_regime": 16.4 }
+        }
+      }
+    },
+    {
+      "model": "ENS", "cycle": "10/28 06z", "init": "2026-10-28T00:00:00-06:00", "covers_full_storm": true,
+      "points": {
+        "alta": {
+          "type": "ensemble", "members_wet": 50, "members": 50, "mean_water_in": 2.01,
+          "water_pct_in": { "p10": 0.9, "p50": 1.9, "p90": 3.2 },               // NEW (illustrative)
+          "previous": { "init": "2026-10-27T18:00:00-06:00", "members_wet": 50, "mean_water_in": 1.96 }   // NEW
+        }
+      }
+    }
+  ]
+}
+// Open owner decisions before building:
+// 1. Summary snow basis: snow_in_regime or plain Kuchera snow_in?
+// 2. Confidence rule: e.g. deterministic spread in bins + ensemble wet fraction, counted by model FAMILY.
+// 3. Do coarse models count in the median at every lead, or only inside ~3 days (owner's 3-7 d totals aren't trusted)?
+// 4. Ensemble water percentiles (p10/p50/p90) wanted, or wet count + mean enough?

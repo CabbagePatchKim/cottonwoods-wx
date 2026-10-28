@@ -164,7 +164,10 @@ Running live, TWO places for now (side-by-side check before cutover):
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
-- CLOUD IFS BROKEN since 10/27 (fixed in main 10/28, needs a release): CI installed Herbie 2026.10.0 (unpinned),
+- RELEASED v1.2 (owner approved 2026-10-28, tag on e9f923e, pushed 18:36Z): the IFS fix below. Laptop IFS 10/27 18z,
+  10/28 00z/06z were uploaded to the bucket by hand (owner approved) so the cloud has no IFS gap. Check the first
+  v1.2 pass log: "Running approved release v1.2", IFS archived.
+- CLOUD IFS BROKEN since 10/27 (fixed in v1.2): CI installed Herbie 2026.10.0 (unpinned),
   which defaults ECMWF to the new 0.1 deg data (posted since 10/20, split into -sfc/-pl files) and fetches only
   -sfc; the pressure-level search returned an unwritten path -> FileNotFoundError on every IFS hour. Cloud ENS has
   been archived at 0.1 deg since 10/27 (laptop: 0.25). Fix: resolution "0p25" named in herbie_generic.SPECS,
@@ -252,6 +255,12 @@ incl. Alta, archived as text) as an automated Alta-total source.
    BIN SCORES GUIDE THE LEAN (owner, 2026-10-27): data/processed/bin_scores.csv (signed bins_off, points, lead, model,
    fc_flow/obs_flow) is the record CWX uses to choose its bin - which models to trust and which way (up/down a bin)
    to lean, by lead and regime. Train only on storms verified before the forecast was issued.
+FEED v1 ADDITIONS (owner, 2026-10-28: noted, implement LATER, with the HTML storm report - same numbers): the live
+   storms.json numbers parse cleanly, but flow/modes/parts/notes are display strings (regex to restyle), there is no
+   per-storm consensus, no storm status, no trend. Sketch: docs/feed_v1_additions_sketch.jsonc (status, summary per
+   point: bin/median/range/models counted/ensemble wet fraction/confidence/change; structured phases; per-model
+   `previous`; ensemble water percentiles). All additive (v1 rules), keep the text fields; ship as v1.3 on owner
+   approval. Four open owner decisions are listed at the end of the sketch.
 WEBSITE FEED (owner, 2026-10-27; after the HTML report, shares its summary data): a STATIC JSON "API" written after
    each pass (e.g. storms.json, storm/<id>.json, latest_runs.json, noaa_alta.json, scores.json) and published to a
    free static host (GitHub Pages / Netlify / Cloudflare Pages); no always-on server (laptop sleeps). Open questions
