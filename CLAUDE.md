@@ -185,7 +185,9 @@ Running live, TWO places for now (side-by-side check before cutover):
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
-- READY FOR v1.4 (in main, NOT released; owner asked for it 2026-10-28, approval of the release still needed):
+- RELEASED v1.4 (owner approved 2026-10-28, tag on 5827cd1, pushed ~22:17Z, CI tests green; first pass #9 22:28Z
+  manual by the owner: "code v1.4", all steps success, feed v1.4 published, no new runs that pass so the feed still
+  showed pre-release nearest-cell 12z numbers; blended numbers arrive with each model's next run). Contents:
   (a) archive/cells.py: coarse models (model_cells) give each point the BILINEAR blend of its 2x2 cells (step 0 of
   derive_run_fields; cell rows untouched; idempotent). Why: nearest-cell put Solitude (Apex) and Mill-D North in
   cells 28 km apart, so lower sites got more snow (GFS 12z 10/28: Mill-D 10.3" vs Solitude 7.0"). Archived runs keep
