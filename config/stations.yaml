@@ -177,6 +177,15 @@ storms:
   subperiod_gap_hours: 6   # inside a storm, a dry gap this long splits it into reported parts (e.g. 2/16 a/b)
   manual_match_hours: 12   # hand-entered storm totals (data/manual/storm_totals.csv) match a storm within this slack
   report_verified_days: 10 # the storm report lists storms verified in the last this-many days
+  max_lead_hours: 168      # storms are detected and totalled only from steps within this lead of each run's init
+                           # (owner, 2026-10-27: totals past day 7 aren't trusted). Runs are still ARCHIVED to
+                           # 240 h+ and verification scores every archived run, at any lead.
+
+# The daily model table (report.py model_days; also the feed's daily.json)
+report:
+  days: 10                       # 24 h columns
+  deterministic_lead_hours: 168  # deterministic amounts shown only within this lead; "-" past it
+  ensemble_lead_hours: 240       # ensembles go further: the 8-10 day "x of N members wet" tail
 
 # Verification: forecast windows vs observed windows
 verify:

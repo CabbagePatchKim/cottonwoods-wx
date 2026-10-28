@@ -264,3 +264,47 @@ def test_session_reminder_lists_only_recent_verified_storms_without_collins_entr
                            "start_utc": [pd.Timestamp("2026-10-31 06:00")], "end_utc": [pd.Timestamp("2026-11-01")]})
     need = mod.due(t, cfg, now, totals, pd.DataFrame())
     assert need["storm_id"].tolist() == ["b"]          # a has entries, c isn't over, d is too old
+
+
+# --- lead limits: storms and deterministic days to 168 h, ensembles to 240 h (owner, 2026-10-27) ----------------
+
+def test_storms_ignore_events_past_the_lead_limit_and_totals_stop_there():
+    from cottonwoods import storms as st
+    from cottonwoods.report import storm_models
+    cfg = load_config()
+    assert cfg["storms"]["max_lead_hours"] == 168
+    # day 2 event, an event straddling hour 168, and a day 9 event (never a storm)
+    fc = run_steps("GFS", "2026-11-01", [(30, 40), (160, 176), (200, 210)], hours=240)
+    w = st.storm_windows(st.model_events(fc, "alta", cfg["storms"]))
+    assert [x["fc_start"] for x in w] == [pd.Timestamp("2026-11-02 06:00"), pd.Timestamp("2026-11-07 16:00")]
+    assert w[1]["fc_end"] <= pd.Timestamp("2026-11-08 00:00")        # cut at init + 168 h
+    storm = pd.Series({"fc_start": pd.Timestamp("2026-11-07 16:00"), "fc_end": pd.Timestamp("2026-11-08 08:00"),
+                       "point": "alta"})
+    (r,) = storm_models(storm, fc, cfg)
+    assert not r["full"] and r["valid_to"] == pd.Timestamp("2026-11-08 00:00")
+    assert abs(r["points"]["alta"]["water_in"] - 8 / 25.4) < 1e-9     # hours 160-168 only
+
+
+def test_daily_table_shows_deterministic_to_7_days_and_ensembles_to_10():
+    from cottonwoods.report import model_days
+    cfg = make_cfg()
+    det = run_steps("GFS", "2026-11-01", [(0, 240)], hours=240)
+    ens = pd.concat([run_steps("GEFS", "2026-11-01", [(0, 240)], hours=240).assign(member=m) for m in range(3)])
+    rows = {r["model"]: r for r in model_days(pd.concat([det, ens]), cfg, "alta", start=pd.Timestamp("2026-11-01"))}
+    assert len(rows["GFS"]["windows"]) == cfg["report"]["days"] == 10
+    ends = [e for _, e in rows["GFS"]["windows"]]
+    shown = [e for e, c in zip(ends, rows["GFS"]["days"]) if c is not None]
+    assert max(shown) <= pd.Timestamp("2026-11-08")                   # nothing past init + 168 h
+    tail = [c for e, c in zip(ends, rows["GEFS"]["days"]) if e > pd.Timestamp("2026-11-08")]
+    assert tail and all(c is not None and c["members_wet"] == 3 for c in tail)   # 8-10 day tail stays
+
+
+def test_a_storm_tracked_past_the_lead_limit_is_dropped_as_out_of_range_and_comes_back():
+    # tracked before the limit existed (e.g. the IFS 282 h storm of 11/09): its window starts past init + 168 h
+    first = tracked(run_steps("GFS", "2026-11-01", [(150, 160)], hours=240), "2026-11-01 01:00")
+    first[["fc_start", "fc_end"]] += pd.Timedelta(hours=100)
+    later = tracked(run_steps("GFS", "2026-11-01 06:00", [], hours=240), "2026-11-01 06:30", first)
+    assert later.status.iloc[0] == "dropped" and "lead limit" in later.note.iloc[0]
+    # once a newer run reaches it and shows it, it's the same storm again
+    back = tracked(run_steps("GFS", "2026-11-05 00:00", [(154, 164)], hours=240), "2026-11-05 00:30", later)
+    assert len(back) == 1 and back.status.iloc[0] == "forecast" and "back in the models" in back.note.iloc[0]

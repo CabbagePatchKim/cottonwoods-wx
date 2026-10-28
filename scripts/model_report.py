@@ -6,7 +6,8 @@ Run automatically after each scheduled archive pass (scripts/run_models.bat); al
 
 Saved to data/reports/models_latest.txt (overwritten) and data/reports/models_<UTC time>.txt (kept).
 Each cell: deterministic models "water_in snow_in" (Kuchera); ensembles "members_with_0.10in/N mean_water_in".
-"-" means the run doesn't cover that whole day (e.g. HRRR beyond 48 h).
+"-" means the run doesn't cover that whole day (e.g. HRRR beyond 48 h), or the day ends past the shown lead
+(config report: deterministic 168 h, ensembles 240 h).
 """
 import argparse
 from datetime import datetime, timedelta, timezone
@@ -17,7 +18,7 @@ from cottonwoods import timefmt
 from cottonwoods.report import render, staleness
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--days", type=int, default=10)
+ap.add_argument("--days", type=int, help="default: config report.days")
 ap.add_argument("--points", nargs="+", help="default: every configured point")
 args = ap.parse_args()
 

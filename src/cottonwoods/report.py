@@ -13,7 +13,7 @@ import pandas as pd
 from . import regimes, timefmt
 from .config import PROCESSED_DIR
 from .storms import hand_obs_totals, manual_totals, run_flow, run_modes
-from .windows import window_total
+from .windows import window_total, within_lead
 from .units import FT_PER_M, MM_PER_IN
 
 # Display order: short-range high-res first, then global, then ensembles
@@ -48,18 +48,22 @@ def latest_runs(fc: pd.DataFrame) -> pd.DataFrame:
     return fc[fc["init"] == newest]
 
 
-def model_days(fc: pd.DataFrame, cfg: dict, point: str, days: int = 10, start: pd.Timestamp | None = None) -> list[dict]:
+def model_days(fc: pd.DataFrame, cfg: dict, point: str, days: int | None = None,
+               start: pd.Timestamp | None = None) -> list[dict]:
     """The numbers behind model_table, one dict per model (newest run), in display order. Each day is a dict:
     deterministic {"water_in", "snow_in", "snow_in_regime"} (NaN where missing; snow_in_regime only exists if fc went
     through regime_adjusted), ensembles {"members_wet", "members", "mean_water_in"},
-    or None where the run doesn't cover the whole day. Used by the text report and the website feed."""
+    or None where the run doesn't cover the whole day, or the day ends past the run's shown lead (config report:
+    deterministic 168 h, ensembles 240 h for the 8-10 day tail). Used by the text report and the website feed."""
+    rcfg = cfg["report"]
     fc = latest_runs(fc[fc["point"] == point])
     start = start or pd.Timestamp.now(tz="UTC").tz_localize(None)
-    wins = day_windows(start, days, cfg["verify"]["window_end_utc_hour"])
+    wins = day_windows(start, days or rcfg["days"], cfg["verify"]["window_end_utc_hour"])
     thr_mm = cfg["verify"]["event_swe_in"] * MM_PER_IN
     out = []
     for model, g in fc.groupby("model"):
         ens = "member" in g.columns and g["member"].notna().any()
+        g = within_lead(g, rcfg["ensemble_lead_hours"] if ens else rcfg["deterministic_lead_hours"])
         cells = []
         for s, e in wins:
             if ens:
@@ -84,7 +88,8 @@ def _by_model_order(rows: list[dict]) -> list[dict]:
     return sorted(rows, key=lambda r: model_rank(r["model"]))
 
 
-def model_table(fc: pd.DataFrame, cfg: dict, point: str, days: int = 10, start: pd.Timestamp | None = None) -> pd.DataFrame:
+def model_table(fc: pd.DataFrame, cfg: dict, point: str, days: int | None = None,
+                start: pd.Timestamp | None = None) -> pd.DataFrame:
     """One row per model (newest run): per-day water (in) and, where temperatures exist, Kuchera snow (in)."""
     rows = []
     for r in model_days(fc, cfg, point, days, start):
@@ -124,9 +129,12 @@ def staleness(cfg: dict, now, root=None, grace_hours: float = 4.0, lookback_cycl
     return out
 
 
-def render(fc: pd.DataFrame, cfg: dict, points: list[str], days: int = 10, start: pd.Timestamp | None = None) -> str:
+def render(fc: pd.DataFrame, cfg: dict, points: list[str], days: int | None = None,
+           start: pd.Timestamp | None = None) -> str:
     """The text report: one table per point."""
-    lines = []
+    rcfg = cfg["report"]
+    lines = [f"Deterministic amounts to {rcfg['deterministic_lead_hours']} h after each run's start; "
+             f"ensembles to {rcfg['ensemble_lead_hours']} h (the 8-10 day signal).", ""]
     for p in points:
         t = model_table(fc, cfg, p, days, start)
         end_local = timefmt.clock(day_windows(start or pd.Timestamp.now(tz="UTC").tz_localize(None), 1,
@@ -153,12 +161,14 @@ def storm_models(st, fc: pd.DataFrame, cfg: dict) -> list[dict]:
     window, in display order. Per point: deterministic {"water_in", "snow_in" (plain Kuchera), "snow_in_regime"
     (regime-adjusted, NaN if no factors)}, ensembles {"members_wet",
     "members", "mean_water_in"}, or None if the run was pulled before the point existed. snow_level_m is
-    (first, last) over the wet steps at the storm's point, or None. Used by the text report and the website feed."""
+    (first, last) over the wet steps at the storm's point, or None. Only steps within storms.max_lead_hours of the
+    run's init count (a run whose shown part ends before the storm does is not "full"). Used by the text report and
+    the website feed."""
     s, e = st.fc_start, st.fc_end
     thr = cfg["verify"]["event_swe_in"]
     out = []
     for model, g in fc.groupby("model"):
-        g = g[g["init"] == g["init"].max()]
+        g = within_lead(g[g["init"] == g["init"].max()], cfg["storms"]["max_lead_hours"])
         if g["valid_end"].max() <= s:
             continue  # newest run doesn't reach the storm
         r = {"model": model, "init": g["init"].iloc[0], "valid_to": g["valid_end"].max(),

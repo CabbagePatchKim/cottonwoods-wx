@@ -35,7 +35,12 @@ Config and shared
   model_cells, catchup_days) are read with `.get`.
 - `units.py`: MM_PER_IN, FT_PER_M (the only definitions).
 - `timefmt.py`: every time shown to people: Mountain (MDT/MST by date), 24-hour. Data stays UTC.
-- `windows.py`: the one window-total rule (strict for daily report, prorated for storms).
+- `windows.py`: the one window-total rule (strict for daily report, prorated for storms), and `within_lead` (the
+  steps of a run a report shows). LEAD LIMITS (owner, 2026-10-27): storms detected + totalled from the first
+  storms.max_lead_hours (168) of each run; daily table deterministic to report.deterministic_lead_hours (168),
+  ensembles to report.ensemble_lead_hours (240: the 8-10 day "x of N" tail). ARCHIVE stays 240 h+ (IFS 360,
+  GEFS 384) and verification scores every archived run at any lead. A storm tracked past the limit is dropped
+  with "starts past ..., the lead limit" and revives as the same storm once a run reaches it.
 
 Pulling model runs (`models/`)
 - `registry.py`: every model's schedule (cycles 00/06/12/18z shared; GDPS 00/12z), forecast hours, posting lag,

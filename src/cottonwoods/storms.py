@@ -6,6 +6,8 @@ Rules (owner's, config `storms:`):
     It must total min_total_in (0.10") to count.
   - The storm's timeframe is the LONGEST event among the newest run of each deterministic model, and every model
     is totalled over that same window. (Ensemble means smear precip in time, so ensembles don't set the window.)
+  - Only steps within max_lead_hours (168 h) of a run's init count for detection and the reported totals, so
+    day 8-10 noise doesn't start storms. Verification still scores every archived run, at any lead.
   - Verification waits until the observations (SNOTEL hourly gauge at the point's sites) show the storm is over:
     gap_hours with no measurable precip after the last wet hour. The final window is widened to cover the
     observed event if it started earlier or ended later than forecast.
@@ -33,7 +35,7 @@ import numpy as np
 import pandas as pd
 
 from . import modes, regimes, timefmt
-from .windows import window_total
+from .windows import window_total, within_lead
 from .archive.io import write_df
 from .config import ARCHIVE_DIR
 from .units import MM_PER_IN
@@ -96,13 +98,14 @@ def obs_steps(obs: pd.DataFrame, sites: list[str]) -> pd.DataFrame:
 # --- forecast storm windows ------------------------------------------------------------------
 
 def model_events(fc: pd.DataFrame, point: str, scfg: dict) -> pd.DataFrame:
-    """Events in the newest run of each deterministic model at one point: model, init, start, end, total_mm."""
+    """Events in the newest run of each deterministic model at one point, within scfg max_lead_hours of its init:
+    model, init, start, end, total_mm."""
     fc = fc[fc["point"] == point]
     if "member" in fc.columns:
         fc = fc[fc["member"].isna()]
     rows = []
     for model, g in fc.groupby("model"):
-        g = g[g["init"] == g["init"].max()]
+        g = within_lead(g[g["init"] == g["init"].max()], scfg["max_lead_hours"])
         ev = detect_events(g, scfg["wet_in"] * MM_PER_IN, scfg["gap_hours"], scfg["min_total_in"] * MM_PER_IN)
         for _, e in ev.iterrows():
             rows.append({"model": model, "init": g["init"].iloc[0], **e.to_dict()})
@@ -225,12 +228,16 @@ def _new_storm(storms: pd.DataFrame, w: dict, point: str, now, **extra) -> pd.Da
     return pd.concat([storms, pd.DataFrame([row])], ignore_index=True)
 
 
-def _drop_stale(storms: pd.DataFrame, point: str, now, touched: set) -> None:
-    """Future storms no model's newest run shows any more. (Storms already under way are kept for verification.)"""
+def _drop_stale(storms: pd.DataFrame, point: str, now, touched: set, horizon) -> None:
+    """Future storms no model's newest run shows any more. (Storms already under way are kept for verification.)
+    horizon: the furthest time any newest run is shown to (max_lead_hours); a storm starting past it is out of
+    range, not gone, and comes back as the same storm once a run reaches it."""
     stale = (storms["point"] == point) & (storms["status"] == "forecast") & (storms["fc_start"] > now) \
         & ~storms.index.isin(touched)
+    far = stale & (storms["fc_start"] >= horizon)
     storms.loc[stale, "status"] = "dropped"
-    storms.loc[stale, "note"] = f"no model's newest run shows it any more ({timefmt.clock(now)})"
+    storms.loc[stale & ~far, "note"] = f"no model's newest run shows it any more ({timefmt.clock(now)})"
+    storms.loc[far, "note"] = f"starts past {timefmt.clock(horizon)}, the lead limit of the newest runs ({timefmt.clock(now)})"
     storms.loc[stale, "updated_at"] = now
 
 
@@ -284,7 +291,9 @@ def update_forecast_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, no
             if other not in touched:   # one event now spans two tracked storms: fold the later one in
                 _apply_window(storms, other, {}, now, status="merged",
                               note=f"merged into {storms.at[keep, 'storm_id']} ({timefmt.clock(now)})")
-    _drop_stale(storms, point, now, touched)
+    det = fc[fc["member"].isna()] if "member" in fc.columns else fc
+    horizon = det["init"].max() + pd.Timedelta(hours=scfg["max_lead_hours"]) if len(det) else now
+    _drop_stale(storms, point, now, touched, horizon)
     return storms
 
 

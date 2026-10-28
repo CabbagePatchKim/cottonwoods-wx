@@ -24,3 +24,8 @@ def window_total(steps: pd.DataFrame, s, e, col: str = "qpf_mm", strict: bool = 
     overlap = (steps["valid_end"].clip(upper=e) - steps["valid_start"].clip(lower=s)).dt.total_seconds().clip(lower=0)
     frac = (overlap / length.where(length > 0)).fillna(0)
     return float((steps[col].fillna(0) * frac).sum())
+
+
+def within_lead(steps: pd.DataFrame, hours: float) -> pd.DataFrame:
+    """Only the steps ending within `hours` of their run's init: what a report shows of a run (archives keep all)."""
+    return steps[steps["valid_end"] <= steps["init"] + pd.Timedelta(hours=hours)]

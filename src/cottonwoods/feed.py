@@ -19,6 +19,8 @@ Format rules (the website relies on them; tests/test_feed.py pins them):
     history in that step's flow; null if no factors). Neither is verified yet; the site picks which to show.
   - A run that ends before the storm does (covers_full_storm false) has null amounts at every resort: its partial
     total isn't a forecast for the storm, and a 0 would read like one. run_ends says how far it reached.
+  - Lead limits (config): storms use each run's first 168 h only (run_ends is at most init + 168 h); daily.json
+    has null deterministic amounts past 168 h and ensemble amounts to 240 h (the 8-10 day "x of N" tail).
 """
 from __future__ import annotations
 
@@ -96,7 +98,7 @@ def build_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> dict:
     return {"snow_regime_adjusted": adjusted, "storms": out, "recent_changes": changes}
 
 
-def build_daily(fc: pd.DataFrame, cfg: dict, start: pd.Timestamp, days: int = 10) -> dict:
+def build_daily(fc: pd.DataFrame, cfg: dict, start: pd.Timestamp, days: int | None = None) -> dict:
     fc, _ = regime_adjusted(fc, cfg)
     points = {}
     for p in cfg["points"]:
