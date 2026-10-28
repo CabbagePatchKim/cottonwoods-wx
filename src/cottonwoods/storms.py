@@ -39,6 +39,7 @@ import pandas as pd
 from . import bins, modes, regimes, timefmt
 from .windows import window_total, within_lead
 from .archive.io import write_df
+from .gauge import gauge_increments
 from .config import ARCHIVE_DIR, PROCESSED_DIR
 from .units import MM_PER_IN
 
@@ -78,18 +79,18 @@ def detect_events(steps: pd.DataFrame, wet_mm: float, gap_hours: float, min_tota
     return pd.DataFrame(out, columns=["start", "end", "total_mm"])
 
 
-def obs_steps(obs: pd.DataFrame, sites: list[str]) -> pd.DataFrame:
+def obs_steps(obs: pd.DataFrame, sites: list[str], gcfg: dict) -> pd.DataFrame:
     """Hourly observed precip steps from SNOTEL gauge totals (PREC) at the given sites, averaged across sites.
 
-    The gauge reports a running total in 0.1" steps; each hourly rise is that hour's precip. Drops (gauge
-    resets, noise) count as 0.
+    The gauge reports a noisy running total in 0.1" steps; cottonwoods.gauge turns it into real hourly precip
+    (smoothed, rises above the highest level so far only, resets start over), so noise isn't counted as precip.
     """
     parts = []
     for site in sites:
         s = obs[(obs["site"] == site) & (obs["element"] == "PREC")].sort_values("time_utc")
         s = s.drop_duplicates("time_utc", keep="last").set_index("time_utc")["value"]
         if len(s) > 1:
-            parts.append(s.diff().clip(lower=0).rename(site))
+            parts.append(gauge_increments(s, gcfg).rename(site))
     if not parts:
         return pd.DataFrame(columns=["valid_start", "valid_end", "qpf_mm"])
     inc = pd.concat(parts, axis=1).mean(axis=1).dropna()
@@ -470,7 +471,7 @@ def run(fc: pd.DataFrame, obs: pd.DataFrame, cfg: dict, now: pd.Timestamp, root=
     storms = update_forecast_storms(load_storms(root), fc, cfg, now)
     point = cfg["storms"]["point"]
     sites = [s for s in (cfg["points"][point].get("obs") or []) if s in cfg["snotel"]]
-    osteps = obs_steps(obs, sites) if not obs.empty else pd.DataFrame(columns=["valid_start", "valid_end", "qpf_mm"])
+    osteps = obs_steps(obs, sites, cfg["gauge"]) if not obs.empty else pd.DataFrame(columns=["valid_start", "valid_end", "qpf_mm"])
     for i, st in storms[storms["status"] == "forecast"].iterrows():
         done = ready_to_verify(st, osteps, cfg, now)
         if done is None:

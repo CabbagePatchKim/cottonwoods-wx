@@ -308,3 +308,29 @@ def test_a_storm_tracked_past_the_lead_limit_is_dropped_as_out_of_range_and_come
     # once a newer run reaches it and shows it, it's the same storm again
     back = tracked(run_steps("GFS", "2026-11-05 00:00", [(154, 164)], hours=240), "2026-11-05 00:30", later)
     assert len(back) == 1 and back.status.iloc[0] == "forecast" and "back in the models" in back.note.iloc[0]
+
+
+def test_gauge_noise_is_not_precip_but_real_rises_and_resets_are_handled():
+    from cottonwoods.gauge import gauge_increments
+    g = make_cfg()["gauge"]
+    t = pd.date_range("2026-10-27 04:00", periods=24, freq="h")
+    wobble = pd.Series([8.8, 8.9, 9.0, 8.9, 9.0, 8.8, 8.9, 9.0, 9.0, 8.9, 8.8, 8.9] * 2, index=t)  # Atwater, dry 10/27
+    assert wobble.diff().clip(lower=0).sum() > 0.5                 # what the old rule counted as precip
+    inc = gauge_increments(wobble, g)
+    assert abs(inc.sum() - 0.2) < 1e-9 and inc.iloc[3:].sum() == 0   # noise counts once (to the band top), then never
+    storm = pd.Series([9.0, 8.9, 9.0, 9.1, 9.3, 9.6, 9.8, 9.7, 9.8, 9.9, 9.8, 9.9], index=t[:12])  # a real 0.9" rise
+    assert abs(gauge_increments(storm, g).sum() - 0.9) < 1e-9
+    emptied = pd.Series([12.0, 12.1, 12.2, 0.0, 0.0, 0.1, 0.2, 0.3], index=t[:8])   # serviced, then it keeps raining
+    assert abs(gauge_increments(emptied, g).sum() - 0.5) < 1e-9
+
+
+def test_dry_day_with_gauge_wobble_is_not_an_observed_event():
+    from cottonwoods.storms import detect_events, obs_steps
+    cfg = make_cfg()
+    t = pd.date_range("2026-10-27 04:00", periods=48, freq="h")
+    obs = pd.DataFrame({"site": "atwater", "station": "x", "element": "PREC", "time_utc": t,
+                        "value": [8.8, 8.9, 9.0, 8.9, 9.0, 8.8, 8.9, 9.0, 9.0, 8.9, 8.8, 8.9] * 4})
+    st = obs_steps(obs, ["atwater"], cfg["gauge"])
+    later = st[st.valid_end > t[11]]                               # after the gauge's level is known (the store
+    assert later["qpf_mm"].sum() == 0                              # holds weeks of it, so this is the normal case)
+    assert detect_events(later, cfg["storms"]["obs_wet_in"] * 25.4, cfg["storms"]["gap_hours"], 0.0).empty

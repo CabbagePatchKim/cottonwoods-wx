@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from .archive.obs import drop_unreliable_water
+from .gauge import gauge_increments
 from .units import MM_PER_IN
 
 
@@ -77,18 +78,18 @@ def window_end_hour(cfg: dict, site: str | None, kind: str) -> int:
     return cfg["verify"]["window_end_utc_hour"]
 
 
-def _window_change(series: pd.Series, s: pd.Timestamp, e: pd.Timestamp, element: str, tol_hours: float) -> float:
-    """Observed liquid over (s, e]. Gauge precip resets when serviced, so it sums positive steps instead."""
+def _window_change(series: pd.Series, s: pd.Timestamp, e: pd.Timestamp, element: str, tol_hours: float,
+                   gcfg: dict) -> float:
+    """Observed liquid over (s, e]. A precip gauge is noisy and resets when serviced, so its hourly precip comes from
+    cottonwoods.gauge (with a day of context before the window, so the gauge's level is known at the start)."""
     start, end = _value_near(series, s, tol_hours), _value_near(series, e, tol_hours)
     if np.isnan(start) or np.isnan(end):
         return np.nan
     if element != "PREC":
         return end - start
-    inside = series[(series.index > s) & (series.index <= e)]
-    # Hour-to-hour changes from the window start. A gauge emptying shows up as one big negative step,
-    # which clip(lower=0) below drops instead of letting it cancel out real precip.
-    steps = pd.concat([pd.Series([start]), inside.reset_index(drop=True)]).diff()
-    return float(steps.clip(lower=0).sum())
+    near = series[(series.index >= s - pd.Timedelta(hours=24)) & (series.index <= e + pd.Timedelta(hours=2))]
+    inc = gauge_increments(near, gcfg)
+    return float(inc[(inc.index > s) & (inc.index <= e)].sum())
 
 
 def _windows(g: pd.DataFrame, end_hour: int, win: pd.Timedelta):
@@ -141,7 +142,7 @@ def build_pairs(fc: pd.DataFrame, obs: pd.DataFrame, cfg: dict, manual: pd.DataF
                     obs_liquid = _value_near(series(site, "PRCP"), e, 0)
                     new_snow = _value_near(series(site, "SNOW"), e, 0)
                 else:
-                    obs_liquid = _window_change(series(site, element), s, e, element, tol)
+                    obs_liquid = _window_change(series(site, element), s, e, element, tol, cfg["gauge"])
                     # Hand-entered snow reports go by local date; convert the window end from UTC to Utah time.
                     new_snow = np.nan
                     if manual is not None and not manual.empty:

@@ -45,6 +45,7 @@ REQUIRED = {
                "snow_bins_above", "bin_score", "bin_score_leads_hours"],
     "snotel_settings": ["tz_offset_hours"],
     "obs_fetch": ["retries", "retry_wait_s", "catchup_max_days"],
+    "gauge": ["median_hours", "reset_drop_in"],
     "local_settings": ["standard_offset_hours"],
     "points": [],
     "snotel": [],

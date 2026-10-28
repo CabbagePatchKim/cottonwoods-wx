@@ -70,6 +70,11 @@ Derivation (pure functions, all tested offline)
   `thermal` (cold_700mb_c) is the factor fallback. factor_for: flow+band -> flow+thermal -> flow -> 1.0 (each needs
   factor_min_days). Archived runs are relabelled on read (with_bands), so changing band edges needs no re-archive.
 - `modes.py`: precip mode per step (frontal / post-frontal / cellular / lake-effect).
+- `gauge.py` (2026-10-27, owner approved): precip GAUGE running totals -> real hourly precip. Gauges wobble 0.1-0.2"
+  with no precip; the old "sum every hourly rise" counted that (Atwater dry 10/27: 0.4"; months 30-300% high). Now
+  only rises above the highest level so far count (config gauge: median_hours 1 = no smoothing, reset_drop_in 0.5 =
+  gauge emptied). Used by storms.obs_steps (storm windows + observed water) and verify._window_change (gauge PREC
+  sites, e.g. Collins). Matches each month's net gauge change within ~0.1" on the stored months.
 
 Storms, verification, reports
 - `storms.py`: storm life cycle - forecast -> verified, or dropped (future storm no newest run shows) / merged; splits

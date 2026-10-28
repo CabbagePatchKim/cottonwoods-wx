@@ -128,6 +128,13 @@ obs_fetch:
   retry_wait_s: 60        # wait between tries (a DNS or network blip, e.g. right after the laptop wakes)
   catchup_max_days: 30    # furthest back a scheduled fetch reaches for missed hours
 
+# Precip gauge running totals -> real hourly precip (src/cottonwoods/gauge.py). The gauges wobble 0.1-0.2" with no
+# precip; summing every rise counted that as precip (30-300% too much). Rises above the highest level so far count.
+gauge:
+  median_hours: 1         # centered rolling median first (1 = off: on real months the plain envelope matched the
+                          # net change best, and smoothing loses precip at resets and at the newest hour)
+  reset_drop_in: 0.5      # a drop bigger than this = gauge emptied/serviced: start over (noise never drops this far)
+
 # Utah local STANDARD time (MST, UTC-7): the NOAA coop observer's daily reading time (ALTA reads at 18:00 MST) and
 # the local date of hand-entered snow reports. Not the same as SNOTEL's clock above. (Report DISPLAY times are
 # handled separately, with daylight saving, in src/cottonwoods/timefmt.py.)
