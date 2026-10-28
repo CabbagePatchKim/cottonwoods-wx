@@ -12,7 +12,7 @@ import pandas as pd
 
 from . import regimes, timefmt
 from .config import PROCESSED_DIR
-from .storms import hand_obs_totals, manual_totals, run_flow, run_modes
+from .storms import bin_scores, hand_obs_totals, manual_totals, run_flow, run_modes
 from .windows import window_total, within_lead
 from .units import FT_PER_M, MM_PER_IN
 
@@ -265,10 +265,12 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> str:
 
 # --- recently verified storms: observed vs the last forecast before each one ------------------------------------------
 
-def last_runs_before(scores: pd.DataFrame, storm_id: str) -> pd.DataFrame:
-    """Each model's newest scored run issued before the storm started: deterministic water + snow; ensembles their
-    mean water. Columns model, init, lead_hr, water_in, snow_in (NaN for ensembles)."""
-    sc = scores[(scores["storm_id"].astype(str) == str(storm_id)) & (scores["lead_to_start_hr"] > 0)]
+def last_runs_before(scores: pd.DataFrame, storm_id: str, min_lead_hr: float = 0) -> pd.DataFrame:
+    """Each model's newest scored run issued before the storm started (and at least min_lead_hr before it):
+    deterministic water + snow; ensembles their mean water. Columns model, init, lead_hr, water_in, snow_in (NaN for
+    ensembles)."""
+    lead = scores["lead_to_start_hr"]
+    sc = scores[(scores["storm_id"].astype(str) == str(storm_id)) & (lead > 0) & (lead >= min_lead_hr)]
     rows = []
     for model, g in sc.groupby("model"):
         g = g[g["init"] == g["init"].max()]
@@ -278,15 +280,55 @@ def last_runs_before(scores: pd.DataFrame, storm_id: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def bin_picks(binned: pd.DataFrame, storm_id: str, cfg: dict) -> dict[str, pd.DataFrame]:
+    """The bin-scored runs the report shows for one storm: each model's last run before it ("last") and its newest run
+    at least each of verify.bin_score_leads_hours ahead ("24 h", ...). {kind: rows of `binned`, one per model}."""
+    if binned.empty:
+        return {}
+    b = binned[binned["storm_id"].astype(str) == str(storm_id)]
+    picks = {}
+    for kind, lead in [("last", 0)] + [(f"{h} h", h) for h in cfg["verify"]["bin_score_leads_hours"]]:
+        runs = last_runs_before(b, storm_id, lead) if not b.empty else pd.DataFrame()
+        if not runs.empty:
+            picks[kind] = runs.merge(b, on=["model", "init"])
+    return picks
+
+
+def _bin_cell(row) -> str:
+    return f"{row.fc_bin} {row.points:+d}" if row is not None else ""
+
+
+def bin_totals(binned: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Season bin score per model over every verified storm with an observed snow total: per kind (last run, 24 h,
+    ...) the summed points and right bins, e.g. "+3 (2 of 3 right)"."""
+    out = {}
+    for sid in binned["storm_id"].astype(str).unique() if not binned.empty else []:
+        for kind, rows in bin_picks(binned, sid, cfg).items():
+            for _, r in rows.iterrows():
+                t = out.setdefault(r.model, {}).setdefault(kind, [0, 0, 0])
+                t[0], t[1], t[2] = t[0] + r.points, t[1] + bool(r.hit), t[2] + 1
+    rows = [{"model": m, **{k: f"{p:+d} ({h} of {n} right)" for k, (p, h, n) in kinds.items()}}
+            for m, kinds in out.items()]
+    return pd.DataFrame(rows).fillna("") if rows else pd.DataFrame()
+
+
 def render_verified(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataFrame, cfg: dict, now,
-                    readings: pd.DataFrame | None = None) -> str:
+                    readings: pd.DataFrame | None = None, binned: pd.DataFrame | None = None) -> str:
     """Storms verified in the last storms.report_verified_days: observed totals (SNOTEL water; hand-entered storm totals
-    and hand-copied readings, e.g. Alta Collins snow and water) next to each model's last run before the storm."""
+    and hand-copied readings, e.g. Alta Collins snow and water) next to each model's last run before the storm, with
+    the bin score (cottonwoods.bins) of that run and of its runs 24/72 h ahead, then the season's bin-score totals.
+    binned: storms.bin_scores (computed here if not given)."""
+    if binned is None:
+        binned = bin_scores(storms, scores, totals, readings, cfg)
     days = cfg["storms"]["report_verified_days"]
     v = storms[(storms["status"] == "verified") & (pd.to_datetime(storms["final_end"]) >= pd.Timestamp(now) - pd.Timedelta(days=days))]
-    if v.empty:
+    if v.empty and binned.empty:
         return ""
-    lines, tables = [f"=== Verified in the last {days} days (observed vs each model's last run before the storm)"], []
+    sc = cfg["verify"]["bin_score"]
+    lines, tables = [f"=== Verified in the last {days} days (observed vs each model's last run before the storm)",
+                     f"    bin score: right bin +{sc['reward']}, one bin off 0, each bin further -{sc['per_bin']}"], []
+    if v.empty:                                          # a dry spell: the season's bin scores still show
+        lines = [f"=== Verified in the last {days} days: none"]
     for _, st in v.sort_values("final_start").iterrows():
         lines.append(f"--- Storm {st.storm_id}: {timefmt.clock(st.final_start, weekday=True)} - "
                      f"{timefmt.clock(st.final_end, weekday=True)}")
@@ -299,6 +341,12 @@ def render_verified(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataF
         if not found:
             obs += " | Collins: not entered yet (data/entries/)"
         lines.append(f"    observed: {obs}")
+        picks = bin_picks(binned, st.storm_id, cfg)
+        if picks:
+            first = next(iter(picks.values())).iloc[0]
+            lines.append(f"    observed bin: {first.obs_bin} ({first.obs_snow_in:.0f}\", {first.obs_snow_source})")
+        else:
+            lines.append("    bin score: waiting for an observed snow total (hand entry)")
         runs = last_runs_before(scores, st.storm_id) if not scores.empty else pd.DataFrame()
         if runs.empty:
             lines.append("    (no scored runs)")
@@ -307,7 +355,16 @@ def render_verified(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataF
                           "lead": runs["lead_hr"].map(lambda h: f"{h:.0f} h before"),
                           "water": runs["water_in"].map(lambda w: f"{w:.2f}\""),
                           "snow": runs["snow_in"].map(lambda x: f"{x:.0f}\"" if pd.notna(x) else "")})
+        for kind, rows in picks.items():
+            by_model = {r.model: r for _, r in rows.iterrows()}
+            t[f"bin {kind}" if kind == "last" else f"bin at {kind}"] = runs["model"].map(lambda m: _bin_cell(by_model.get(m)))
         tables.append(t.sort_values("model", key=lambda c: c.map(model_rank)))
+        lines.append(("TABLE", len(tables) - 1))
+    season = bin_totals(binned, cfg)
+    if not season.empty:
+        lines += ["", "=== Bin score, all verified storms with an observed snow total (score, right bins)"]
+        season = season.rename(columns={k: f"bin {k}" if k == "last" else f"bin at {k}" for k in season.columns if k != "model"})
+        tables.append(season.sort_values("model", key=lambda c: c.map(model_rank)))
         lines.append(("TABLE", len(tables) - 1))
     rendered = _aligned(tables)
     return "\n".join(rendered[x[1]] if isinstance(x, tuple) else x for x in lines) + "\n"

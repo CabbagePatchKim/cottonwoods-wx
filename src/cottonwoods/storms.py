@@ -28,16 +28,18 @@ stays visible.
 
 data/archive/storms.csv            one row per storm (status: forecast -> verified / dropped / merged)
 data/archive/storm_scores.csv      one row per storm x model run (x member for ensembles) once verified
+data/processed/bin_scores.csv      the deterministic runs of those with the owner's bin score, once the storm has an
+                                   observed snow total (hand entries, or 0 for a dry storm); rebuilt every pass
 """
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-from . import modes, regimes, timefmt
+from . import bins, modes, regimes, timefmt
 from .windows import window_total, within_lead
 from .archive.io import write_df
-from .config import ARCHIVE_DIR
+from .config import ARCHIVE_DIR, PROCESSED_DIR
 from .units import MM_PER_IN
 
 COLS = ["storm_id", "point", "status", "fc_start", "fc_end", "defining_model", "defining_init", "outside_note",
@@ -405,6 +407,43 @@ def hand_obs_totals(storm: pd.Series, readings: pd.DataFrame, cfg: dict, source:
     kinds = sorted(how_s | how_w)
     return {"new_snow_in": snow, "water_in": water, "max_depth_in": r["depth_in"].max(),
             "sources": f"{source} ({', '.join(kinds)})" if kinds else source}
+
+
+def observed_snow(storm: pd.Series, totals: pd.DataFrame, readings: pd.DataFrame | None, cfg: dict) -> tuple[float, str]:
+    """A verified storm's observed new snow and where it came from: the owner's hand-entered storm total, else the
+    hand-copied (Collins) readings, else 0 when SNOTEL saw no measurable water (no water, no snow). SNOTEL depth is
+    too noisy for new snow, so a wet storm without hand entries has no observed snow yet: (nan, "")."""
+    for found in (manual_totals(storm, totals, cfg), hand_obs_totals(storm, readings, cfg)):
+        if found and pd.notna(found["new_snow_in"]):
+            return float(found["new_snow_in"]), found["sources"]
+    if pd.notna(storm.get("obs_water_in")) and storm.obs_water_in < cfg["verify"]["event_swe_in"]:
+        return 0.0, "SNOTEL dry"
+    return np.nan, ""
+
+
+def bin_scores(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataFrame, readings: pd.DataFrame | None,
+               cfg: dict) -> pd.DataFrame:
+    """Every scored deterministic run (any lead) of every verified storm that has an observed snow total, with its
+    bin score (cottonwoods.bins): storm_scores columns + obs_snow_in, obs_snow_source, fc_bin, obs_bin, bins_off,
+    hit, points. Rebuilt each pass because hand totals arrive after a storm is verified."""
+    if scores.empty or storms.empty:
+        return pd.DataFrame()
+    rows = []
+    for _, st in storms[storms["status"] == "verified"].iterrows():
+        obs_in, source = observed_snow(st, totals, readings, cfg)
+        if np.isnan(obs_in):
+            continue
+        sc = scores[(scores["storm_id"].astype(str) == str(st.storm_id)) & scores["fc_snow_in"].notna()]
+        for _, r in sc.iterrows():
+            rows.append({**r.to_dict(), "obs_snow_in": obs_in, "obs_snow_source": source,
+                         **bins.bin_score(r.fc_snow_in, obs_in, cfg["verify"])})
+    return pd.DataFrame(rows)
+
+
+def save_bin_scores(table: pd.DataFrame, root=None) -> None:
+    p = (root or PROCESSED_DIR) / "bin_scores.csv"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    table.to_csv(p, index=False)
 
 
 def load_scores(root=None) -> pd.DataFrame:

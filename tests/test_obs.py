@@ -107,3 +107,40 @@ def test_sounding_archive_replaces_refetched_levels():
                              fetcher=lambda *a, **k: fake_sounding("2023-12-08 12:00", t700=-12.0))
         df = oa.load_soundings(root=root)
     assert len(df) == 8 and df[df.pressure_hpa == 700].temp_c.iloc[0] == -12.0
+
+
+def test_scheduled_obs_fetch_reaches_back_to_the_newest_stored_hour_of_every_site():
+    from datetime import date
+    cfg = make_cfg()
+    today = date(2026, 11, 20)
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        assert oa.catchup_begin(cfg, today, 3, root=root) == date(2026, 10, 21)    # nothing stored: the 30-day cap
+        for i, (site, v) in enumerate(cfg["snotel"].items()):
+            start = "2026-11-12 00:00" if site == "atwater" else "2026-11-19 00:00"   # atwater missed a week
+            f = snotel_frame(v["triplet"], start, 5).assign(element="PREC")
+            oa.archive_snotel(cfg, "2026-11-01", "2026-11-20", root=root, fetcher=lambda *a, f=f, **k: f)
+        assert oa.catchup_begin(cfg, today, 3, root=root) == date(2026, 11, 12)
+        for site, v in cfg["snotel"].items():                  # every site current: just the trailing days
+            f = snotel_frame(v["triplet"], "2026-11-19 12:00", 3).assign(element="PREC")
+            oa.archive_snotel(cfg, "2026-11-19", "2026-11-20", root=root, fetcher=lambda *a, f=f, **k: f)
+        assert oa.catchup_begin(cfg, today, 3, root=root) == date(2026, 11, 17)
+
+
+def test_obs_fetch_is_retried_and_the_last_failure_is_raised():
+    cfg = make_cfg()
+    cfg["obs_fetch"].update(retries=3, retry_wait_s=60)
+    calls, waits, said = [], [], []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise ConnectionError("getaddrinfo failed")
+        return 42
+    assert oa.with_retries(flaky, cfg, "obs", log=said.append, sleep=waits.append) == 42
+    assert len(calls) == 3 and waits == [60, 60] and "try 1 of 3 failed (ConnectionError)" in said[0]
+    try:
+        oa.with_retries(lambda: 1 / 0, cfg, "obs", log=said.append, sleep=waits.append)
+        raise AssertionError("should have raised")
+    except ZeroDivisionError:
+        pass

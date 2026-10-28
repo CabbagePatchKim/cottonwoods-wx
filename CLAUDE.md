@@ -58,7 +58,10 @@ Archive (`archive/`)
 - `runner.py`: an archive pass: PassLock, build_jobs (newest first; Canada 3-day catch-up), FailureLog
   (skip after 4 tries), run_jobs, split_streams/run_streams (one process per server), clear_caches.
   `scripts/archive_forecasts.py` is only its command line.
-- `obs.py`: SNOTEL (UTC-8!), Synoptic, NOAA coop, soundings stores; `drop_unreliable_water`.
+- `obs.py`: SNOTEL (UTC-8!), Synoptic, NOAA coop, soundings stores; `drop_unreliable_water`. Missed obs
+  (2026-10-27): `with_retries` (config obs_fetch: 3 tries, 60 s apart; a failed source no longer stops the others)
+  and `catchup_begin` (a scheduled fetch reaches back to the newest stored SNOTEL gauge hour of every site, max
+  obs_fetch.catchup_max_days 30). Laptop network often fails right after wake (2 SNOTEL connection errors 10/27).
 
 Derivation (pure functions, all tested offline)
 - `profile.py`: profile at the station's real elevation, wet-bulb snow/mix/rain (NWS WR TA 19-01), dry-air nudge.
@@ -72,7 +75,12 @@ Storms, verification, reports
 - `storms.py`: storm life cycle - forecast -> verified, or dropped (future storm no newest run shows) / merged; splits
   noted ('split from'); per-model separate periods (fc_periods) and sub-periods (6 h gaps, fc_subperiods).
   Detect events (12 h dry gap), storm windows (LONGEST deterministic event), storm table, verify
-  against SNOTEL once 12 h dry, scores. `verify.py`: the separate DAILY-window verification (24 h windows ending
+  against SNOTEL once 12 h dry, scores. `bins.py`: the owner's snow bins (config verify.snow_bins_in, 0-2 added at
+  the bottom 2026-10-27; lowest bin containing the amount) and the BIN SCORE (verify.bin_score: right bin +2, one bin
+  off 0, -1 per bin further; signed bins_off, + = model too high). storms.bin_scores scores every deterministic run
+  of each verified storm once it has observed snow (hand total / Collins readings, or 0 if SNOTEL dry; SNOTEL depth
+  is never used) -> data/processed/bin_scores.csv, rebuilt every pass; the report's Verified section shows last run +
+  runs >= 24/72 h ahead (verify.bin_score_leads_hours) and season totals. Not in the feed. `verify.py`: the separate DAILY-window verification (24 h windows ending
   12 UTC; NOAA ALTA at its 6 pm). Both are intentional: storms = event totals, verify = day-by-day skill.
 - `report.py`: the daily model table, staleness warnings, and the storm report. Numbers and text are separate:
   `model_days` / `storm_models` compute, `model_table` / `render_storms` format; the feed reuses the numbers.
@@ -125,7 +133,9 @@ bound by the NOAA stream (GFS ~12 min + GEFS ~7 min per run); GDPS is decode-bou
 so the remaining big speed lever is server-side subsetting (deferred: NOMADS filter / MSC GeoMet).
 era5.request_pressure_levels is unused on purpose (planned ERA5 regime work). tools/golden.py keeps its own copy
 of storms.csv, so a scheduled pass can't cause a false DIFF. Third review (2026-10-27, late evening, after the lead
-limits): ruff clean, vulture only the era5 item, no new long functions; nothing to fix.
+limits): ruff clean, vulture only the era5 item, no new long functions; nothing to fix. Fourth (2026-10-27 ~22:30,
+after bin scores + obs retries): ruff/vulture clean; report.render_verified is 56 lines (split it with the HTML report
+rework); fixed season bin totals vanishing when no storm was verified in the last 10 days.
 
 ## Status (end of session 2026-10-27, evening)
 Running live, TWO places for now (side-by-side check before cutover):
@@ -210,6 +220,7 @@ incl. Alta, archived as text) as an automated Alta-total source.
 3. Better snow ratio: import the Collins dataset; Veals et al. 2025 V1/V3 (github pveals/Veals_etal_2025) next to
    Kuchera; Alta-only retrain; fit the wet-bulb thresholds and dry-air nudge to Collins + SLC soundings.
 4. Owner's bins in the reports (lowest bin containing the estimate) and bin verification (in / over / under).
+   Bin verification DONE 2026-10-27 (bins.py, bin_scores.csv). Still to do: bins in the forecast storm table.
 5. Storm-day selector + backfill past storms.
 5b. PATTERN archive (owner approved 2026-10-27; start early so a season accumulates before step 6): coarse regional
    fields for the long-range models (GFS, ECMWF HRES, GDPS + GEFS/ENS mean & spread): 500 mb height + vorticity,
@@ -219,6 +230,9 @@ incl. Alta, archived as text) as an automated Alta-total source.
    weighting models by pattern skill verified against analyses + SLC soundings. Point archive stays as is.
 6. Learning layer last: per-model bias by lead/regime and by PATTERN (from 5b), weighted blend, calibrated ensembles, tuned pessimistic bin;
    the program's own frozen "CWX" forecast each cycle, scored like a model. Keep only what beats raw models.
+   BIN SCORES GUIDE THE LEAN (owner, 2026-10-27): data/processed/bin_scores.csv (signed bins_off, points, lead, model,
+   fc_flow/obs_flow) is the record CWX uses to choose its bin - which models to trust and which way (up/down a bin)
+   to lean, by lead and regime. Train only on storms verified before the forecast was issued.
 WEBSITE FEED (owner, 2026-10-27; after the HTML report, shares its summary data): a STATIC JSON "API" written after
    each pass (e.g. storms.json, storm/<id>.json, latest_runs.json, noaa_alta.json, scores.json) and published to a
    free static host (GitHub Pages / Netlify / Cloudflare Pages); no always-on server (laptop sleeps). Open questions

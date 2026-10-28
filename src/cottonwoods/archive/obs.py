@@ -11,7 +11,8 @@ replace earlier ones for the same (station, element, hour). Synoptic stations ar
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -85,6 +86,34 @@ def archive_snotel(cfg: dict, begin: str, end: str, root: Path | None = None, fe
     df["site"] = df["station"].map(by_trip)
     df["fetched_at"] = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
     return merge_into_store(df, cfg, root)
+
+
+def catchup_begin(cfg: dict, today, days: int, root: Path | None = None):
+    """First day a scheduled obs fetch covers: the trailing `days`, or further back to the newest gauge (PREC) hour
+    every SNOTEL site already has, so passes that never fetched (laptop off, network down) are filled in. Reaches back
+    at most obs_fetch.catchup_max_days; a site with nothing that recent starts the fetch there."""
+    begin = today - timedelta(days=days)
+    floor = today - timedelta(days=cfg["obs_fetch"]["catchup_max_days"])
+    have = load_snotel(start=pd.Timestamp(floor), root=root)
+    for site in [k for k, v in cfg["snotel"].items() if v.get("triplet")]:
+        s = have[(have["site"] == site) & (have["element"] == "PREC") & have["value"].notna()] if not have.empty else have
+        newest = s["time_utc"].max().date() if not s.empty else floor
+        begin = min(begin, newest)
+    return max(begin, floor)
+
+
+def with_retries(fetch, cfg: dict, label: str, log=print, sleep=time.sleep):
+    """fetch() with up to obs_fetch.retries tries, obs_fetch.retry_wait_s apart (a DNS or server blip shouldn't cost a
+    pass its observations). The last failure is raised."""
+    tries, wait = cfg["obs_fetch"]["retries"], cfg["obs_fetch"]["retry_wait_s"]
+    for attempt in range(1, tries + 1):
+        try:
+            return fetch()
+        except Exception as e:  # noqa: BLE001
+            if attempt == tries:
+                raise
+            log(f"[obs] {label} try {attempt} of {tries} failed ({type(e).__name__}); retrying in {wait} s")
+            sleep(wait)
 
 
 def archive_synoptic(cfg: dict, begin: str, end: str, root: Path | None = None, fetcher=None) -> int:

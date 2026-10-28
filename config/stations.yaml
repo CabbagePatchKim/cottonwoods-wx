@@ -121,6 +121,13 @@ regimes:
 snotel_settings:
   tz_offset_hours: -8
 
+# Scheduled observation fetches (scripts/archive_obs.py). A failed fetch is retried within the pass; the trailing
+# window reaches back to the newest hour already stored, so missed passes are filled in (capped here).
+obs_fetch:
+  retries: 3              # tries per source per pass
+  retry_wait_s: 60        # wait between tries (a DNS or network blip, e.g. right after the laptop wakes)
+  catchup_max_days: 30    # furthest back a scheduled fetch reaches for missed hours
+
 # Utah local STANDARD time (MST, UTC-7): the NOAA coop observer's daily reading time (ALTA reads at 18:00 MST) and
 # the local date of hand-entered snow reports. Not the same as SNOTEL's clock above. (Report DISPLAY times are
 # handled separately, with daylight saving, in src/cottonwoods/timefmt.py.)
@@ -196,6 +203,16 @@ verify:
                            # NOAA (ghcn:) sites ignore window_end_utc_hour and use their own observation time
                            # (ALTA: 6 pm MST = 01 UTC), so GFS's 3 h steps can't line up with them; HRRR can
   event_swe_in: 0.10       # liquid threshold that counts as a "measurable" event, model and obs
+  # The owner's snowfall bins (inches; cottonwoods/bins.py). An amount's bin is the LOWEST one containing it.
+  # 0-2 (owner, 2026-10-27) sits below 1-3 so a dry storm has a bin and "1-3 vs nothing" is one bin off.
+  snow_bins_in: [[0, 2], [1, 3], [2, 4], [3, 6], [4, 8], [6, 10], [8, 12], [10, 14], [12, 18], [16, 20], [18, 24],
+                 [20, 26], [24, 30], [26, 32], [30, 36], [32, 38], [34, 40]]
+  snow_bins_above: {first_low: 38, width: 6, step: 4}   # then 38-44, 42-48, 46-52, ...
+  # Bin score per verified storm and model run (owner, 2026-10-27): observed snow inside the forecast's bin earns
+  # `reward`; one bin off scores 0 (bins overlap); each bin beyond free_bins costs per_bin (2 off -1, 3 off -2).
+  bin_score: {reward: 2, free_bins: 1, per_bin: 1}
+  bin_score_leads_hours: [24, 72]   # besides each model's last run, the report scores its newest run at least this
+                                    # far ahead of the storm, so short-range models don't win on lead time alone
 
 # Cloud archive (scripts/bucket_sync.py -> src/cottonwoods/bucket.py): the archive lives in a Cloudflare R2 bucket so
 # passes can run on GitHub Actions. Bucket name, endpoint and keys come from environment variables, never from here.

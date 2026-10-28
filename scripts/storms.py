@@ -6,6 +6,8 @@
    becomes the storm's timeframe for every model. Stored in data/archive/storms.csv.
 2. For storms SNOTEL shows are over (12 h with no measurable precip), scores every archived run that covered
    the storm (water, Kuchera snow, ensemble members) against observed water: data/archive/storm_scores.csv.
+   Once a verified storm has an observed snow total, every deterministic run gets the owner's bin score:
+   data/processed/bin_scores.csv (rebuilt each pass; hand totals often arrive later).
 3. Prints each upcoming storm with every model's newest total over the storm window, and saves it to
    data/reports/storms_latest.txt.
 """
@@ -31,7 +33,10 @@ if fc.empty:
 snd = load_soundings(start=now - timedelta(days=25))
 table = storms.run(fc, obs, cfg, now, soundings=summarize(snd) if not snd.empty else None)
 text = f"Storms, {timefmt.now_line(now)}. Times are Mountain (MDT/MST), 24-hour.\n\n" + render_storms(table, fc, cfg)
-verified = render_verified(table, storms.load_scores(), load_storm_totals(), cfg, now, readings=load_hand_obs())
+scores, totals, readings = storms.load_scores(), load_storm_totals(), load_hand_obs()
+binned = storms.bin_scores(table, scores, totals, readings, cfg)
+storms.save_bin_scores(binned)
+verified = render_verified(table, scores, totals, cfg, now, readings=readings, binned=binned)
 if verified:
     text += "\n" + verified
 newly = table[(table.status == "verified") & (table.updated_at == now)]
