@@ -21,6 +21,7 @@ def test_verification_pairs_qpf_with_swe_change():
     p = pairs[pairs.point == "alta"]
     assert len(p) == 3 and set(p.site) == {"atwater", "alta_collins", "alta_noaa"}  # one 24 h window per obs site
     r = p[p.site == "atwater"].iloc[0]
+    assert r.obs_element == "PREC"                        # Atwater is scored on its gauge, not its pillow
     assert r.window_end == pd.Timestamp("2026-11-03 12:00") and r.lead_hr == 36 and r.lead_bin == 24
     assert abs(r.qpf_in - 24 / 25.4) < 1e-9
     assert abs(r.swe_obs_in - 0.05 * 24) < 1e-9           # SNOTEL rises 0.05"/h
@@ -86,7 +87,21 @@ def test_noaa_site_pairs_on_its_own_6pm_window_with_snowfall():
 def test_solitude_and_brighton_are_scored_at_their_snotel_sites_not_mid_mountain():
     cfg = make_cfg()
     assert obs_sites(cfg, "solitude") == [] and obs_sites(cfg, "brighton") == []
-    assert obs_sites(cfg, "solitude_snotel") == [("mill_d_north", "WTEQ", "snotel")]
+    assert obs_sites(cfg, "solitude_snotel") == [("mill_d_north", "PREC", "snotel")]   # gauge, not pillow
     assert obs_sites(cfg, "brighton_snotel") == [("brighton", "WTEQ", "snotel")]
     for p, site in [("solitude_snotel", "mill_d_north"), ("brighton_snotel", "brighton")]:   # at the gauge itself
         assert all(cfg["points"][p][k] == cfg["snotel"][site][k] for k in ("lat", "lon", "elev_ft"))
+
+
+def test_gauge_sites_score_rain_a_snow_pillow_never_sees():
+    # Early season: rain on bare ground. The pillow stays at 0, the gauge catches 0.6"; Atwater is scored on its gauge.
+    from cottonwoods.verify import _window_change
+    cfg = make_cfg()
+    assert obs_sites(cfg, "alta")[0] == ("atwater", "PREC", "snotel")
+    assert obs_sites(cfg, "snowbird") == [("snowbird", "WTEQ", "snotel")]      # not listed: keeps the pillow
+    t = pd.date_range("2026-10-20 00:00", periods=49, freq="h")
+    gauge = pd.Series(8.8 + np.clip(np.arange(49) - 30, 0, 6) * 0.1, index=t)    # 6 wet hours, 0.1" each
+    pillow = pd.Series(0.0, index=t)
+    s, e = pd.Timestamp("2026-10-21 00:00"), pd.Timestamp("2026-10-22 00:00")
+    assert abs(_window_change(gauge, s, e, "PREC", 1, cfg["gauge"]) - 0.6) < 1e-9
+    assert _window_change(pillow, s, e, "WTEQ", 1, cfg["gauge"]) == 0.0

@@ -154,9 +154,10 @@ rework); fixed season bin totals vanishing when no storm was verified in the las
 v1.2 + internal points): ruff/vulture clean, no new long functions; tidied feed.build_meta; offline suite measured
 at ~12-20 s (the "~10 min" could not be reproduced: likely a pass running at the same time); its two slowest tests
 sped up (real 2 s retry sleep -> injected sleep; nearest-index brute force 25 -> 8 points, grid built once).
-OPEN FINDING (owner decision): verify.py scores SNOTEL sites by the snow PILLOW (WTEQ), which reads 0/blank without
-snowpack and never sees rain: 10/20-10/28 Mill-D North had 4 WTEQ values vs 106 gauge (PREC) values, Atwater 42 vs
-106. Storm verification already uses the gauge (gauge.py). Switching daily verification to PREC = behavior change.
+GAUGE, NOT PILLOW (owner, 2026-10-28): verify.py scored SNOTEL sites by the snow PILLOW (WTEQ), which reads 0/blank
+without snowpack and never sees rain (10/20-10/28: Mill-D North 4 WTEQ values vs 106 gauge, Atwater 42 vs 106).
+Config verify.snotel_gauge_sites [atwater, mill_d_north] now scores those two on their gauge (PREC via gauge.py);
+Snowbird and Brighton keep the pillow. Real data 10/15-10/28: Atwater 0 -> 63 scored pairs.
 
 ## Status (end of session 2026-10-27, late night)
 Running live, TWO places for now (side-by-side check before cutover):

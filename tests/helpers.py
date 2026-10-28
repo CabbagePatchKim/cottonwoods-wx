@@ -49,9 +49,11 @@ def fake_puller(step_hours=1, qpf_mm=1.0, tK=268.0):
     return pull
 
 
-def snotel_frame(trip, start_local, hours, base=10.0, rate=0.05):
+def snotel_frame(trip, start_local, hours, base=10.0, rate=0.05, elements=("WTEQ",)):
+    """A SNOTEL site's hourly readings rising `rate` inches per hour: the pillow (WTEQ), and the gauge (PREC) if asked."""
     t = pd.date_range(start_local, periods=hours, freq="h")
-    return pd.DataFrame({"station": trip, "element": "WTEQ", "time": t, "value": base + rate * np.arange(hours)})
+    return pd.concat([pd.DataFrame({"station": trip, "element": e, "time": t, "value": base + rate * np.arange(hours)})
+                      for e in elements], ignore_index=True)
 
 
 def gauge_frame(stid, start_utc, hours, base=5.0, rate=0.04, reset_at=None):
@@ -77,7 +79,7 @@ def build_world(step_hours=1, hour_override=None):
         fa.archive_run(model, init, cfg, root=root,
                        puller=lambda i, f, p, s=None: fake_puller()(i, fxx, p, s))
         oa.archive_snotel(cfg, "2026-11-02", "2026-11-05", root=root,
-                          fetcher=lambda *a, **k: snotel_frame(trip, "2026-11-02 00:00", 60))
+                          fetcher=lambda *a, **k: snotel_frame(trip, "2026-11-02 00:00", 60, elements=("WTEQ", "PREC")))
         oa.archive_synoptic(cfg, "2026-11-02", "2026-11-05", root=root,
                             fetcher=lambda *a, **k: gauge_frame("CLN", "2026-11-02 07:00", 60))
         fc = fa.load_forecasts(cfg, root=root)

@@ -54,7 +54,8 @@ def _value_near(series: pd.Series, t: pd.Timestamp, tol_hours: float) -> float:
 def obs_sites(cfg: dict, point: str) -> list[tuple[str, str, str]]:
     """(site, element, kind) for each obs site a point is verified against.
 
-    kind "snotel": hourly SWE pillow (WTEQ); "synoptic": hourly gauge precip (PREC);
+    kind "snotel": hourly SWE pillow (WTEQ), or its precip gauge (PREC) for config verify.snotel_gauge_sites;
+    "synoptic": hourly gauge precip (PREC);
     "ghcn": NOAA daily 24 h precip total (PRCP), one value per observer day.
     """
     p = cfg["points"][point]
@@ -66,7 +67,7 @@ def obs_sites(cfg: dict, point: str) -> list[tuple[str, str, str]]:
         elif site in (cfg.get("synoptic") or {}):
             out.append((site, "PREC", "synoptic"))
         else:
-            out.append((site, "WTEQ", "snotel"))
+            out.append((site, "PREC" if site in cfg["verify"]["snotel_gauge_sites"] else "WTEQ", "snotel"))
     return out
 
 
