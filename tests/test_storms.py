@@ -334,3 +334,23 @@ def test_dry_day_with_gauge_wobble_is_not_an_observed_event():
     later = st[st.valid_end > t[11]]                               # after the gauge's level is known (the store
     assert later["qpf_mm"].sum() == 0                              # holds weeks of it, so this is the normal case)
     assert detect_events(later, cfg["storms"]["obs_wet_in"] * 25.4, cfg["storms"]["gap_hours"], 0.0).empty
+
+
+def test_storm_table_puts_every_number_under_its_own_label():
+    from cottonwoods.report import _storm_table
+    init = pd.Timestamp("2026-10-30 12:00")
+    det = {"model": "GFS", "init": init, "valid_to": init, "full": True, "ensemble": False,
+           "points": {"alta": {"water_in": 1.2, "snow_in": 12.0, "snow_in_regime": 14.0}, "alta_snotel": None},
+           "snow_level_m": (2000.0, 1800.0), "flow": "NW cold -12C 100%", "modes": "frontal 100%"}
+    ens = {"model": "GEFS", "init": init, "valid_to": init, "full": False, "ensemble": True,
+           "points": {"alta": {"members_wet": 25, "members": 31, "mean_water_in": 0.6}, "alta_snotel": None},
+           "snow_level_m": None, "flow": "", "modes": ""}
+    tail_w = {"snow level": 13, "flow": 18, "modes": 12}
+    lines = _storm_table([det, ens], ["alta", "alta_snotel"], tail_w)
+    assert lines[0].split() == ["alta", "alta", "SNTL"]
+    sub_det, gfs, sub_ens, gefs = lines[1:]
+    assert gfs.split()[:6] == ["GFS", "10/30", "12z", "full", "storm", "1.20"] and gfs.split()[6] == "14"   # regime snow
+    assert gfs.index("1.20") + 4 == sub_det.index("water") + 5 and gfs.index("14") + 2 == sub_det.index("snow") + 4
+    assert gefs.index("25/31") + 5 == sub_ens.index("wet/N") + 5 and gefs.index("0.60") + 4 == sub_ens.index("mean") + 4
+    assert gfs.index("6.6k->5.9k ft") == sub_det.index("snow level") and "flow" not in sub_ens
+    assert "to " in gefs and "-" in gefs.split()                 # short run; a point the run predates shows "-"

@@ -221,10 +221,14 @@ verify:
                            # NOAA (ghcn:) sites ignore window_end_utc_hour and use their own observation time
                            # (ALTA: 6 pm MST = 01 UTC), so GFS's 3 h steps can't line up with them; HRRR can
   event_swe_in: 0.10       # liquid threshold that counts as a "measurable" event, model and obs
-  # SNOTEL sites scored on their precip GAUGE (PREC, through cottonwoods.gauge) instead of the snow pillow (WTEQ):
-  # a pillow reads 0/blank until there is snowpack and never sees rain (10/20-10/28: Mill-D North 4 pillow values vs
-  # 106 gauge, Atwater 42 vs 106). Owner, 2026-10-28. Other SNOTEL sites keep the pillow.
-  snotel_gauge_sites: [atwater, mill_d_north]
+  # OBSERVED WATER, every site (owner, 2026-10-28): the precip GAUGE is primary (SNOTEL and Synoptic PREC through
+  # cottonwoods.gauge; NOAA coop PRCP). A SNOTEL snow PILLOW (WTEQ) is the fallback and cross-check: a pillow reads
+  # 0/blank without snowpack and never sees rain (10/20-10/28: Mill-D North 4 pillow values vs 106 gauge), but in
+  # wind it catches snow a gauge misses (undercatch). pillow_check:
+  pillow_check:
+    min_snowpack_in: 1.0       # pillow used (fallback, flag) only with at least this much water on it at window start
+    min_rise_in: 0.20          # undercatch flag: the pillow rose at least this much in the window ...
+    undercatch_ratio: 1.25     # ... and more than this times the gauge's water
   # The owner's snowfall bins (inches; cottonwoods/bins.py). An amount's bin is the LOWEST one containing it.
   # 0-2 (owner, 2026-10-27) sits below 1-3 so a dry storm has a bin and "1-3 vs nothing" is one bin off.
   snow_bins_in: [[0, 2], [1, 3], [2, 4], [3, 6], [4, 8], [6, 10], [8, 12], [10, 14], [12, 18], [16, 20], [18, 24],

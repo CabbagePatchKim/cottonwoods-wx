@@ -31,13 +31,20 @@ def clock(ts, weekday: bool = False, date: bool = True) -> str:
     return t.strftime(fmt)
 
 
-def run(init) -> str:
-    """A model run: '10/26 18z (1200 MDT)'."""
+def cycle(init) -> str:
+    """A model run by its cycle name alone: '10/26 18z' (UTC, how runs are known everywhere)."""
     if init is None or pd.isna(init):
         return "-"
     t = pd.Timestamp(init)
     t = t.tz_convert("UTC").tz_localize(None) if t.tzinfo is not None else t
-    return f"{t:%m/%d %H}z ({clock(t, date=False)})"
+    return f"{t:%m/%d %H}z"
+
+
+def run(init) -> str:
+    """A model run: '10/26 18z (1200 MDT)'."""
+    if init is None or pd.isna(init):
+        return "-"
+    return f"{cycle(init)} ({clock(init, date=False)})"
 
 
 def now_line(now) -> str:

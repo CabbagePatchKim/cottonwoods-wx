@@ -154,10 +154,18 @@ rework); fixed season bin totals vanishing when no storm was verified in the las
 v1.2 + internal points): ruff/vulture clean, no new long functions; tidied feed.build_meta; offline suite measured
 at ~12-20 s (the "~10 min" could not be reproduced: likely a pass running at the same time); its two slowest tests
 sped up (real 2 s retry sleep -> injected sleep; nearest-index brute force 25 -> 8 points, grid built once).
-GAUGE, NOT PILLOW (owner, 2026-10-28): verify.py scored SNOTEL sites by the snow PILLOW (WTEQ), which reads 0/blank
-without snowpack and never sees rain (10/20-10/28: Mill-D North 4 WTEQ values vs 106 gauge, Atwater 42 vs 106).
-Config verify.snotel_gauge_sites [atwater, mill_d_north] now scores those two on their gauge (PREC via gauge.py);
-Snowbird and Brighton keep the pillow. Real data 10/15-10/28: Atwater 0 -> 63 scored pairs.
+OBSERVED WATER STANDARD, every site (owner, 2026-10-28): the precip GAUGE is primary (SNOTEL + Synoptic PREC via
+gauge.py, NOAA PRCP); a SNOTEL snow PILLOW (WTEQ) is the fallback (gauge missing AND >= min_snowpack_in on the pillow)
+and the cross-check. verify.observed_water is the one place for this rule; pairs carry gauge_obs_in, pillow_obs_in,
+snowpack_in, undercatch_flag (pillow rose >= min_rise_in and > undercatch_ratio x gauge; config verify.pillow_check).
+UNDERCATCH EVIDENCE (no correction yet): verify.gauge_pillow_days -> data/processed/gauge_pillow_days.csv (every
+SNOTEL site x 24 h window, with balloon flow via regimes.balloon_regime; scripts/storms.py recomputes the last 25 days
+each pass, the whole archive the first time ~95 s) and undercatch_summary.csv (site x flow). First look 10/28 (13-17
+snowpack days per site): pillow/gauge Mill-D North 1.46, Snowbird 1.24, Brighton 1.17, Atwater 1.06. Fit a
+correction only after a season of evidence, verified like the regime factors.
+REPORT LAYOUT (owner, 2026-10-28): daily table and storm tables are fixed-width: a block per day/point under its
+label with two numbers named on a sub-header row (water snow / wet/N mean), run = cycle only (timefmt.cycle), legend
+at the top. report._cells is the one cell formatter; storm_models carries "ensemble".
 
 ## Status (end of session 2026-10-27, late night)
 Running live, TWO places for now (side-by-side check before cutover):

@@ -8,19 +8,22 @@
    the storm (water, Kuchera snow, ensemble members) against observed water: data/archive/storm_scores.csv.
    Once a verified storm has an observed snow total, every deterministic run gets the owner's bin score:
    data/processed/bin_scores.csv (rebuilt each pass; hand totals often arrive later).
-3. Prints each upcoming storm with every model's newest total over the storm window, and saves it to
+3. Gauge vs snow pillow at every SNOTEL site, per 24 h window with the balloon flow (the undercatch evidence):
+   data/processed/gauge_pillow_days.csv (recent days recomputed each pass; the whole archive the first time) and
+   undercatch_summary.csv per site and flow.
+4. Prints each upcoming storm with every model's newest total over the storm window, and saves it to
    data/reports/storms_latest.txt.
 """
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
-from cottonwoods import storms, timefmt
+from cottonwoods import storms, timefmt, verify
 from cottonwoods.report import render_storms, render_verified
 from cottonwoods.archive.forecasts import load_forecasts
 from cottonwoods.archive.obs import load_hand_obs, load_snotel, load_soundings, load_storm_totals
 from cottonwoods.obs.sounding import summarize
-from cottonwoods.config import REPORTS_DIR, load_config
+from cottonwoods.config import PROCESSED_DIR, REPORTS_DIR, load_config
 
 cfg = load_config()
 now = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
@@ -32,6 +35,13 @@ if fc.empty:
 
 snd = load_soundings(start=now - timedelta(days=25))
 table = storms.run(fc, obs, cfg, now, soundings=summarize(snd) if not snd.empty else None)
+
+days_path = PROCESSED_DIR / "gauge_pillow_days.csv"
+first = not days_path.exists()        # the first time: the whole archive (slow: every balloon since 2010)
+d_obs, d_snd = (load_snotel(), load_soundings()) if first else (obs, snd)
+days = verify.gauge_pillow_days(d_obs, cfg, summarize(d_snd).set_index("time_utc") if not d_snd.empty else None)
+days = verify.merge_gauge_pillow_days(days, days_path)
+verify.undercatch_summary(days, cfg).to_csv(PROCESSED_DIR / "undercatch_summary.csv", index=False)
 text = f"Storms, {timefmt.now_line(now)}. Times are Mountain (MDT/MST), 24-hour.\n\n" + render_storms(table, fc, cfg)
 scores, totals, readings = storms.load_scores(), load_storm_totals(), load_hand_obs()
 binned = storms.bin_scores(table, scores, totals, readings, cfg)

@@ -8,7 +8,8 @@ import pandas as pd
 
 from cottonwoods.archive import forecasts as fa
 from cottonwoods.archive import obs as oa
-from cottonwoods.verify import build_pairs, obs_sites, summarize
+from cottonwoods.verify import (build_pairs, gauge_pillow_days, merge_gauge_pillow_days, obs_sites,
+                                observed_water, summarize, undercatch_summary)
 
 from helpers import make_cfg, fake_puller, gauge_frame, build_world
 
@@ -88,7 +89,7 @@ def test_solitude_and_brighton_are_scored_at_their_snotel_sites_not_mid_mountain
     cfg = make_cfg()
     assert obs_sites(cfg, "solitude") == [] and obs_sites(cfg, "brighton") == []
     assert obs_sites(cfg, "solitude_snotel") == [("mill_d_north", "PREC", "snotel")]   # gauge, not pillow
-    assert obs_sites(cfg, "brighton_snotel") == [("brighton", "WTEQ", "snotel")]
+    assert obs_sites(cfg, "brighton_snotel") == [("brighton", "PREC", "snotel")]
     for p, site in [("solitude_snotel", "mill_d_north"), ("brighton_snotel", "brighton")]:   # at the gauge itself
         assert all(cfg["points"][p][k] == cfg["snotel"][site][k] for k in ("lat", "lon", "elev_ft"))
 
@@ -98,10 +99,54 @@ def test_gauge_sites_score_rain_a_snow_pillow_never_sees():
     from cottonwoods.verify import _window_change
     cfg = make_cfg()
     assert obs_sites(cfg, "alta")[0] == ("atwater", "PREC", "snotel")
-    assert obs_sites(cfg, "snowbird") == [("snowbird", "WTEQ", "snotel")]      # not listed: keeps the pillow
+    assert obs_sites(cfg, "snowbird") == [("snowbird", "PREC", "snotel")]      # the gauge, at every site
     t = pd.date_range("2026-10-20 00:00", periods=49, freq="h")
     gauge = pd.Series(8.8 + np.clip(np.arange(49) - 30, 0, 6) * 0.1, index=t)    # 6 wet hours, 0.1" each
     pillow = pd.Series(0.0, index=t)
     s, e = pd.Timestamp("2026-10-21 00:00"), pd.Timestamp("2026-10-22 00:00")
     assert abs(_window_change(gauge, s, e, "PREC", 1, cfg["gauge"]) - 0.6) < 1e-9
     assert _window_change(pillow, s, e, "WTEQ", 1, cfg["gauge"]) == 0.0
+
+
+def _hours(start, values):
+    return pd.Series(values, index=pd.date_range(start, periods=len(values), freq="h"), dtype=float)
+
+
+def test_pillow_is_the_fallback_only_with_snowpack_and_flags_gauge_undercatch():
+    cfg = make_cfg()
+    s, e = pd.Timestamp("2026-12-02 12:00"), pd.Timestamp("2026-12-03 12:00")
+    gauge = _hours("2026-12-01 12:00", 8.0 + np.clip(np.arange(49) - 24, 0, 10) * 0.05)   # 0.5" in the window
+    pillow = _hours("2026-12-01 12:00", 5.0 + np.clip(np.arange(49) - 24, 0, 10) * 0.10)  # 1.0" on a 5" snowpack
+    w = observed_water(gauge, pillow, s, e, "PREC", cfg)
+    assert w["obs_element"] == "PREC" and abs(w["swe_obs_in"] - 0.5) < 1e-9 and abs(w["pillow_obs_in"] - 1.0) < 1e-9
+    assert w["undercatch_flag"]                                   # pillow 1.0" > 1.25 x gauge 0.5", and >= 0.2"
+    assert not observed_water(gauge, pillow * 0 + 5.0 + (pillow - 5.0) * 0.55, s, e, "PREC", cfg)["undercatch_flag"]
+    gone = observed_water(pd.Series(dtype=float), pillow, s, e, "PREC", cfg)        # gauge missing: pillow used
+    assert gone["obs_element"] == "WTEQ" and abs(gone["swe_obs_in"] - 1.0) < 1e-9 and not gone["undercatch_flag"]
+    bare = observed_water(pd.Series(dtype=float), pillow * 0, s, e, "PREC", cfg)    # bare pillow says nothing
+    assert np.isnan(bare["swe_obs_in"]) and np.isnan(bare["pillow_obs_in"])
+    noaa = observed_water(gauge, None, s, e, "PREC", cfg)                          # a site without a pillow
+    assert abs(noaa["swe_obs_in"] - 0.5) < 1e-9 and not noaa["undercatch_flag"]
+
+
+def test_gauge_pillow_days_are_stored_by_window_and_summarized_by_flow():
+    cfg = make_cfg()
+    t = pd.date_range("2026-12-01 00:00", periods=96, freq="h")
+    rise = np.clip(np.arange(96) - 36, 0, 10)                     # 10 wet hours in the window ending 12/03 12z
+    obs = pd.concat([pd.DataFrame({"site": "snowbird", "station": "x", "element": el, "time_utc": t, "value": v})
+                     for el, v in [("PREC", 8.0 + 0.05 * rise), ("WTEQ", 5.0 + 0.08 * rise)]], ignore_index=True)
+    snd = pd.DataFrame({"wspd700_kt": [30.0] * 8, "wdir700": [300.0] * 8, "t700_c": [-12.0] * 8},
+                       index=pd.date_range("2026-12-01 00:00", periods=8, freq="12h"))   # NW cold balloons
+    days = gauge_pillow_days(obs, cfg, snd)
+    wet = days[days.window_end == pd.Timestamp("2026-12-03 12:00")].iloc[0]
+    assert abs(wet.gauge_obs_in - 0.5) < 1e-9 and abs(wet.pillow_obs_in - 0.8) < 1e-9 and wet.undercatch_flag
+    assert wet.flow == "NW" and set(days.site) == {"snowbird"}    # sites without both records are skipped
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "gauge_pillow_days.csv"
+        merge_gauge_pillow_days(days, path)
+        again = merge_gauge_pillow_days(days.iloc[-2:], path)     # a later pass recomputes its recent days
+        assert len(again) == len(days)                            # replaced, not duplicated
+    s = undercatch_summary(days, cfg)
+    row = s[(s.site == "snowbird") & (s.flow == "all")].iloc[0]
+    assert row.n_days == 1 and row.pillow_to_gauge == 1.6 and row.n_flagged == 1
+    assert set(s.flow) == {"all", "NW"}

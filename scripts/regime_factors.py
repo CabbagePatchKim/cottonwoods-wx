@@ -14,7 +14,6 @@ Needs the balloon archive (scripts/archive_soundings.py --start 2010-11-01) and 
 """
 from datetime import datetime, timezone
 
-import numpy as np
 import pandas as pd
 
 from cottonwoods import regimes
@@ -41,16 +40,11 @@ inc = inc[inc.index.month.isin([11, 12, 1, 2, 3, 4])]
 
 # Regime per SNOTEL day (local midnight to midnight): balloons at 12z D (5 am MST) and 00z D+1 (5 pm MST)
 snd = summarize(load_soundings(start="2010-10-01")).set_index("time_utc")
-u = -snd["wspd700_kt"] * np.sin(np.radians(snd["wdir700"]))
-v = -snd["wspd700_kt"] * np.cos(np.radians(snd["wdir700"]))
 rows = []
 for day in inc.index:
-    t = [day + pd.Timedelta(hours=12), day + pd.Timedelta(hours=24)]
-    uu, vv, tt = u.reindex(t), v.reindex(t), snd["t700_c"].reindex(t)
-    if uu.notna().any():
-        d700 = float(regimes.wind_dir_deg(uu.mean(), vv.mean()))
-        rows.append({"day": day, "flow": regimes.flow_label(d700, rcfg), "thermal": regimes.thermal_label(tt.mean(), rcfg),
-                     "band": regimes.band_label(tt.mean(), rcfg)})
+    r = regimes.balloon_regime(snd, [day + pd.Timedelta(hours=12), day + pd.Timedelta(hours=24)], rcfg)
+    if r:
+        rows.append({"day": day, **r})
 x = inc.join(pd.DataFrame(rows).set_index("day"), how="inner")
 
 # Reference = mean of the sites with a long record (Atwater only starts in 2021; it's compared on its own days)

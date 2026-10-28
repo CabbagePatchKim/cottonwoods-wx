@@ -165,6 +165,20 @@ def sounding_steps(summary, start, end, cfg: dict):
     return out
 
 
+def balloon_regime(snd, times, cfg: dict) -> dict | None:
+    """Regime of a day from the balloons launched at `times` (e.g. the 12z and 00z that bracket it): the vector-mean
+    700 mb wind's flow label, and the mean 700 mb temperature's thermal (2-way) and band (3-way) labels. snd:
+    sounding summaries indexed by time_utc. None when no balloon at those times has a 700 mb wind."""
+    s = snd.reindex(times)
+    u = -s["wspd700_kt"] * np.sin(np.radians(s["wdir700"]))
+    v = -s["wspd700_kt"] * np.cos(np.radians(s["wdir700"]))
+    if not u.notna().any():
+        return None
+    t = s["t700_c"].mean()
+    return {"flow": flow_label(float(wind_dir_deg(u.mean(), v.mean())), cfg), "thermal": thermal_label(t, cfg),
+            "band": band_label(t, cfg)}
+
+
 # --- resort factors by regime ----------------------------------------------------------------------
 
 def load_factors(path) -> pd.DataFrame:

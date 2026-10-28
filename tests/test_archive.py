@@ -76,11 +76,16 @@ def test_ensemble_completeness_counts_members_and_report_counts_wet_members():
     finally:
         registry.REGISTRY["GEFS"] = orig
     assert "snow_in" not in fc[fc.model == "GEFS"].dropna(axis=1, how="all").columns   # precip only, no Kuchera
-    t = model_table(fc, cfg, "alta", days=2, start=pd.Timestamp("2026-11-02 00:00")).set_index("model")
+    lines = model_table(fc, cfg, "alta", days=2, start=pd.Timestamp("2026-11-02 00:00"))
+    rows = {ln.split()[0]: ln for ln in lines[1:]}
     # the day ending 11/02 12z starts before the 00z run does, so it's incomplete -> "-". The 11/03 day is
     # complete: members get 0, 24 and 48 mm -> 2 of 3 reach 0.10" (2.54 mm), mean 24 mm = 0.94"
-    assert t.loc["GEFS", "11/02"] == "-" and t.loc["GEFS", "11/03"] == "2/3 0.94"
-    assert t.loc["HRRR", "11/03"].startswith(f"{24 / 25.4:.2f}")
+    assert lines[0].split() == ["Mon", "11/02", "Tue", "11/03"]
+    assert rows["GEFS"].split()[3:] == ["-", "2/3", "0.94"]
+    assert rows["HRRR"].split()[3:5] == ["-", f"{24 / 25.4:.2f}"]
+    # every number ends in the same column as its sub-header (fixed widths)
+    head = next(ln for ln in lines if ln.startswith("model") and "wet/N" in ln)
+    assert rows["GEFS"].index("0.94") + 4 == head.rindex("mean") + 4
     assert not build_pairs(fc, pd.DataFrame(), cfg)["model"].eq("GEFS").any()       # ensembles skipped in verify
 
 
