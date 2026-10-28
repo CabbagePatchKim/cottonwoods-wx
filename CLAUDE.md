@@ -296,6 +296,14 @@ incl. Alta, archived as text) as an automated Alta-total source.
 4. Owner's bins in the reports (lowest bin containing the estimate) and bin verification (in / over / under).
    Bin verification DONE 2026-10-27 (bins.py, bin_scores.csv). Still to do: bins in the forecast storm table.
 5. Storm-day selector + backfill past storms.
+5a. PRISM WATER RATIO, INTERNAL ONLY (owner, 2026-10-28; never in the feed unless a later release approves it):
+   coarse models only (GFS, IFS, GDPS, ENS; not HRRR/NAMNEST at 3 km): scale each point's model water by
+   PRISM 800 m normals PRISM(point) / PRISM(blended cell area), shown next to raw in the local reports and scored
+   like a model. Why: after the cell blend (v1.4) temperature already follows each point's real elevation; the
+   remaining differences between resorts are water (coarse QPF barely separates Alta from Solitude), and regime
+   factors borrow Mill-D North for Solitude. A DEM-average elevation per sub-cell was considered and rejected:
+   points already use surveyed elevations. Start after a handful of verified storms (first: Sun 11/1 storm,
+   verifies ~11/2-11/3); keep only if it beats raw water on verified storms (bin scores + water error).
 5b. PATTERN archive (owner approved 2026-10-27; start early so a season accumulates before step 6): coarse regional
    fields for the long-range models (GFS, ECMWF HRES, GDPS + GEFS/ENS mean & spread): 500 mb height + vorticity,
    250 mb wind, MSLP, 850 mb temp, every 6 h, ~0.5-1 deg, box ~25-60N x 150-90W (upstream troughs to Plains).
