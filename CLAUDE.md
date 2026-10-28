@@ -235,6 +235,10 @@ route (api.weather.gov lists CLN but serves no observations; never automate the 
    Collins readings (data/entries/, scripts/send_entries.bat); bin scores need them.
 4. Owner's improvement list (2026-10-27; test speed DONE 10/28: suite ~12-20 s): speed up the offline test suite (~10 min, should be ~1 min:
    find the slow tests); store regime-adjusted snow in storm_scores too (score both); .gitattributes for line endings.
+   LATER (owner, 2026-10-28): publish docs/feed_v1_user_manual.md as the README of the public feed repo
+   (CabbagePatchKim/cwx-feed), so the friend always sees the current manual next to the data. Publishing = confirm
+   with the owner first; github_feed.py must keep it (it copies v1/ files; make sure a README isn't removed). Keep
+   the manual in step with feed.py whenever the feed gains fields (e.g. the v1 additions sketch).
 5. Then the build plan below (HTML storm report + timeline/trends + NOAA ALTA display: DEVELOPMENT ONLY, unpublished;
    feed v1 stays model-only until the owner approves a release that adds anything).
 
