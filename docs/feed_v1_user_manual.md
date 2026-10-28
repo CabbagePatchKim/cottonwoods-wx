@@ -63,9 +63,9 @@ const [meta, storms, daily] = await Promise.all(
 | `RDPS` | Canadian regional model, 10 km | 00, 06, 12, 18z | 84 h |
 | `GFS` | NOAA Global Forecast System, 0.25° | 00, 06, 12, 18z | shown to 7 days |
 | `GDPS` | Canadian global model, 15 km | 00, 12z | shown to 7 days |
-| `IFS` | ECMWF high-resolution global model, 0.25° | 00, 06, 12, 18z | shown to 7 days |
+| `IFS` | ECMWF high-resolution global model, 0.25° | 00, 06, 12, 18z | shown to 7 days (06/18z runs: 6 days) |
 | `GEFS` | NOAA global **ensemble**, 31 members | 00, 06, 12, 18z | shown to 10 days |
-| `ENS` | ECMWF **ensemble**, 50 members | 00, 06, 12, 18z | shown to 10 days |
+| `ENS` | ECMWF **ensemble**, 50 members | 00, 06, 12, 18z | shown to 10 days (06/18z runs: 6 days) |
 
 **Deterministic models** (all except GEFS and ENS) give one answer: water and snow.
 **Ensembles** run many slightly different versions. The feed reports how many of them produce measurable precip
@@ -116,7 +116,7 @@ Neither snow number is verified yet; show whichever you prefer (or both). The am
 
 A **storm** is a stretch of precipitation the models agree on, ending once there is a 12-hour dry gap. Its window
 comes from the model run that shows the longest event. Storms appear while they're upcoming or ongoing, and leave
-the list once they're over.
+the list once observations confirm they're over (about 12 dry hours after they end).
 
 Top level:
 
