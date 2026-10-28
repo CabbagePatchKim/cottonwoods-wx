@@ -167,7 +167,7 @@ REPORT LAYOUT (owner, 2026-10-28): daily table and storm tables are fixed-width:
 label with two numbers named on a sub-header row (water snow / wet/N mean), run = cycle only (timefmt.cycle), legend
 at the top. report._cells is the one cell formatter; storm_models carries "ensemble".
 
-## Status (end of session 2026-10-27, late night)
+## Status (end of session 2026-10-28, ~19:45Z / 13:45 MDT)
 Running live, TWO places for now (side-by-side check before cutover):
 - LAPTOP: Windows tasks "Cottonwoods models" (every 3 h at :30 local, run_models.bat, DEVELOPMENT code = main) and
   "Cottonwoods soundings". Writes data/ locally. Never publishes (no CWX_PUBLISH), even on a release commit.
@@ -177,17 +177,17 @@ Running live, TWO places for now (side-by-side check before cutover):
 - CLOUD: GitHub Actions github.com/CabbagePatchKim/cottonwoods-wx (PUBLIC), .github/workflows/pass.yml every 3 h at
   :45 UTC, runs the newest approved tag. Archive in Cloudflare R2 bucket; log in bucket
   data/logs/cloud/models_YYYY-MM.log. Publishes the feed (CWX_PUBLISH=1 set only there).
-  First v1.0 publish: manual run 2026-10-28 03:13Z, green, 11 min, "pushed 3 files to cwx-feed". IFS 18z (not
-  posted yet) and ENS 18z (S3 503 Slow Down, 624/4800 values) failed there; fixed in v1.1. NO scheduled run had
-  fired yet as of 04:40Z 10/28 (both runs so far were manual).
+  Runs so far: #1-4 manual (10/27-28), #5 schedule 08:58Z (first v1.1, green), #6 schedule 17:23Z (16:45 slot,
+  38 min late, v1.1, green). Both v1.1 runs failed IFS (Herbie 2026.10 bug, fixed in v1.2/v1.3). No pass has run
+  v1.2; the next one (20:45Z slot or Worker 20:50Z) runs v1.3 directly.
 - SCHEDULE UNRELIABLE (10/28): GitHub ran only 1 of 4 scheduled slots (08:45Z; 05:45/11:45/14:45Z dropped). Fix
   (owner approved 10/28): Cloudflare Worker cloud/trigger_worker.js presses "Run workflow" at :50 after each slot,
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
-- RELEASED v1.3 (owner approved 2026-10-28): Solitude 9,040 / Brighton 9,514 ft; internal SNOTEL points
+- RELEASED v1.3 (owner approved 2026-10-28, tag on 398d465, pushed ~19:31Z, CI tests green): Solitude 9,040 / Brighton 9,514 ft; internal SNOTEL points
   solitude_snotel + brighton_snotel (scored there only); gauge-first observed water + undercatch evidence; fixed-width
-  report tables. Feed format unchanged. After it: upload regime_factors.csv to the bucket (rows for the new points).
+  report tables. Feed format unchanged. regime_factors.csv (rows for the new points) uploaded to the bucket 10/28.
   Still to do: scripts/rederive_archive.py so archived runs get the new Solitude/Brighton elevations.
 - RELEASED v1.2 (owner approved 2026-10-28, tag on e9f923e, pushed 18:36Z): the IFS fix below. Laptop IFS 10/27 18z,
   10/28 00z/06z were uploaded to the bucket by hand (owner approved) so the cloud has no IFS gap. Check the first
@@ -215,24 +215,27 @@ Verified facts: SNOTEL hourly is UTC-8 (PST) all year; NOAA ALTA water before 10
 published 12 h data exists (Hive doi:10.7278/S50d-nsy5-8bje, CC BY-NC); Collins live data has NO free automated
 route (api.weather.gov lists CLN but serves no observations; never automate the NWS page).
 
-## Tomorrow's agenda (start here, 2026-10-28)
+## Next session's agenda (owner: come back after the cloud has run v1.3 a couple of times)
 0. FIRST THING: report on BOTH passes before anything else.
-   a. Laptop: passes since the 21:09 MDT manual pass (data/logs/models.log): all five steps exit 0? any "[obs] ...
-      retrying" or "catching up" lines? GDPS/GEFS times (old averages GFS 756 s, GDPS 868 s, GEFS 405 s; 10/27 21:09
-      pass: GEFS 359 s, ENS 157 s, IFS 173 s with 12 ECMWF workers; now 4).
-   b. Cloud: did SCHEDULED runs fire on their own (api.github.com/repos/CabbagePatchKim/cottonwoods-wx/actions/
-      workflows/pass.yml/runs, event "schedule")? As of 06:14Z 10/28 NONE had: the 02:45Z and 05:45Z slots
-      were missing (all 4 runs so far were workflow_dispatch). If still no "schedule" run after the 08:45Z slot,
-      the schedule is broken: investigate before anything else (gh isn't installed; use the API). First v1.1 run: log header "code v1.1", ENS/IFS complete (no 503),
-      "pushed ... cwx-feed". Then meta.json code_version must be v1.1. Remind the owner to tell the friend.
-1. Tonight's storm (10/27 18:00 - 10/28 06:00 MDT): should verify ~18:00 10/28 as DRY (SNOTEL 0.0" with the gauge
-   fix) -> first bin scores (NAMNEST called ~2" regime-adjusted; HRRR/NAM/GFS/GDPS/RDPS 0). Check the storm report's
-   Verified section and data/processed/bin_scores.csv.
-2. Cutover once scheduled cloud runs are reliable for a day (owner approval): disable laptop tasks "Cottonwoods
-   models" and "Cottonwoods soundings"; laptop becomes development only (pull from the bucket).
-3. Weekend storm (Fri 10/30 - Mon 11/2; 10/27 runs: IFS 1.82" water / 16" Alta, GFS 1.29"/12", GDPS 0.80"/8", all
-   ensemble members wet): first real verification ~11/2-11/3. The SessionStart hook will prompt the owner for Alta
-   Collins readings (data/entries/, scripts/send_entries.bat); bin scores need them.
+   a. Cloud (bucket log data/logs/cloud/models_2026-10.log + api.github.com/repos/CabbagePatchKim/cottonwoods-wx/
+      actions/workflows/pass.yml/runs): first v1.3 pass shows "Running approved release v1.3"; IFS archived again
+      (10/28 12z onward, no FileNotFoundError); ENS back on 0.25 deg; solitude_snotel/brighton_snotel rows in new
+      runs; first storms.py run built gauge_pillow_days.csv (~32 s); "pushed 3 files to cwx-feed"; meta.json
+      code_version v1.3, still 4 points. SCHEDULE: count slots that ran by "schedule" vs the Worker's
+      "workflow_dispatch" (~:50); any slot with neither = Worker problem (owner checks its Logs tab in Cloudflare;
+      a 401/403 = token). Ask the owner what the Worker log showed at 17:50Z 10/28 (expected "skip: run 6").
+   b. Laptop (data/logs/models.log): it slept 00:28-08:28 and 08:28-11:03 MDT 10/28, so passes only run while it's
+      awake; SNOTEL DNS failures right after wake are expected (retries + catch-up cover them).
+1. Storm 2026102700 (10/27 18:00 - 10/28 06:00 MDT) should verify as DRY ~18:00 10/28 -> first bin scores
+   (data/processed/bin_scores.csv, storm report Verified section).
+2. Cutover once cloud passes are reliable for a day (owner approval): disable laptop tasks "Cottonwoods models" and
+   "Cottonwoods soundings"; laptop = development only (bucket_sync.py pull).
+3. Weekend storm (now split: 10/30 12:00 - 10/31 06:00 and 10/31 18:00 - 11/02 17:00 MDT in the 10/28 runs): first
+   real verification ~11/2-11/3. SessionStart hook prompts for Alta Collins readings; bin scores need them.
+3b. scripts/rederive_archive.py (owner agreed 10/28, not built): strip the derived columns (move tools/golden.py's
+   DERIVED list into archive/forecasts.py, one place), re-run derive_run_fields with the current config, rewrite.
+   Then laptop: pull bucket, re-derive, push back (AFTER v1.3 is live, so no pass adds old-elevation runs between).
+   Gives archived runs the new Solitude/Brighton elevations. Offline test + before/after check.
 4. Owner's improvement list (2026-10-27; test speed DONE 10/28: suite ~12-20 s): speed up the offline test suite (~10 min, should be ~1 min:
    find the slow tests); store regime-adjusted snow in storm_scores too (score both); .gitattributes for line endings.
    LATER (owner, 2026-10-28): publish docs/feed_v1_user_manual.md as the README of the public feed repo
