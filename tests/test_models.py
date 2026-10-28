@@ -136,7 +136,7 @@ def test_parallel_hours_retries_a_dropped_connection():
             raise ConnectionResetError("forcibly closed by the remote host")
         return item * 10
 
-    failed = parallel_hours(download, lambda it, v: got.update({it: v}), [1, 2, 3], workers=2)
+    failed = parallel_hours(download, lambda it, v: got.update({it: v}), [1, 2, 3], workers=2, sleep=lambda s: None)
     assert failed == [] and got == {1: 10, 2: 20, 3: 30} and tries[2] == 2
 
 
@@ -146,8 +146,9 @@ def test_fast_nearest_index_matches_a_full_search():
     lats, lons = np.arange(-90, 90.01, 0.15), np.arange(0, 360, 0.15)          # GDPS-like global grid
     la2, lo2 = np.meshgrid(np.linspace(38, 43, 60), np.linspace(-115, -108, 70), indexing="ij")
     la2 = la2 + 0.02 * np.sin(lo2)                                             # a curved (projected) grid
-    for lat0, lon0 in zip(rng.uniform(39, 42, 25), rng.uniform(-113, -110, 25)):
-        full = points._haversine_km(*np.meshgrid(lats, lons, indexing="ij"), lat0, lon0 % 360)
+    glat, glon = np.meshgrid(lats, lons, indexing="ij")
+    for lat0, lon0 in zip(rng.uniform(39, 42, 8), rng.uniform(-113, -110, 8)):
+        full = points._haversine_km(glat, glon, lat0, lon0 % 360)
         assert points.nearest_index(lats, lons, lat0, lon0)[0] == np.unravel_index(np.argmin(full), full.shape)
         full2 = points._haversine_km(la2, lo2, lat0, lon0)
         first = points.nearest_index(la2, lo2, lat0, lon0)

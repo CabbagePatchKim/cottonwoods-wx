@@ -150,7 +150,13 @@ era5.request_pressure_levels is unused on purpose (planned ERA5 regime work). to
 of storms.csv, so a scheduled pass can't cause a false DIFF. Third review (2026-10-27, late evening, after the lead
 limits): ruff clean, vulture only the era5 item, no new long functions; nothing to fix. Fourth (2026-10-27 ~22:30,
 after bin scores + obs retries): ruff/vulture clean; report.render_verified is 56 lines (split it with the HTML report
-rework); fixed season bin totals vanishing when no storm was verified in the last 10 days.
+rework); fixed season bin totals vanishing when no storm was verified in the last 10 days. Fifth (2026-10-28, after
+v1.2 + internal points): ruff/vulture clean, no new long functions; tidied feed.build_meta; offline suite measured
+at ~12-20 s (the "~10 min" could not be reproduced: likely a pass running at the same time); its two slowest tests
+sped up (real 2 s retry sleep -> injected sleep; nearest-index brute force 25 -> 8 points, grid built once).
+OPEN FINDING (owner decision): verify.py scores SNOTEL sites by the snow PILLOW (WTEQ), which reads 0/blank without
+snowpack and never sees rain: 10/20-10/28 Mill-D North had 4 WTEQ values vs 106 gauge (PREC) values, Atwater 42 vs
+106. Storm verification already uses the gauge (gauge.py). Switching daily verification to PREC = behavior change.
 
 ## Status (end of session 2026-10-27, late night)
 Running live, TWO places for now (side-by-side check before cutover):
@@ -214,7 +220,7 @@ route (api.weather.gov lists CLN but serves no observations; never automate the 
 3. Weekend storm (Fri 10/30 - Mon 11/2; 10/27 runs: IFS 1.82" water / 16" Alta, GFS 1.29"/12", GDPS 0.80"/8", all
    ensemble members wet): first real verification ~11/2-11/3. The SessionStart hook will prompt the owner for Alta
    Collins readings (data/entries/, scripts/send_entries.bat); bin scores need them.
-4. Owner's improvement list (2026-10-27, not started): speed up the offline test suite (~10 min, should be ~1 min:
+4. Owner's improvement list (2026-10-27; test speed DONE 10/28: suite ~12-20 s): speed up the offline test suite (~10 min, should be ~1 min:
    find the slow tests); store regime-adjusted snow in storm_scores too (score both); .gitattributes for line endings.
 5. Then the build plan below (HTML storm report + timeline/trends + NOAA ALTA display: DEVELOPMENT ONLY, unpublished;
    feed v1 stays model-only until the owner approves a release that adds anything).

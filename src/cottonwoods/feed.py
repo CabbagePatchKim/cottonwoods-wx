@@ -126,8 +126,7 @@ def build_meta(fc: pd.DataFrame, cfg: dict, now: pd.Timestamp, code_version: str
             "snow_regime_method": "snow_in_regime: each model step's snow scaled by the resort's precip share in that "
                                   "step's 700 mb flow and temperature, from SNOTEL + SLC balloons since 2010 "
                                   "(1.10 = 10% more than usual); unverified",
-            "points": {p: {"lat": cfg["points"][p]["lat"], "lon": cfg["points"][p]["lon"],
-                           "elev_ft": cfg["points"][p]["elev_ft"]} for p in public_points(cfg)},
+            "points": {p: {k: cfg["points"][p][k] for k in ("lat", "lon", "elev_ft")} for p in public_points(cfg)},
             "models": [{"model": m, **_run(t)} for m, t in newest.items()],
             "warnings": warnings, "disclaimer": DISCLAIMER, "credits": CREDITS}
 
