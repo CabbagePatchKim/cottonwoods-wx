@@ -181,7 +181,8 @@ def storm_models(st, fc: pd.DataFrame, cfg: dict) -> list[dict]:
     (regime-adjusted, NaN if no factors)}, ensembles {"members_wet",
     "members", "mean_water_in"}, or None if the run was pulled before the point existed. snow_level_m is
     (first, last) over the wet steps at the storm's point, or None. Only steps within storms.max_lead_hours of the
-    run's init count (a run whose shown part ends before the storm does is not "full"). Used by the text report and
+    run's init count (a run that starts after the storm begins, or whose shown part ends before the storm does, is
+    not "full"). Used by the text report and
     the website feed."""
     s, e = st.fc_start, st.fc_end
     thr = cfg["verify"]["event_swe_in"]
@@ -190,10 +191,11 @@ def storm_models(st, fc: pd.DataFrame, cfg: dict) -> list[dict]:
         g = within_lead(g[g["init"] == g["init"].max()], cfg["storms"]["max_lead_hours"])
         if g["valid_end"].max() <= s:
             continue  # newest run doesn't reach the storm
-        r = {"model": model, "init": g["init"].iloc[0], "valid_to": g["valid_end"].max(),
-             "ensemble": bool("member" in g.columns and g["member"].notna().any()),
-             "full": bool(g["valid_end"].max() >= e), "points": {}, "snow_level_m": None,
+        r = {"model": model, "init": g["init"].iloc[0], "valid_from": g["valid_start"].min(),
+             "valid_to": g["valid_end"].max(), "ensemble": bool("member" in g.columns and g["member"].notna().any()),
+             "late": bool(g["valid_start"].min() > s), "points": {}, "snow_level_m": None,
              "flow": run_flow(g, st.point, s, e, cfg), "modes": run_modes(g, st.point, s, e, cfg)}
+        r["full"] = not r["late"] and bool(r["valid_to"] >= e)
         for p in cfg["points"]:
             gp = g[g["point"] == p]
             if gp.empty:
@@ -253,7 +255,8 @@ def _storm_table(models: list[dict], points: list[str], tail_w: dict[str, int]) 
             out.append(line("model", "run", "covers", [names] * len(points),
                             {k: k for k in tail_w} if not group[0]["ensemble"] else {}))
             out += [line(r["model"], timefmt.cycle(r["init"]),
-                         "full storm" if r["full"] else f"to {timefmt.clock(r['valid_to'])}",
+                         "full storm" if r["full"] else f"from {timefmt.clock(r['valid_from'])}"
+                         if r["late"] else f"to {timefmt.clock(r['valid_to'])}",
                          [_cells(r["points"].get(p), regime=True) for p in points],
                          {} if r["ensemble"] else _storm_tail(r)) for r in group]
     return out

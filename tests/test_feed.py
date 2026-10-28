@@ -86,10 +86,43 @@ def test_internal_points_are_never_in_the_feed():
 def test_runs_ending_before_the_storm_ends_have_no_amounts():
     cfg, fc, st = _world()
     st.loc[st["status"] == "forecast", "fc_end"] += pd.Timedelta(days=1)    # storm outlasts both 48 h runs
-    s = feed.build_storms(st, fc, cfg)["storms"][0]
+    s = feed.build_storms(st, fc, cfg, NOW)["storms"][0]
     for m in s["models"]:
         assert m["covers_full_storm"] is False and m["run_ends"] is not None
         assert all(v is None for v in m["points"].values())
+
+
+def test_runs_starting_after_the_storm_began_have_no_amounts():
+    cfg, fc, st = _world()
+    st.loc[st["status"] == "forecast", "fc_start"] -= pd.Timedelta(hours=6)  # storm began before both runs
+    s = feed.build_storms(st, fc, cfg, NOW)["storms"][0]
+    assert s["models"]
+    for m in s["models"]:
+        assert m["covers_full_storm"] is False
+        assert all(v is None for v in m["points"].values())
+
+
+def test_a_storm_leaves_the_feed_once_its_forecast_window_has_ended():
+    # 10/28: a dry storm that ended at 06 MDT stayed in the feed until verified, showing only ensembles
+    cfg, fc, st = _world()
+    live = st[st["status"] == "forecast"]
+    end = live["fc_end"].iloc[0]
+    assert len(feed.build_storms(st, fc, cfg, end - pd.Timedelta(hours=1))["storms"]) == 1    # under way: shown
+    assert feed.build_storms(st, fc, cfg, end)["storms"] == []                                # over: gone
+    assert (st["status"] == "forecast").sum() == len(live)                                  # still tracked
+
+
+def test_regime_snow_stays_internal_unless_config_publishes_it():
+    cfg, fc, st = _world()
+    assert cfg["feed"]["regime_snow"] is False                               # v1.4: Kuchera-only snow in the feed
+    f = feed.build_feed(st, fc, cfg, NOW, "v9.9", [])
+    assert f["storms"]["snow_regime_adjusted"] is False and "not published" in f["meta"]["snow_regime_method"]
+    amounts = [c for s in f["storms"]["storms"] for m in s["models"] for c in m["points"].values() if c]
+    amounts += [d["amounts"] for rows in f["daily"]["points"].values() for r in rows for d in r["days"] if d["amounts"]]
+    det = [c for c in amounts if c["type"] == "deterministic"]
+    assert det and all("snow_in_regime" in c and c["snow_in_regime"] is None for c in det)
+    assert any(c["snow_in"] for c in det)
+    assert not any("regime" in c for c in f["meta"]["credits"])
 
 
 def test_feed_files_are_written_whole_under_v1():

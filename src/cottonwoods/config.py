@@ -41,6 +41,7 @@ REQUIRED = {
     "storms": ["point", "gap_hours", "wet_in", "obs_wet_in", "min_total_in", "subperiod_gap_hours",
                "manual_match_hours", "report_verified_days", "max_lead_hours"],
     "report": ["days", "deterministic_lead_hours", "ensemble_lead_hours"],
+    "feed": ["regime_snow"],
     "verify": ["window_hours", "window_end_utc_hour", "swe_tolerance_hours", "event_swe_in", "snow_bins_in",
                "snow_bins_above", "bin_score", "bin_score_leads_hours", "pillow_check"],
     "snotel_settings": ["tz_offset_hours"],

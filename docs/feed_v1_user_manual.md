@@ -80,19 +80,19 @@ snow amount.
 Wherever a resort's amount appears (storms and daily), it is one of two objects, told apart by `type`:
 
 ```json
-{ "type": "deterministic", "water_in": 2.07, "snow_in": 21.1, "snow_in_regime": 21.6 }
+{ "type": "deterministic", "water_in": 2.07, "snow_in": 21.1, "snow_in_regime": null }
 { "type": "ensemble", "members_wet": 30, "members": 31, "mean_water_in": 0.75 }
 ```
 
 | Field | Meaning |
 |---|---|
 | `water_in` | Liquid water (rain and melted snow), inches |
-| `snow_in` | Snowfall, inches: the model's water times the Kuchera snow ratio, worked out step by step at the resort's real elevation, with rain/mix/snow decided by the wet-bulb temperature |
-| `snow_in_regime` | The same snow, scaled by how that resort usually does in the storm's wind direction and temperature (from SNOTEL history since 2010). `null` when no adjustment is available |
+| `snow_in` | Snowfall, inches: the model's water times the Kuchera snow ratio, worked out step by step at the resort's real elevation, with rain/mix/snow decided by the wet-bulb temperature. For the coarse models (GFS, ECMWF, GDPS and the ECMWF ensemble) each resort uses a blend of the four model grid points around it (since v1.4), so nearby resorts differ mainly by elevation |
+| `snow_in_regime` | **Always `null` since v1.4.** It was the same snow scaled by how that resort usually does in the storm's wind direction and temperature; that adjustment is now kept internal until it has been verified. The key stays so existing code keeps working. Use `snow_in` |
 | `members_wet` / `members` | Ensemble members with at least 0.10 in of water, out of how many |
 | `mean_water_in` | The ensemble members' average water, inches |
 
-Neither snow number is verified yet; show whichever you prefer (or both). The amount object itself can be `null`
+`snow_in` is not verified yet. The amount object itself can be `null`
 (see the storms and daily sections for when).
 
 ## 6. `meta.json`
@@ -116,14 +116,15 @@ Neither snow number is verified yet; show whichever you prefer (or both). The am
 
 A **storm** is a stretch of precipitation the models agree on, ending once there is a 12-hour dry gap. Its window
 comes from the model run that shows the longest event. Storms appear while they're upcoming or ongoing, and leave
-the list once observations confirm they're over (about 12 dry hours after they end).
+the list as soon as their forecast window ends (since v1.4; before, they stayed until observations confirmed them
+over, about 12 dry hours later).
 
 Top level:
 
 | Field | Meaning |
 |---|---|
 | `schema_version`, `generated` | As in meta |
-| `snow_regime_adjusted` | `true` when `snow_in_regime` values are available |
+| `snow_regime_adjusted` | `true` when `snow_in_regime` values are available (always `false` since v1.4) |
 | `storms` | The storms, earliest first (below) |
 | `recent_changes` | Storms dropped or merged in the last day (below) |
 
@@ -143,7 +144,7 @@ Each entry in a storm's `models`:
 | Field | Meaning |
 |---|---|
 | `model`, `cycle`, `init` | Which run |
-| `covers_full_storm` | `false` when the run ends before the storm does |
+| `covers_full_storm` | `false` when the run ends before the storm does, or starts after the storm began |
 | `run_ends` | How far that run reaches |
 | `snow_level_ft` | `{"start", "end"}`: snow level at the start and end of the storm, or `null` (ensembles) |
 | `flow` | Wind-regime text for the storm, e.g. `"SW warm -1C 68% -> N mild -5C 30%"`, or `null` |
@@ -152,7 +153,8 @@ Each entry in a storm's `models`:
 
 **Why an amount can be `null` here:** when `covers_full_storm` is `false`, every resort's amount is `null`. Its
 partial total isn't a forecast for the whole storm, and a number would read like one; `run_ends` shows how far it
-got. An amount is also `null` for a run made before a resort's point existed.
+got. This includes runs made after a storm began: a storm stays listed until observations confirm it's over, and a
+run that started after it ended would otherwise report 0 for it. An amount is also `null` for a run made before a resort's point existed.
 
 **Notes labels** (`notes[].label`): `"flow (MODEL)"` and `"modes (MODEL)"` describe the storm as the defining run
 sees it; `"parts (MODEL)"` lists separate pieces of a storm with dry gaps between them; `"models disagree"` says
@@ -209,8 +211,6 @@ If you show the data, show the disclaimer and credit the sources. `meta.json` â†
 - ECMWF open data (IFS, ENS), CC BY 4.0
 - Environment and Climate Change Canada / MSC Datamart (RDPS, GDPS), Open Government Licence - Canada
 - NCAR GDEX GFS archive, CC BY 4.0, doi:10.5065/D65D8PWK
-- `snow_in_regime` adjustment factors: USDA NRCS SNOTEL history and Salt Lake City soundings (Iowa Environmental
-  Mesonet), 2010-2026
 
 ## 11. Quick recipes
 

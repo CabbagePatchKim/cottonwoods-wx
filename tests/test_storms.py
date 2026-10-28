@@ -285,6 +285,22 @@ def test_storms_ignore_events_past_the_lead_limit_and_totals_stop_there():
     assert abs(r["points"]["alta"]["water_in"] - 8 / 25.4) < 1e-9     # hours 160-168 only
 
 
+def test_a_run_starting_after_the_storm_began_does_not_cover_it():
+    # 10/28: a storm that ended at 06 MDT stayed listed (awaiting obs) and runs made after it showed 0.00 "full"
+    from cottonwoods.report import storm_models
+    cfg = load_config()
+    fc = run_steps("HRRR", "2026-11-01 18:00", [], hours=48)
+    for start, end in (("2026-11-01 06:00", "2026-11-01 12:00"),      # over before the run starts
+                       ("2026-11-01 12:00", "2026-11-02 06:00")):     # run starts mid-storm
+        storm = pd.Series({"fc_start": pd.Timestamp(start), "fc_end": pd.Timestamp(end), "point": "alta"})
+        (r,) = storm_models(storm, fc, cfg)
+        assert r["late"] and not r["full"]
+    storm = pd.Series({"fc_start": pd.Timestamp("2026-11-01 18:00"), "fc_end": pd.Timestamp("2026-11-02 06:00"),
+                       "point": "alta"})
+    (r,) = storm_models(storm, fc, cfg)
+    assert r["full"] and not r["late"]                                  # starting exactly at the storm is fine
+
+
 def test_daily_table_shows_deterministic_to_7_days_and_ensembles_to_10():
     from cottonwoods.report import model_days
     cfg = make_cfg()
@@ -339,10 +355,10 @@ def test_dry_day_with_gauge_wobble_is_not_an_observed_event():
 def test_storm_table_puts_every_number_under_its_own_label():
     from cottonwoods.report import _storm_table
     init = pd.Timestamp("2026-10-30 12:00")
-    det = {"model": "GFS", "init": init, "valid_to": init, "full": True, "ensemble": False,
+    det = {"model": "GFS", "init": init, "valid_to": init, "full": True, "late": False, "ensemble": False,
            "points": {"alta": {"water_in": 1.2, "snow_in": 12.0, "snow_in_regime": 14.0}, "alta_snotel": None},
            "snow_level_m": (2000.0, 1800.0), "flow": "NW cold -12C 100%", "modes": "frontal 100%"}
-    ens = {"model": "GEFS", "init": init, "valid_to": init, "full": False, "ensemble": True,
+    ens = {"model": "GEFS", "init": init, "valid_to": init, "full": False, "late": False, "ensemble": True,
            "points": {"alta": {"members_wet": 25, "members": 31, "mean_water_in": 0.6}, "alta_snotel": None},
            "snow_level_m": None, "flow": "", "modes": ""}
     tail_w = {"snow level": 13, "flow": 18, "modes": 12}

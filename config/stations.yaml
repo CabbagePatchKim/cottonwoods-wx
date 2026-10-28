@@ -64,7 +64,8 @@ model_cells:
   IFS:  {lats: [40.50, 40.75], lons: [-111.75, -111.50]}   # ECMWF HRES, 0.25 deg
   ENS:  {lats: [40.50, 40.75], lons: [-111.75, -111.50]}   # ECMWF ensemble, 0.25 deg
   GDPS: {lats: [40.50, 40.65], lons: [-111.75, -111.60]}   # 0.15 deg (~17 x 13 km)
-  GEFS: {lats: [40.50, 41.00], lons: [-112.00, -111.50]}   # 0.5 deg (~55 x 42 km: the cells reach the valley and Park City)
+  GEFS: {lats: [40.50, 41.00], lons: [-112.00, -111.50],   # 0.5 deg (~55 x 42 km: the cells reach the valley and Park City)
+         blend: false}   # owner 2026-10-28: keep the nearest cell; blending would mix Salt Lake Valley precip into the resorts
 
 # Observed event thresholds
 obs_thresholds:
@@ -247,6 +248,11 @@ cloud:
                                                       # passes' monthly logs; the laptop's own data/logs is not synced)
   exclude: ["*.lock", "processed/golden/*", "*.tmp"]  # never synced
   pull_forecast_days: 25   # a pull skips model runs older than this (passes read <= 20 days); they stay in the bucket
+
+# What the website feed publishes (feed.py). regime_snow false (owner, 2026-10-28, v1.4): snow_in_regime is sent as
+# null and snow_regime_adjusted false; the regime adjustment stays in the local reports until it is verified.
+feed:
+  regime_snow: false
 
 # Website feed on GitHub Pages (scripts/publish_feed.py -> src/cottonwoods/github_feed.py). Approved releases only;
 # previews are never pushed. Public URL: https://cabbagepatchkim.github.io/cwx-feed/v1/storms.json (meta, daily too).

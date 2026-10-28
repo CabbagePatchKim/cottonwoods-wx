@@ -16,6 +16,7 @@ from pathlib import Path
 import pandas as pd
 
 from .. import modes, profile, regimes, slr
+from . import cells as cellblend
 from ..config import ARCHIVE_DIR
 from ..models.registry import REGISTRY, check_cycle, get_puller
 from .io import read_df, suffix_for, write_df
@@ -36,12 +37,16 @@ def run_path(model: str, init, cfg: dict, root: Path | None = None) -> Path:
 def derive_run_fields(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Everything computed from a run's raw pulled fields: THE place to look when a derived number seems wrong.
 
-    Steps, in order (each adds columns and leaves the pulled ones alone):
+    Steps, in order:
+      0. cells.blend_points        coarse models (config model_cells): each resort point's pulled numbers become
+                                   the bilinear blend of the 2x2 cells around it (cell rows untouched); cell_blend
       1. regimes.add_step_regimes  700 mb flow per step: flow_dir700, flow (SW/W/NW/N/S/E), thermal, regime
       2. modes.add_precip_modes    frontal / post-frontal / cellular / lake-effect per step: precip_mode, front_time
       3. add_snowfall              station profile + wet-bulb snow/mix/rain + Kuchera: snow_in, snow_level_m, ...
-    Ensembles are archived as precip only (no temperatures), so they come back unchanged.
+    Steps 1-3 add columns and leave the pulled ones alone. Ensembles are archived as precip only (no
+    temperatures), so they get step 0 (blended precip per member) and nothing else.
     """
+    df = cellblend.blend_points(df, cfg)
     if not _temp_cols(df):
         return df
     df = regimes.add_step_regimes(df, cfg["regimes"])
@@ -104,12 +109,11 @@ def run_points(model: str, cfg: dict) -> dict[str, dict]:
     """Points to extract for this model: the configured points, plus for coarse models the 2x2 block of grid
     points around the Cottonwoods (config model_cells; older configs: gfs_cells for GFS only)."""
     points = dict(cfg["points"])
-    cells = (cfg.get("model_cells") or {}).get(model) or (cfg.get("gfs_cells") if model == "GFS" else None)
+    cells = cellblend.model_cells(model, cfg)
     if cells:
         for lat in cells["lats"]:
             for lon in cells["lons"]:
-                # e.g. "gfs_40.50N_111.75W": the name says exactly which grid point it is
-                points[f"{model.lower()}_{lat:.2f}N_{abs(lon):.2f}W"] = {"lat": lat, "lon": lon}
+                points[cellblend.cell_name(model, lat, lon)] = {"lat": lat, "lon": lon}
     return points
 
 

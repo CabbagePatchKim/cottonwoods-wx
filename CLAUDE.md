@@ -185,6 +185,18 @@ Running live, TWO places for now (side-by-side check before cutover):
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
+- READY FOR v1.4 (in main, NOT released; owner asked for it 2026-10-28, approval of the release still needed):
+  (a) archive/cells.py: coarse models (model_cells) give each point the BILINEAR blend of its 2x2 cells (step 0 of
+  derive_run_fields; cell rows untouched; idempotent). Why: nearest-cell put Solitude (Apex) and Mill-D North in
+  cells 28 km apart, so lower sites got more snow (GFS 12z 10/28: Mill-D 10.3" vs Solitude 7.0"). Archived runs keep
+  nearest-cell values until re-derived (rederive_archive.py, agenda 3b, applies it). (b) storm_models: a run that
+  starts after the storm began is not "full" (past storms showed 0.00" from later runs). (c) config feed.regime_snow
+  false: feed sends snow_in_regime null, snow_regime_adjusted false (key kept: v1-safe); reports keep regime snow.
+  (d) feed.build_storms(now): a storm leaves the FEED once fc_end passes (owner chose this 10/28 over an
+  "all deterministic 0" drop rule: the 10/28 dry storm only looked all-zero because every newest run started after
+  it; NAMNEST 00z had 0.23"); it stays "forecast" in storms.csv until verified, local reports unchanged.
+  (e) GEFS model_cells `blend: false` (0.5 deg block reaches the Salt Lake Valley): GEFS keeps its nearest cell.
+  Friend heads-up needed: snow_in_regime becomes null; storms leave when their window ends. Manual updated.
 - RELEASED v1.3 (owner approved 2026-10-28, tag on 398d465, pushed ~19:31Z, CI tests green): Solitude 9,040 / Brighton 9,514 ft; internal SNOTEL points
   solitude_snotel + brighton_snotel (scored there only); gauge-first observed water + undercatch evidence; fixed-width
   report tables. Feed format unchanged. regime_factors.csv (rows for the new points) uploaded to the bucket 10/28.

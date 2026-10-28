@@ -16,9 +16,11 @@ Format rules (the website relies on them; tests/test_feed.py pins them):
     their cycle name ("10/27 06z").
   - Amounts are inches (water, snow), snow levels feet, rounded for display; missing values are null.
   - Deterministic snow comes twice: snow_in (plain Kuchera) and snow_in_regime (each step scaled by the resort's
-    history in that step's flow; null if no factors). Neither is verified yet; the site picks which to show.
-  - A run that ends before the storm does (covers_full_storm false) has null amounts at every resort: its partial
-    total isn't a forecast for the storm, and a 0 would read like one. run_ends says how far it reached.
+    history in that step's flow). Since v1.4 config feed.regime_snow is false: snow_in_regime is always null and
+    snow_regime_adjusted false (the key stays, so the v1 format is unchanged); the adjustment is internal only.
+  - A run that ends before the storm does, or starts after it begins (covers_full_storm false), has null amounts at
+    every resort: its partial total isn't a forecast for the storm, and a 0 would read like one (a run made after a
+    storm ended would otherwise show 0 for it). run_ends says how far it reached.
   - Lead limits (config): storms use each run's first 168 h only (run_ends is at most init + 168 h); daily.json
     has null deterministic amounts past 168 h and ensemble amounts to 240 h (the 8-10 day "x of N" tail).
 """
@@ -42,9 +44,9 @@ DISCLAIMER = ("Experimental, automated model guidance for the Cottonwood Canyons
 CREDITS = ["NOAA/NCEP (HRRR, NAM, GFS, GEFS) via NOAA Open Data Dissemination",
            "ECMWF open data (IFS, ENS), CC BY 4.0",
            "Environment and Climate Change Canada / MSC Datamart (RDPS, GDPS), Open Government Licence - Canada",
-           "NCAR GDEX GFS archive, CC BY 4.0, doi:10.5065/D65D8PWK",
-           "snow_in_regime adjustment factors: USDA NRCS SNOTEL history and Salt Lake City soundings "
-           "(Iowa Environmental Mesonet), 2010-2026"]
+           "NCAR GDEX GFS archive, CC BY 4.0, doi:10.5065/D65D8PWK"]
+REGIME_CREDIT = ("snow_in_regime adjustment factors: USDA NRCS SNOTEL history and Salt Lake City soundings "
+                 "(Iowa Environmental Mesonet), 2010-2026")
 # Keys that would mean observations or verification leaked into the feed (see the module docstring)
 NOT_MODEL_DATA = re.compile(r"(^obs|observ|verif|actual|score|collins|snotel|ghcn|sounding|^final_|measured)", re.I)
 
@@ -82,11 +84,20 @@ def _run(init) -> dict:
     return {"cycle": f"{pd.Timestamp(init):%m/%d %H}z", "init": iso(init)}
 
 
-def build_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> dict:
-    fc, adjusted = regime_adjusted(fc, cfg)
+def _feed_regime(fc: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, bool]:
+    """regime_adjusted, only when config feed.regime_snow publishes it; otherwise snow_in_regime stays null."""
+    return regime_adjusted(fc, cfg) if cfg["feed"]["regime_snow"] else (fc, False)
+
+
+def build_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Timestamp) -> dict:
+    """Storms still ahead or under way. One whose forecast window has ended leaves the feed (owner, 2026-10-28):
+    it stays in storms.csv until observations verify it, but newer runs can no longer show it, so the site would
+    only see ensembles and nulls for something that is over."""
+    fc, adjusted = _feed_regime(fc, cfg)
     shown = public_points(cfg)
     out = []
-    for _, st in storms[storms["status"] == "forecast"].sort_values("fc_start").iterrows():
+    live = storms[(storms["status"] == "forecast") & (storms["fc_end"] > now)]
+    for _, st in live.sort_values("fc_start").iterrows():
         models = []
         for r in storm_models(st, fc, cfg):
             sl = r["snow_level_m"]
@@ -106,7 +117,7 @@ def build_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> dict:
 
 
 def build_daily(fc: pd.DataFrame, cfg: dict, start: pd.Timestamp, days: int | None = None) -> dict:
-    fc, _ = regime_adjusted(fc, cfg)
+    fc, _ = _feed_regime(fc, cfg)
     points = {}
     for p in public_points(cfg):
         rows = model_days(fc, cfg, p, days, start)
@@ -122,13 +133,16 @@ def build_meta(fc: pd.DataFrame, cfg: dict, now: pd.Timestamp, code_version: str
             "units": {"water": "in", "snow": "in", "snow_level": "ft"},
             "ensemble_wet_threshold_in": cfg["verify"]["event_swe_in"],
             "snow_method": "Kuchera snow ratio per model step from the profile at each resort's elevation, "
-                           "wet-bulb snow/mix/rain, minimum ratio 3:1 (snow_in)",
-            "snow_regime_method": "snow_in_regime: each model step's snow scaled by the resort's precip share in that "
-                                  "step's 700 mb flow and temperature, from SNOTEL + SLC balloons since 2010 "
-                                  "(1.10 = 10% more than usual); unverified",
+                           "wet-bulb snow/mix/rain, minimum ratio 3:1 (snow_in); coarse models blend the 4 grid "
+                           "points around each resort",
+            "snow_regime_method": ("snow_in_regime: each model step's snow scaled by the resort's precip share in "
+                                   "that step's 700 mb flow and temperature, from SNOTEL + SLC balloons since 2010 "
+                                   "(1.10 = 10% more than usual); unverified") if cfg["feed"]["regime_snow"] else
+                                  "snow_in_regime: not published (always null); use snow_in",
             "points": {p: {k: cfg["points"][p][k] for k in ("lat", "lon", "elev_ft")} for p in public_points(cfg)},
             "models": [{"model": m, **_run(t)} for m, t in newest.items()],
-            "warnings": warnings, "disclaimer": DISCLAIMER, "credits": CREDITS}
+            "warnings": warnings, "disclaimer": DISCLAIMER,
+            "credits": CREDITS + [REGIME_CREDIT] if cfg["feed"]["regime_snow"] else CREDITS}
 
 
 def model_only(feed: dict) -> dict:
@@ -154,10 +168,11 @@ def model_only(feed: dict) -> dict:
 def build_feed(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Timestamp, code_version: str,
                warnings: list[str]) -> dict[str, dict]:
     """{"meta": ..., "storms": ..., "daily": ...}; every file carries schema_version and generated. Storms are the
-    ones still in the forecast only (verified ones are observations' territory), and model_only() checks the rest."""
+    ones still ahead or under way only (ended and verified ones are observations' territory), and model_only()
+    checks the rest."""
     recent = fc[fc["init"] >= now - pd.Timedelta(days=2)]
     files = {"meta": build_meta(recent, cfg, now, code_version, warnings),
-             "storms": build_storms(storms, fc, cfg),
+             "storms": build_storms(storms, fc, cfg, now),
              "daily": build_daily(recent, cfg, now)}
     return model_only({k: {"schema_version": SCHEMA_VERSION, "generated": iso(now), **v} for k, v in files.items()})
 
