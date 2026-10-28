@@ -131,7 +131,7 @@ Running live, TWO places for now (side-by-side check before cutover):
 - LAPTOP: Windows tasks "Cottonwoods models" (every 3 h at :30 local, run_models.bat, DEVELOPMENT code = main) and
   "Cottonwoods soundings". Writes data/ locally. Never publishes (not a release; no CWX_PUBLISH).
 - CLOUD: GitHub Actions github.com/CabbagePatchKim/cottonwoods-wx (PUBLIC), .github/workflows/pass.yml every 3 h at
-  :30 UTC, runs the newest approved tag = v1.0 (81d37f2). Archive in Cloudflare R2 bucket cwx-archive; log in
+  :45 UTC (was :30 until 2026-10-27), runs the newest approved tag = v1.0 (81d37f2). Archive in Cloudflare R2 bucket cwx-archive; log in
   bucket logs/cloud/models_YYYY-MM.log. Publishes the feed (CWX_PUBLISH=1 set only there).
   First manual run 2026-10-27 21:04Z: green, 53 min. Scheduled runs had NOT fired yet at end of session.
 - FEED v1.0 (approved by owner 2026-10-27): MODEL-RUN DATA ONLY, public at
@@ -238,7 +238,7 @@ WEBSITE FEED (owner, 2026-10-27; after the HTML report, shares its summary data)
    ~/.ssh/cwx_feed_ed25519 (write access, this repo only). Config feed_github stays commented until the owner adds
    the deploy key, turns on Pages, and approves the first release. Never push preview/dev output.
 CLOUD PASSES (owner approved 2026-10-27): passes move from the laptop to GitHub Actions (.github/workflows/pass.yml,
-   every 3 h at :30 UTC, newest approved tag else main) in a PUBLIC code repo (free minutes), archive in a Cloudflare
+   every 3 h at :45 UTC, newest approved tag else main) in a PUBLIC code repo (free minutes), archive in a Cloudflare
    R2 bucket (bucket.py / scripts/bucket_sync.py pull|push; never deletes; pulls skip runs > 25 days old).
    tests.yml runs the offline tests on every push. Secrets: R2_BUCKET, R2_ENDPOINT, R2_ACCESS_KEY_ID,
    R2_SECRET_ACCESS_KEY, FEED_DEPLOY_KEY (~/.ssh/cwx_feed_ci_ed25519, separate from the laptop's feed key).

@@ -11,7 +11,9 @@ name: model pass
 
 on:
   schedule:
-    - cron: "30 2-23/3 * * *"   # 02:30, 05:30, ... 23:30 UTC (GitHub often starts these 5-30 min late)
+    # 02:45, 05:45, ... 23:45 UTC (GitHub often starts these 5-30 min late). :45, not :30: HRRR/NAM post ~2.5 h
+    # and GFS/GDPS ~5.5 h after init, so a :30 pass landed right on their posting time and often just missed them.
+    - cron: "45 2-23/3 * * *"
   workflow_dispatch: {}          # "Run workflow" button, for testing
 
 concurrency:
