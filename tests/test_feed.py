@@ -49,7 +49,7 @@ def test_feed_v1_format_is_pinned():
     m = f["meta"]
     assert {"code_version", "timezone", "units", "ensemble_wet_threshold_in", "snow_method", "points", "models",
             "warnings", "disclaimer", "credits"} <= set(m)
-    assert m["code_version"] == "v9.9" and set(m["points"]) == set(cfg["points"])
+    assert m["code_version"] == "v9.9" and set(m["points"]) == set(feed.public_points(cfg))
     assert {"model": "HRRR", "cycle": "11/01 12z", "init": "2026-11-01T05:00:00-07:00"} in m["models"]
     s = f["storms"]
     assert {"snow_regime_adjusted", "storms", "recent_changes"} <= set(s) and len(s["storms"]) == 1
@@ -58,7 +58,7 @@ def test_feed_v1_format_is_pinned():
     by = {r["model"]: r for r in st["models"]}
     assert {"model", "cycle", "init", "covers_full_storm", "run_ends", "snow_level_ft", "flow", "modes",
             "points"} <= set(by["HRRR"])
-    assert set(by["HRRR"]["points"]) == set(cfg["points"])
+    assert set(by["HRRR"]["points"]) == set(feed.public_points(cfg))
     assert {"type", "water_in", "snow_in", "snow_in_regime"} <= set(by["HRRR"]["points"]["alta"])
     assert by["HRRR"]["points"]["alta"]["type"] == "deterministic"
     assert {"type", "members_wet", "members", "mean_water_in"} <= set(by["GEFS"]["points"]["alta"])
@@ -68,6 +68,19 @@ def test_feed_v1_format_is_pinned():
     hrrr = next(r for r in f["daily"]["points"]["alta"] if r["model"] == "HRRR")
     assert {"water_in", "snow_in", "snow_in_regime"} <= set(hrrr["days"][0]["amounts"])
     assert "snow_regime_method" in m
+
+
+
+def test_internal_points_are_never_in_the_feed():
+    # The SNOTEL-site points are archived and verified, but the website only ever sees the resorts
+    cfg, f = _feed()
+    internal = {p for p, v in cfg["points"].items() if v.get("internal")}
+    assert internal == {"solitude_snotel", "brighton_snotel"}
+    assert set(feed.public_points(cfg)) == {"alta", "snowbird", "solitude", "brighton"}
+    assert not internal & set(f["meta"]["points"])
+    assert not internal & set(f["daily"]["points"])
+    assert all(not internal & set(r["points"]) for st in f["storms"]["storms"] for r in st["models"])
+    assert "solitude_snotel" not in json.dumps(f)
 
 
 def test_runs_ending_before_the_storm_ends_have_no_amounts():

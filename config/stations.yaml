@@ -39,15 +39,20 @@ soundings:
 # their snow is reported. Elevation drives the station profile (temps, wet-bulb, snow / rain).
 #   alta      Collins study plot (Alta's official snow site), 9,662 ft
 #   snowbird  Snowbird SNOTEL site (mid-mountain, Gad Valley), 9,170 ft
-#   solitude  approximate mid-mountain, ~9,200 ft (base 7,988 / summit 10,488) - CONFIRM with owner
-#   brighton  approximate mid-mountain, ~9,600 ft (base 8,755 / summit 10,500) - CONFIRM with owner
+#   solitude  top of the Apex lift (owner, 2026-10-28), 2,755 m / 9,040 ft
+#   brighton  owner's point (2026-10-28), 2,900 m / 9,514 ft
 # obs: observed sites (keys under snotel:, synoptic: or ghcn:) each point is verified against, scored separately.
+# Solitude and Brighton are scored at their SNOTEL sites, not mid-mountain (owner, 2026-10-28): the *_snotel points
+# sit at the gauge's own location and elevation and carry the obs; the mid-mountain points are forecast only.
+# internal: true = archived, verified and in the local reports, but never in the public feed (feed.public_points).
 # Mill-D North SNOTEL (8,940 ft, upper Big Cottonwood) is the nearest SNOTEL to Solitude.
 points:
   alta:     {lat: 40.5764, lon: -111.6383, elev_ft: 9662, obs: [atwater, alta_collins, alta_noaa]}
   snowbird: {lat: 40.56914, lon: -111.65852, elev_ft: 9170, obs: [snowbird]}
-  solitude: {lat: 40.6130, lon: -111.5960, elev_ft: 9200, obs: [mill_d_north]}
-  brighton: {lat: 40.5930, lon: -111.5880, elev_ft: 9600, obs: [brighton]}
+  solitude: {lat: 40.61369, lon: -111.60199, elev_ft: 9040, obs: []}
+  brighton: {lat: 40.58766, lon: -111.58009, elev_ft: 9514, obs: []}
+  solitude_snotel: {lat: 40.65883, lon: -111.63683, elev_ft: 8940, obs: [mill_d_north], internal: true}
+  brighton_snotel: {lat: 40.59936, lon: -111.58167, elev_ft: 8790, obs: [brighton], internal: true}
 
 # The 2x2 block of grid points around the Cottonwoods for each COARSE model. The resorts all sit nearest the same
 # one or two of these, so every run of these models also stores all four (with each cell's own profile), so
@@ -94,7 +99,8 @@ regimes:
   min_phase_hours: 6       # a regime lasting less than this is merged into its neighbor (one odd step isn't a phase)
   # Resort factors by regime (scripts/regime_factors.py -> data/processed/regime_factors.csv): each resort's share of
   # precip in that flow vs its all-flow share, from SNOTEL + SLC soundings. The SNOTEL site standing in for each point:
-  factor_sites: {alta: atwater, snowbird: snowbird, solitude: mill_d_north, brighton: brighton}
+  factor_sites: {alta: atwater, snowbird: snowbird, solitude: mill_d_north, brighton: brighton,
+                 solitude_snotel: mill_d_north, brighton_snotel: brighton}
   factor_min_days: 20      # fewer wet days than this in a flow+temperature group -> use the flow-only factor
   # Precip mode per model step (regimes.add_precip_modes): frontal / post-frontal / cellular / lake-effect.
   # The front is found in each run's own series: the largest 6 h drop in 700 mb temp (>= front_drop_c) with a

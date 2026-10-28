@@ -93,6 +93,12 @@ Storms, verification, reports
   12 UTC; NOAA ALTA at its 6 pm). Both are intentional: storms = event totals, verify = day-by-day skill.
 - `report.py`: the daily model table, staleness warnings, and the storm report. Numbers and text are separate:
   `model_days` / `storm_models` compute, `model_table` / `render_storms` format; the feed reuses the numbers.
+- POINTS (owner, 2026-10-28): 4 resort points (mid-mountain; feed + reports) + 2 INTERNAL SNOTEL-site points
+  `solitude_snotel` (Mill-D North 8,940 ft) and `brighton_snotel` (Brighton SNOTEL 8,790 ft) at the gauges' own
+  lat/lon/elev. Solitude and Brighton are SCORED ONLY at the SNOTEL points (mid-mountain points have obs: []);
+  Alta/Snowbird unchanged. `internal: true` = archived, verified, in local reports, never in the feed
+  (feed.public_points). New points exist only in runs archived after the change (coords are used at pull time).
+  regime_factors.csv regenerated with factor_sites for them (identical to their resort's; old rows unchanged).
 - `feed.py`: website feed v1 (meta/storms/daily .json, Mountain ISO times, inches, null for missing);
   `release.py`: the approval gate; `github_feed.py` pushes an approved feed to GitHub Pages. `scripts/publish_feed.py` (last step of run_models.bat; `--preview` for any code
   -> data/feed_preview/). `config.DATA_DIR` honors COTTONWOODS_DATA so a production copy shares one data folder.
@@ -214,6 +220,9 @@ route (api.weather.gov lists CLN but serves no observations; never automate the 
    feed v1 stays model-only until the owner approves a release that adds anything).
 
 ## Open questions for the owner
+- (Resolved 2026-10-28: owner set Solitude = top of Apex lift 9,040 ft / 40.61369 -111.60199, Brighton = 9,514 ft /
+  40.58766 -111.58009, replacing the ~9,200 / ~9,600 guesses. In main config; cloud needs a release, and archived
+  runs keep the old elevation until re-derived - derived fields are computed at archive time, not on read.)
 - Which site were the journal "actual" totals measured at (Alta, Snowbird, Brighton, LCC avg)?
 - Confirm storm window start/end times in `data/journal/storms.csv` (`window_confirmed=false` rows).
 - (Resolved 2026-10-26: the 11/23, 12/1, 12/8 and 4/15 storms are the 2023-24 season.)

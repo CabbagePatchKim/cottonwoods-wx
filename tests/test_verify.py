@@ -8,7 +8,7 @@ import pandas as pd
 
 from cottonwoods.archive import forecasts as fa
 from cottonwoods.archive import obs as oa
-from cottonwoods.verify import build_pairs, summarize
+from cottonwoods.verify import build_pairs, obs_sites, summarize
 
 from helpers import make_cfg, fake_puller, gauge_frame, build_world
 
@@ -81,3 +81,12 @@ def test_noaa_site_pairs_on_its_own_6pm_window_with_snowfall():
     assert len(r) == 1 and r.iloc[0].window_end == pd.Timestamp("2026-11-03 01:00")   # 6 pm MST, not 5 am
     assert r.iloc[0].swe_obs_in == 0.9 and r.iloc[0].new_snow_obs_in == 11.0
     assert abs(r.iloc[0].qpf_in - 24 / 25.4) < 1e-9
+
+
+def test_solitude_and_brighton_are_scored_at_their_snotel_sites_not_mid_mountain():
+    cfg = make_cfg()
+    assert obs_sites(cfg, "solitude") == [] and obs_sites(cfg, "brighton") == []
+    assert obs_sites(cfg, "solitude_snotel") == [("mill_d_north", "WTEQ", "snotel")]
+    assert obs_sites(cfg, "brighton_snotel") == [("brighton", "WTEQ", "snotel")]
+    for p, site in [("solitude_snotel", "mill_d_north"), ("brighton_snotel", "brighton")]:   # at the gauge itself
+        assert all(cfg["points"][p][k] == cfg["snotel"][site][k] for k in ("lat", "lon", "elev_ft"))

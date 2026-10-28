@@ -73,12 +73,18 @@ def _amounts(c: dict | None) -> dict | None:
             "snow_in_regime": _num(c["snow_in_regime"], 1)}
 
 
+def public_points(cfg: dict) -> list[str]:
+    """The points the feed shows: every config point except `internal: true` ones (e.g. the SNOTEL-site points)."""
+    return [p for p, v in cfg["points"].items() if not v.get("internal")]
+
+
 def _run(init) -> dict:
     return {"cycle": f"{pd.Timestamp(init):%m/%d %H}z", "init": iso(init)}
 
 
 def build_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> dict:
     fc, adjusted = regime_adjusted(fc, cfg)
+    shown = public_points(cfg)
     out = []
     for _, st in storms[storms["status"] == "forecast"].sort_values("fc_start").iterrows():
         models = []
@@ -88,7 +94,8 @@ def build_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> dict:
                            "run_ends": iso(r["valid_to"]),
                            "snow_level_ft": {"start": _num(sl[0] * FT_PER_M, -2), "end": _num(sl[1] * FT_PER_M, -2)} if sl else None,
                            "flow": r["flow"] or None, "modes": r["modes"] or None,
-                           "points": {p: _amounts(c) if r["full"] else None for p, c in r["points"].items()}})
+                           "points": {p: _amounts(c) if r["full"] else None
+                                      for p, c in r["points"].items() if p in shown}})
         out.append({"id": st.storm_id, "start": iso(st.fc_start), "end": iso(st.fc_end),
                     "hours": _num((st.fc_end - st.fc_start) / pd.Timedelta(hours=1), 0),
                     "window_from": {"model": st.defining_model, **_run(st.defining_init)},
@@ -101,7 +108,7 @@ def build_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> dict:
 def build_daily(fc: pd.DataFrame, cfg: dict, start: pd.Timestamp, days: int | None = None) -> dict:
     fc, _ = regime_adjusted(fc, cfg)
     points = {}
-    for p in cfg["points"]:
+    for p in public_points(cfg):
         rows = model_days(fc, cfg, p, days, start)
         points[p] = [{"model": r["model"], **_run(r["init"]), "ensemble": bool(r["ensemble"]),
                       "days": [{"start": iso(s), "end": iso(e), "amounts": _amounts(c)}
@@ -119,7 +126,8 @@ def build_meta(fc: pd.DataFrame, cfg: dict, now: pd.Timestamp, code_version: str
             "snow_regime_method": "snow_in_regime: each model step's snow scaled by the resort's precip share in that "
                                   "step's 700 mb flow and temperature, from SNOTEL + SLC balloons since 2010 "
                                   "(1.10 = 10% more than usual); unverified",
-            "points": {p: {"lat": v["lat"], "lon": v["lon"], "elev_ft": v["elev_ft"]} for p, v in cfg["points"].items()},
+            "points": {p: {"lat": cfg["points"][p]["lat"], "lon": cfg["points"][p]["lon"],
+                           "elev_ft": cfg["points"][p]["elev_ft"]} for p in public_points(cfg)},
             "models": [{"model": m, **_run(t)} for m, t in newest.items()],
             "warnings": warnings, "disclaimer": DISCLAIMER, "credits": CREDITS}
 
