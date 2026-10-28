@@ -160,7 +160,7 @@ and the cross-check. verify.observed_water is the one place for this rule; pairs
 snowpack_in, undercatch_flag (pillow rose >= min_rise_in and > undercatch_ratio x gauge; config verify.pillow_check).
 UNDERCATCH EVIDENCE (no correction yet): verify.gauge_pillow_days -> data/processed/gauge_pillow_days.csv (every
 SNOTEL site x 24 h window, with balloon flow via regimes.balloon_regime; scripts/storms.py recomputes the last 25 days
-each pass, the whole archive the first time ~95 s) and undercatch_summary.csv (site x flow). First look 10/28 (13-17
+each pass ~8 s, the whole archive the first time ~32 s: balloons only from the first SNOTEL day) and undercatch_summary.csv (site x flow). First look 10/28 (13-17
 snowpack days per site): pillow/gauge Mill-D North 1.46, Snowbird 1.24, Brighton 1.17, Atwater 1.06. Fit a
 correction only after a season of evidence, verified like the regime factors.
 REPORT LAYOUT (owner, 2026-10-28): daily table and storm tables are fixed-width: a block per day/point under its
@@ -185,6 +185,10 @@ Running live, TWO places for now (side-by-side check before cutover):
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
+- RELEASED v1.3 (owner approved 2026-10-28): Solitude 9,040 / Brighton 9,514 ft; internal SNOTEL points
+  solitude_snotel + brighton_snotel (scored there only); gauge-first observed water + undercatch evidence; fixed-width
+  report tables. Feed format unchanged. After it: upload regime_factors.csv to the bucket (rows for the new points).
+  Still to do: scripts/rederive_archive.py so archived runs get the new Solitude/Brighton elevations.
 - RELEASED v1.2 (owner approved 2026-10-28, tag on e9f923e, pushed 18:36Z): the IFS fix below. Laptop IFS 10/27 18z,
   10/28 00z/06z were uploaded to the bucket by hand (owner approved) so the cloud has no IFS gap. Check the first
   v1.2 pass log: "Running approved release v1.2", IFS archived.

@@ -37,8 +37,9 @@ snd = load_soundings(start=now - timedelta(days=25))
 table = storms.run(fc, obs, cfg, now, soundings=summarize(snd) if not snd.empty else None)
 
 days_path = PROCESSED_DIR / "gauge_pillow_days.csv"
-first = not days_path.exists()        # the first time: the whole archive (slow: every balloon since 2010)
-d_obs, d_snd = (load_snotel(), load_soundings()) if first else (obs, snd)
+first = not days_path.exists()        # the first time: the whole archive; balloons only from the first SNOTEL day
+d_obs = load_snotel() if first else obs
+d_snd = load_soundings(start=d_obs["time_utc"].min() - timedelta(days=1)) if first and not d_obs.empty else snd
 days = verify.gauge_pillow_days(d_obs, cfg, summarize(d_snd).set_index("time_utc") if not d_snd.empty else None)
 days = verify.merge_gauge_pillow_days(days, days_path)
 verify.undercatch_summary(days, cfg).to_csv(PROCESSED_DIR / "undercatch_summary.csv", index=False)
