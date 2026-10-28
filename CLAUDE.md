@@ -124,7 +124,8 @@ Watch list from the last review (2026-10-27, second review): functions just over
 bound by the NOAA stream (GFS ~12 min + GEFS ~7 min per run); GDPS is decode-bound (each file a whole-globe field),
 so the remaining big speed lever is server-side subsetting (deferred: NOMADS filter / MSC GeoMet).
 era5.request_pressure_levels is unused on purpose (planned ERA5 regime work). tools/golden.py keeps its own copy
-of storms.csv, so a scheduled pass can't cause a false DIFF.
+of storms.csv, so a scheduled pass can't cause a false DIFF. Third review (2026-10-27, late evening, after the lead
+limits): ruff clean, vulture only the era5 item, no new long functions; nothing to fix.
 
 ## Status (end of session 2026-10-27, evening)
 Running live, TWO places for now (side-by-side check before cutover):
@@ -133,7 +134,13 @@ Running live, TWO places for now (side-by-side check before cutover):
 - CLOUD: GitHub Actions github.com/CabbagePatchKim/cottonwoods-wx (PUBLIC), .github/workflows/pass.yml every 3 h at
   :45 UTC (was :30 until 2026-10-27), runs the newest approved tag = v1.0 (81d37f2). Archive in Cloudflare R2 bucket cwx-archive; log in
   bucket logs/cloud/models_YYYY-MM.log. Publishes the feed (CWX_PUBLISH=1 set only there).
-  First manual run 2026-10-27 21:04Z: green, 53 min. Scheduled runs had NOT fired yet at end of session.
+  First manual run 2026-10-27 21:04Z: green, 53 min, but it ran main 77ddabc (before the v1.0 tag), so NOTHING
+  is published yet: cwx-feed has only its initial commit; Pages is on (site root 200), /v1/*.json are 404.
+  The 23:30Z scheduled run never fired (checked 00:20Z). Schedule moved to :45 and pushed 00:20Z 10/28.
+- main is AHEAD of v1.0 (not released): 7a9350c lead limits (storms + deterministic daily to 168 h, ensembles to
+  240 h), 59fca5b :45 schedule. Laptop runs main, cloud runs v1.0, so their storm lists differ (11/9 IFS 282 h
+  storm dropped on the laptop only). v1.1 needs the owner's approve + a heads-up to the friend (daily.json
+  deterministic days 8-10 become null; same format).
 - FEED v1.0 (approved by owner 2026-10-27): MODEL-RUN DATA ONLY, public at
   https://cabbagepatchkim.github.io/cwx-feed/v1/{storms,daily,meta}.json (repo CabbagePatchKim/cwx-feed). The owner's
   friend's site reads those URLs. Release procedure: see "RELEASE PROCEDURE" below; laptop never publishes.
@@ -150,16 +157,19 @@ route (api.weather.gov lists CLN but serves no observations; never automate the 
 
 ## Tomorrow's agenda (start here, 2026-10-28)
 0. FIRST THING (owner asked 2026-10-27): report on BOTH passes before anything else.
-   a. Laptop pass started 10/27 17:30 MDT (data/logs/models.log from line 4744): did all five steps finish
-      ("----- <script> exit N (time)" lines)? Per-run [archive] times vs the old averages (GFS 756 s, GDPS 868 s,
-      GEFS 405 s, RDPS 222 s, NAM 62 s; first new ones: RDPS 154 s, NAM 46 s). Feed step must NOT publish.
-   b. Cloud: scheduled runs since 10/27 23:30Z (api.github.com .../actions/workflows/pass.yml/runs), the first
+   a. Laptop: 10/27 17:30 MDT pass was checked: all five steps exit 0 by 17:35, feed refused to publish (correct);
+      NAM 46 s, RDPS 154 s, GFS 216 s (old avg 756), ENS 271 s. Check the passes since (log after line 5466),
+      especially GDPS and GEFS times (none in that pass). Old averages: GFS 756 s, GDPS 868 s, GEFS 405 s.
+   b. Cloud: scheduled runs since 10/28 02:45Z (none had fired by 00:20Z; if none fired, ask the owner to press
+      "Run workflow" once: it runs v1.0 and does the first publish) (api.github.com .../actions/workflows/pass.yml/runs), the first
       v1.0 publish, then fetch https://cabbagepatchkim.github.io/cwx-feed/v1/{storms,daily,meta}.json (code_version
       v1.0) and SEND THE OWNER THE THREE URLS (they're waiting for them for the friend's site).
 1. Cloud health: did scheduled runs fire (Actions list via api.github.com, no login needed)? Pull the bucket
-   (`scripts/bucket_sync.py pull` with PYTHONPATH incl. ~/.cwx_pylib, `--env-file ~/.cwx_r2.env`) and read
+   (`scripts/bucket_sync.py pull`, Windows paths needed: PYTHONPATH="C:\Users\patri\.cwx_pylib",
+   --env-file "C:\Users\patri\.cwx_r2.env"; the ~/ form fails with Windows Python) and read
    logs/cloud/models_*.log: per-step results, "Running approved release v1.0", "pushed ... cwx-feed". If no scheduled
-   runs: investigate (GitHub delays/disables new schedules; manual "Run workflow" works).
+   runs: investigate (GitHub delays/disables new schedules; manual "Run workflow" works). Also check how often a
+   :45 pass now finds HRRR/NAM and GFS/GDPS already posted (the reason for moving it from :30).
 2. Feed check: fetch the three public URLs; code_version must be v1.0; storms/daily sane. Give the owner the URLs.
 3. Speed: compare per-run archive times before/after download_workers (laptop data/logs/models.log "----- <script>
    exit N (time)" lines + [archive] durations; cloud log). Laptop passes cut off after archiving earlier on
