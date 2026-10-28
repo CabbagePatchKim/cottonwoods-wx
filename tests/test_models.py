@@ -207,3 +207,24 @@ def test_parallel_hours_waits_out_a_throttling_server_and_gives_up_after_its_tri
     assert got == {1: 10, 2: 20} and tries[2] == 3
     assert [f[0] for f in failed] == [3] and tries[3] == 1 + 3 + 2   # 3 throttle waits, then the 2 quick retries
     assert waits.count(30) == 2 and waits.count(60) == 2 and waits.count(90) == 1
+
+
+def test_field_searches_that_find_nothing_are_left_out_not_fatal():
+    import tempfile
+    from pathlib import Path
+    from cottonwoods.models.herbie_generic import SPECS, field_files
+
+    with tempfile.TemporaryDirectory() as d:
+        real = Path(d, "subset_surface.grib2")
+        real.write_bytes(b"GRIB")
+
+        class FakeHerbie:   # old Herbie raises for a search with no match; Herbie 2026.10 returns an unwritten path
+            def download(self, search, verbose=False):
+                return {"sfc": real, "pl": Path(d, "never_written.grib2")}.get(search) or _raise()
+
+        def _raise():
+            raise ValueError("no match")
+
+        assert field_files(FakeHerbie(), ["sfc", "pl", "cape"]) == [real]
+    # ECMWF's grid is named, so a Herbie update can't switch the archive to the 0.1 deg split files
+    assert SPECS["IFS"]["herbie"]["resolution"] == SPECS["ENS"]["herbie"]["resolution"] == "0p25"

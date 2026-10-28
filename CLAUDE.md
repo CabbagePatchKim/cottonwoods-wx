@@ -159,6 +159,17 @@ Running live, TWO places for now (side-by-side check before cutover):
   First v1.0 publish: manual run 2026-10-28 03:13Z, green, 11 min, "pushed 3 files to cwx-feed". IFS 18z (not
   posted yet) and ENS 18z (S3 503 Slow Down, 624/4800 values) failed there; fixed in v1.1. NO scheduled run had
   fired yet as of 04:40Z 10/28 (both runs so far were manual).
+- SCHEDULE UNRELIABLE (10/28): GitHub ran only 1 of 4 scheduled slots (08:45Z; 05:45/11:45/14:45Z dropped). Fix
+  (owner approved 10/28): Cloudflare Worker cloud/trigger_worker.js presses "Run workflow" at :50 after each slot,
+  skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
+  owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
+  test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
+- CLOUD IFS BROKEN since 10/27 (fixed in main 10/28, needs a release): CI installed Herbie 2026.10.0 (unpinned),
+  which defaults ECMWF to the new 0.1 deg data (posted since 10/20, split into -sfc/-pl files) and fetches only
+  -sfc; the pressure-level search returned an unwritten path -> FileNotFoundError on every IFS hour. Cloud ENS has
+  been archived at 0.1 deg since 10/27 (laptop: 0.25). Fix: resolution "0p25" named in herbie_generic.SPECS,
+  herbie-data pinned to 2026.9.2 in environment-ci.yml, field_files skips searches with no file. Both Herbie
+  versions give identical IFS/ENS output (checked 10/28 06z). Switching to 0.1 deg = a separate owner decision.
 - RELEASED v1.1 (owner approved 2026-10-27, tag on ece413a, pushed 04:38Z 10/28): lead limits, gauge-noise fix,
   bin scores, obs retries/catch-up, ECMWF throttle fix. The FEED still says v1.0 until the next cloud pass runs
   v1.1 (scheduled 06:45Z, or "Run workflow"). Friend heads-up: daily.json deterministic days 8-10 become null.
@@ -182,7 +193,9 @@ route (api.weather.gov lists CLN but serves no observations; never automate the 
       retrying" or "catching up" lines? GDPS/GEFS times (old averages GFS 756 s, GDPS 868 s, GEFS 405 s; 10/27 21:09
       pass: GEFS 359 s, ENS 157 s, IFS 173 s with 12 ECMWF workers; now 4).
    b. Cloud: did SCHEDULED runs fire on their own (api.github.com/repos/CabbagePatchKim/cottonwoods-wx/actions/
-      workflows/pass.yml/runs, event "schedule")? First v1.1 run: log header "code v1.1", ENS/IFS complete (no 503),
+      workflows/pass.yml/runs, event "schedule")? As of 06:14Z 10/28 NONE had: the 02:45Z and 05:45Z slots
+      were missing (all 4 runs so far were workflow_dispatch). If still no "schedule" run after the 08:45Z slot,
+      the schedule is broken: investigate before anything else (gh isn't installed; use the API). First v1.1 run: log header "code v1.1", ENS/IFS complete (no 503),
       "pushed ... cwx-feed". Then meta.json code_version must be v1.1. Remind the owner to tell the friend.
 1. Tonight's storm (10/27 18:00 - 10/28 06:00 MDT): should verify ~18:00 10/28 as DRY (SNOTEL 0.0" with the gauge
    fix) -> first bin scores (NAMNEST called ~2" regime-adjusted; HRRR/NAM/GFS/GDPS/RDPS 0). Check the storm report's

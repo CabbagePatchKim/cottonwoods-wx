@@ -15,4 +15,4 @@ dependencies:
   - requests
   - metpy
   - boto3
-  - herbie-data
+  - herbie-data=2026.9.2      # pinned to the laptop's version: a Herbie update once changed which ECMWF file it fetched

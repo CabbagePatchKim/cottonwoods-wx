@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 
@@ -30,11 +31,14 @@ SPECS = {
                 "fields": [fl.NCEP_LEVELS_ALL_HGT, fl.NCEP_WIND, fl.NCEP_SURFACE]},
     "NAMNEST": {"herbie": {"model": "nam", "product": "conusnest.hiresf"}, "precip": r":APCP:surface:",
                 "fields": [fl.NCEP_LEVELS, fl.NCEP_EXTRA, fl.NCEP_SURFACE]},
-    "IFS":     {"herbie": {"model": "ifs", "product": "oper"}, "precip": r":tp:sfc:", "precip_m": True,
-                "fields": [fl.ECMWF_LEVELS, fl.ECMWF_SURFACE]},
+    # ECMWF: 0.25 deg asked for by name. Since 2026-10-20 ECMWF also posts 0.1 deg, split into -sfc and -pl files, and
+    # Herbie 2026.10 defaults to its -sfc file (no pressure levels), so the archive's grid would change with Herbie.
+    "IFS":     {"herbie": {"model": "ifs", "product": "oper", "resolution": "0p25"}, "precip": r":tp:sfc:",
+                "precip_m": True, "fields": [fl.ECMWF_LEVELS, fl.ECMWF_SURFACE]},
     "GEFS":    {"herbie": {"model": "gefs", "product": "atmos.5"}, "precip": r":APCP:surface:", "members": 31},
     # ENS open data on this source holds the 50 perturbed members only (no control run)
-    "ENS":     {"herbie": {"model": "ifs", "product": "enfo"}, "precip": r":tp:sfc:", "precip_m": True, "members": 50},
+    "ENS":     {"herbie": {"model": "ifs", "product": "enfo", "resolution": "0p25"}, "precip": r":tp:sfc:",
+                "precip_m": True, "members": 50},
 }
 
 
@@ -53,6 +57,21 @@ def _values(ds, points: dict[str, dict], scale: float = 1.0, member_dim: str | N
         else:
             out[name] = (float(arr.values.reshape(fl.grid_shape(lats, lons))[idx]) * scale, dist)
     return out
+
+
+def field_files(h, searches: list[str]) -> list:
+    """Download each profile-field search (temps, humidity, heights, wind, 2 m, surface pressure, CAPE) of one Herbie
+    file. A search the file can't match (e.g. CAPE missing from ECMWF open data) just leaves those columns out: older
+    Herbie raises for it, Herbie 2026.10 returns the path of a file it never wrote."""
+    paths = []
+    for search in searches:
+        try:
+            p = h.download(search, verbose=False)
+        except Exception:  # noqa: BLE001
+            continue
+        if p is not None and Path(p).exists():
+            paths.append(p)
+    return paths
 
 
 def pull_run(model: str, init: datetime, fxx_list, points: dict[str, dict], save_dir: str | None = None, *,
@@ -75,15 +94,7 @@ def pull_run(model: str, init: datetime, fxx_list, points: dict[str, dict], save
         if pick is None:
             raise RuntimeError(f"no precip message ending at f{fxx:03d}")
         line, window = pick
-        paths = []
-        # Profile fields (temps, humidity, heights, wind, 2 m, surface pressure, CAPE). A search the file can't
-        # match (e.g. CAPE missing from ECMWF open data) just leaves that column out.
-        for search in spec["fields"]:
-            try:
-                paths.append(h.download(search, verbose=False))
-            except Exception:  # noqa: BLE001
-                pass
-        return window, h.download(re.escape(line), verbose=False), paths
+        return window, h.download(re.escape(line), verbose=False), field_files(h, spec["fields"])
 
     def decode(fxx, got):
         (a, b), p_path, f_paths = got
