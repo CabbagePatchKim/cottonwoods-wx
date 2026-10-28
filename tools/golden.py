@@ -47,7 +47,7 @@ def reports(cfg):
     render_storms = getattr(storms, "render_open", None)
     if render_storms is None:
         from cottonwoods.report import render_storms
-    return {"storms": render_storms(st, fc, cfg),
+    return {"storms": render_storms(st, fc, cfg, NOW),
             "models": render(fc[fc.init >= NOW - pd.Timedelta(days=2)], cfg, list(cfg["points"]), 10, start=NOW)}
 
 

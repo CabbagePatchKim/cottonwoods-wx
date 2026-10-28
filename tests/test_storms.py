@@ -352,6 +352,21 @@ def test_dry_day_with_gauge_wobble_is_not_an_observed_event():
     assert detect_events(later, cfg["storms"]["obs_wet_in"] * 25.4, cfg["storms"]["gap_hours"], 0.0).empty
 
 
+def test_storm_report_lists_an_ended_storm_on_one_line_and_late_runs_as_dashes():
+    # 10/28: the report kept a full table of 0.00s for a dry storm that had ended, from runs made after it
+    from cottonwoods.report import render_storms
+    cfg = load_config()
+    fc = run_steps("GFS", "2026-11-01 00:00", [(6, 12)], hours=48)
+    st = tracked(fc, "2026-11-01 00:00")
+    sid = st.loc[st["status"] == "forecast", "storm_id"].iloc[0]
+    late = pd.concat([fc, run_steps("GFS", "2026-11-01 08:00", [], hours=48)])
+    text = render_storms(st, late, cfg, pd.Timestamp("2026-11-01 10:00"))           # under way
+    row = next(line for line in text.splitlines() if line.startswith("GFS"))
+    assert f"=== Storm {sid}" in text and "from " in row and "0.00" not in row and "-" in row.split()
+    text = render_storms(st, late, cfg, pd.Timestamp("2026-11-01 13:00"))           # over
+    assert f"=== Storm {sid}" not in text and f"--- Storm {sid}" in text and "awaiting verification" in text
+
+
 def test_storm_table_puts_every_number_under_its_own_label():
     from cottonwoods.report import _storm_table
     init = pd.Timestamp("2026-10-30 12:00")

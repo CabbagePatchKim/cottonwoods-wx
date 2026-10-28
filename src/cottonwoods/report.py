@@ -257,17 +257,19 @@ def _storm_table(models: list[dict], points: list[str], tail_w: dict[str, int]) 
             out += [line(r["model"], timefmt.cycle(r["init"]),
                          "full storm" if r["full"] else f"from {timefmt.clock(r['valid_from'])}"
                          if r["late"] else f"to {timefmt.clock(r['valid_to'])}",
-                         [_cells(r["points"].get(p), regime=True) for p in points],
+                         [("-", "") if r["late"] else _cells(r["points"].get(p), regime=True) for p in points],
                          {} if r["ensemble"] else _storm_tail(r)) for r in group]
     return out
 
 
-def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> str:
-    """Each storm still in the future/ongoing, with every model's newest run totalled over the storm window.
+def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Timestamp) -> str:
+    """Each storm still ahead or under way, with every model's newest run totalled over the storm window.
 
     Deterministic: water (in) and Kuchera snow (in, regime-adjusted when available). Ensembles: members reaching the
     event threshold / N and mean water. A run that ends before the window does shows "to MM/DD HHMM" in its `covers`
-    column. Times are Mountain.
+    column (and its partial amounts); one that starts after the storm began shows "from MM/DD HHMM" and "-" (it
+    can't see the whole storm, and a 0 would read like a forecast). A storm whose window has ended gets one
+    "awaiting verification" line, like the feed leaving it out (owner, 2026-10-28). Times are Mountain.
     """
     fc, adjusted = regime_adjusted(fc, cfg)
     lines = ["Snow is regime-adjusted per step (each resort's history in that step's flow, regime_factors.csv)."
@@ -275,7 +277,9 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> str:
              "  water snow   deterministic models: water, and snow at the point's elevation, inches",
              f"  wet/N mean   ensembles: members with >= {cfg['verify']['event_swe_in']:.2f}\" water out of N, "
              "and their mean water", "  run = model cycle (UTC); SNTL = internal SNOTEL-site point.", ""]
-    live = [(st, storm_models(st, fc, cfg)) for _, st in storms[storms["status"] == "forecast"].sort_values("fc_start").iterrows()]
+    open_ = storms[storms["status"] == "forecast"].sort_values("fc_start")
+    ended = open_[open_["fc_end"] <= now]
+    live = [(st, storm_models(st, fc, cfg)) for _, st in open_[open_["fc_end"] > now].iterrows()]
     tails = [_storm_tail(r) for _, models in live for r in models if not r["ensemble"]]
     tail_w = {k: max([len(k)] + [len(t[k]) for t in tails]) for k in ("snow level", "flow", "modes")}
     for st, models in live:
@@ -286,6 +290,10 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict) -> str:
         lines += [f"    {k}: {v}" for k, v in storm_notes(st)]
         lines += _storm_table(models, list(cfg["points"]), tail_w) if models else ["(no model reaches this storm)"]
         lines.append("")
+    for _, st in ended.iterrows():
+        lines.append(f"--- Storm {st.storm_id} ({timefmt.clock(st.fc_start, weekday=True)} - "
+                     f"{timefmt.clock(st.fc_end, weekday=True)}) ENDED: awaiting verification (about "
+                     f"{cfg['storms']['gap_hours']} dry hours after it ends)")
     for _, st in recent_changes(storms).iterrows():
         lines.append(f"--- Storm {st.storm_id} ({timefmt.clock(st.fc_start, weekday=True)}) {st.status.upper()}: {st.note}")
     return "\n".join(lines) if lines else "No storms in the newest model runs.\n"
