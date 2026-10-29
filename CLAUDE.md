@@ -188,6 +188,9 @@ Running live, TWO places for now (side-by-side check before cutover):
 - IN MAIN, NOT RELEASED (owner 2026-10-28: bundle with the next change, no v1.5 just for this): 82effa7 storm
   report matches the feed (ended storms = one "ENDED: awaiting verification" line; runs starting after the storm
   began show "-", not 0.00). render_storms now takes `now`. Cloud report keeps the old layout until the next release.
+  Also in main, same bundle: report labels for the internal SNOTEL points (points.*.label in stations.yaml):
+  solitude_snotel shows as "Mill-D North SNOTEL" / "Mill-D SNTL" (owner: "solitude SNTL" was misleading; the gauge
+  is ~5.7 km down-canyon of the resort), brighton_snotel as "Brighton SNOTEL". Keys unchanged (archive, verification).
 - RELEASED v1.4 (owner approved 2026-10-28, tag on 5827cd1, pushed ~22:17Z, CI tests green; first pass #9 22:28Z
   manual by the owner: "code v1.4", all steps success, feed v1.4 published, no new runs that pass so the feed still
   showed pre-release nearest-cell 12z numbers; blended numbers arrive with each model's next run). Contents:

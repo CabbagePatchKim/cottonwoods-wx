@@ -379,6 +379,8 @@ def test_storm_table_puts_every_number_under_its_own_label():
     tail_w = {"snow level": 13, "flow": 18, "modes": 12}
     lines = _storm_table([det, ens], ["alta", "alta_snotel"], tail_w)
     assert lines[0].split() == ["alta", "alta", "SNTL"]
+    named = _storm_table([det, ens], ["alta", "alta_snotel"], tail_w, {"alta_snotel": "Mill-D North SNOTEL"})
+    assert named[0].split() == ["alta", "Mill-D", "SNTL"]          # a gauge's own name, not the resort's
     sub_det, gfs, sub_ens, gefs = lines[1:]
     assert gfs.split()[:6] == ["GFS", "10/30", "12z", "full", "storm", "1.20"] and gfs.split()[6] == "14"   # regime snow
     assert gfs.index("1.20") + 4 == sub_det.index("water") + 5 and gfs.index("14") + 2 == sub_det.index("snow") + 4

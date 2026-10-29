@@ -44,6 +44,8 @@ soundings:
 # obs: observed sites (keys under snotel:, synoptic: or ghcn:) each point is verified against, scored separately.
 # Solitude and Brighton are scored at their SNOTEL sites, not mid-mountain (owner, 2026-10-28): the *_snotel points
 # sit at the gauge's own location and elevation and carry the obs; the mid-mountain points are forecast only.
+# label: the name the reports show (the key stays: archived runs and verification are stored under it). The
+# Solitude-side gauge is Mill-D North, ~5.7 km down-canyon of the resort, so it's labeled by its own name (owner).
 # internal: true = archived, verified and in the local reports, but never in the public feed (feed.public_points).
 # Mill-D North SNOTEL (8,940 ft, upper Big Cottonwood) is the nearest SNOTEL to Solitude.
 points:
@@ -51,8 +53,10 @@ points:
   snowbird: {lat: 40.56914, lon: -111.65852, elev_ft: 9170, obs: [snowbird]}
   solitude: {lat: 40.61369, lon: -111.60199, elev_ft: 9040, obs: []}
   brighton: {lat: 40.58766, lon: -111.58009, elev_ft: 9514, obs: []}
-  solitude_snotel: {lat: 40.65883, lon: -111.63683, elev_ft: 8940, obs: [mill_d_north], internal: true}
-  brighton_snotel: {lat: 40.59936, lon: -111.58167, elev_ft: 8790, obs: [brighton], internal: true}
+  solitude_snotel: {lat: 40.65883, lon: -111.63683, elev_ft: 8940, obs: [mill_d_north], internal: true,
+                    label: "Mill-D North SNOTEL"}
+  brighton_snotel: {lat: 40.59936, lon: -111.58167, elev_ft: 8790, obs: [brighton], internal: true,
+                    label: "Brighton SNOTEL"}
 
 # The 2x2 block of grid points around the Cottonwoods for each COARSE model. The resorts all sit nearest the same
 # one or two of these, so every run of these models also stores all four (with each cell's own profile), so

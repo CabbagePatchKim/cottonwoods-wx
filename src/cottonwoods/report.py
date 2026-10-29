@@ -161,7 +161,7 @@ def render(fc: pd.DataFrame, cfg: dict, points: list[str], days: int | None = No
     for p in points:
         pt = cfg["points"][p]
         note = ", SNOTEL site, internal: not in the feed" if pt.get("internal") else ""
-        lines += [f"=== {p.upper()}  ({pt['elev_ft']:,} ft{note})", *model_table(fc, cfg, p, days, start), ""]
+        lines += [f"=== {pt.get('label', p).upper()}  ({pt['elev_ft']:,} ft{note})", *model_table(fc, cfg, p, days, start), ""]
     return "\n".join(lines)
 
 
@@ -240,7 +240,14 @@ def _storm_tail(r: dict) -> dict[str, str]:
     return {"snow level": level, "flow": r["flow"] or "", "modes": r["modes"] or ""}
 
 
-def _storm_table(models: list[dict], points: list[str], tail_w: dict[str, int]) -> list[str]:
+def _short(label: str) -> str:
+    """A point's column header in the storm table (14 wide): "Mill-D North SNOTEL" -> "Mill-D SNTL"."""
+    words = label.replace("_snotel", " SNOTEL").split()
+    return " ".join(words[:1] + ["SNTL"]) if words[-1] == "SNOTEL" else label
+
+
+def _storm_table(models: list[dict], points: list[str], tail_w: dict[str, int],
+                 labels: dict[str, str] | None = None) -> list[str]:
     """One storm's models as text lines, laid out like the daily table: a fixed-width block per point under its
     name holding two numbers (water + snow, or wet members/N + mean water) named on a sub-header row; then snow
     level, flow and modes at widths shared by every storm (tail_w), so all storms line up."""
@@ -248,7 +255,7 @@ def _storm_table(models: list[dict], points: list[str], tail_w: dict[str, int]) 
         return (f"{model:<8}{run:<11}{covers:<19}" + "".join(f"   {a:>5}{b:>6}" for a, b in cells)
                 + "".join(f"  {v:<{tail_w[k]}}" for k, v in tail.items())).rstrip()
 
-    out = [" " * 38 + "".join(p.replace("_snotel", " SNTL").rjust(14) for p in points)]
+    out = [" " * 38 + "".join(_short((labels or {}).get(p, p)).rjust(14) for p in points)]
     for group, names in (([r for r in models if not r["ensemble"]], ("water", "snow")),
                          ([r for r in models if r["ensemble"]], ("wet/N", "mean"))):
         if group:
@@ -288,7 +295,8 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Tim
                      f"({(e - s) / pd.Timedelta(hours=1):.0f} h; window from {st.defining_model} "
                      f"{timefmt.run(st.defining_init)})")
         lines += [f"    {k}: {v}" for k, v in storm_notes(st)]
-        lines += _storm_table(models, list(cfg["points"]), tail_w) if models else ["(no model reaches this storm)"]
+        labels = {p: v.get("label", p) for p, v in cfg["points"].items()}
+        lines += _storm_table(models, list(cfg["points"]), tail_w, labels) if models else ["(no model reaches this storm)"]
         lines.append("")
     for _, st in ended.iterrows():
         lines.append(f"--- Storm {st.storm_id} ({timefmt.clock(st.fc_start, weekday=True)} - "
