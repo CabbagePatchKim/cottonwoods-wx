@@ -201,6 +201,15 @@ Running live, TWO places for now (side-by-side check before cutover):
   machine's independent copy value for value (GDPS resort rows differ only by the blend, re-derived). RDPS
   06z/12z 10/28 correctly REFUSED: archived before the Solitude/Brighton move, so grid_dist differs. DERIVED list
   moved to archive/forecasts.py (golden.py imports it; part of agenda 3b).
+  Also in main, same bundle: 12 H BLOCKS in the storm report (owner 2026-10-29; blocks.py +
+  report.storm_block_lines, config storms.block_*). Why: the weekend storm merged into one 75 h window, longer than
+  HRRR (48 h) / NAM Nest (60 h) reach, and runs starting mid-storm show "-", so short-range models never counted.
+  Model-defined parts were rejected (owner: snow can fall in part of a part; parts follow one model's timing).
+  Fixed blocks ending 00z/12z, clipped to the storm (they add up to its total); each run fills the blocks it
+  reaches, "*" = part of a block. Kept small (owner: "keep the report from getting too busy"): ONE table of
+  block_point (Alta) snow by model + median + ensemble % members wet, ONE table of every point's median.
+  NEXT (agreed, not built): blocks already over -> observed SNOTEL amount (rest-of-storm for mid-storm runs);
+  block-level verification so short-range models get scored; feed only in a later approved release.
 - RELEASED v1.4 (owner approved 2026-10-28, tag on 5827cd1, pushed ~22:17Z, CI tests green; first pass #9 22:28Z
   manual by the owner: "code v1.4", all steps success, feed v1.4 published, no new runs that pass so the feed still
   showed pre-release nearest-cell 12z numbers; blended numbers arrive with each model's next run). Contents:

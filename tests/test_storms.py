@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from cottonwoods.archive import forecasts as fa
 
@@ -387,3 +388,32 @@ def test_storm_table_puts_every_number_under_its_own_label():
     assert gefs.index("25/31") + 5 == sub_ens.index("wet/N") + 5 and gefs.index("0.60") + 4 == sub_ens.index("mean") + 4
     assert gfs.index("6.6k->5.9k ft") == sub_det.index("snow level") and "flow" not in sub_ens
     assert "to " in gefs and "-" in gefs.split()                 # short run; a point the run predates shows "-"
+
+
+def test_storm_blocks_sit_on_the_fixed_00z_12z_grid_and_add_up_to_the_storm():
+    from cottonwoods import blocks
+    from cottonwoods.windows import window_total
+    s, e = pd.Timestamp("2026-10-30 15:00"), pd.Timestamp("2026-11-02 18:00")
+    blk = blocks.storm_blocks(s, e)
+    assert [b[:2] for b in blk][:2] == [(s, pd.Timestamp("2026-10-31 00:00")),
+                                        (pd.Timestamp("2026-10-31 00:00"), pd.Timestamp("2026-10-31 12:00"))]
+    assert blk[-1][:2] == (pd.Timestamp("2026-11-02 12:00"), e) and len(blk) == 7
+    assert [blocks.label(b[2]) for b in blk[:3]] == ["Fri day", "Fri ngt", "Sat day"]
+    hours = pd.date_range("2026-10-30 12:00", "2026-11-03 00:00", freq="3h")
+    steps = pd.DataFrame({"valid_start": hours[:-1], "valid_end": hours[1:], "snow_in": np.arange(len(hours) - 1.0)})
+    got = blocks.run_blocks(steps, blk, "snow_in")
+    assert {c for _, c in got} == {blocks.FULL}
+    assert sum(v for v, _ in got) == pytest.approx(window_total(steps, s, e, "snow_in"))
+
+
+def test_a_short_or_late_run_fills_the_blocks_it_reaches():
+    from cottonwoods import blocks
+    blk = blocks.storm_blocks(pd.Timestamp("2026-10-30 12:00"), pd.Timestamp("2026-11-01 12:00"))
+    def run(a, b):
+        t = pd.date_range(a, b, freq="1h")
+        return pd.DataFrame({"valid_start": t[:-1], "valid_end": t[1:], "snow_in": 0.5})
+    short = blocks.run_blocks(run("2026-10-30 12:00", "2026-10-31 18:00"), blk, "snow_in")    # ends mid-block
+    assert [c for _, c in short] == [blocks.FULL, blocks.FULL, blocks.PART, blocks.NONE]
+    assert short[2][0] == pytest.approx(3.0)                                                  # its 6 hours only
+    late = blocks.run_blocks(run("2026-10-31 06:00", "2026-11-02 00:00"), blk, "snow_in")     # began mid-storm
+    assert [c for _, c in late] == [blocks.NONE, blocks.PART, blocks.FULL, blocks.FULL]

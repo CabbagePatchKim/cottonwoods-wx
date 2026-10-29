@@ -210,6 +210,11 @@ storms:
   obs_wet_in: 0.1          # measurable per hour for SNOTEL: its gauge reports in 0.1" steps
   min_total_in: 0.10       # an "event" smaller than this isn't a storm
   subperiod_gap_hours: 6   # inside a storm, a dry gap this long splits it into reported parts (e.g. 2/16 a/b)
+  # The storm report's 12 h blocks (blocks.py, owner 2026-10-29): fixed edges at 00z/12z (~6 pm / 6 am Mountain),
+  # the same for every model, so short-range runs count for the blocks of a long storm they reach.
+  block_hours: 12
+  block_end_utc_hour: 0
+  block_point: alta        # the point whose snow is shown model by model (every point gets the median row)
   manual_match_hours: 12   # hand-entered storm totals (data/manual/storm_totals.csv) match a storm within this slack
   report_verified_days: 10 # the storm report lists storms verified in the last this-many days
   max_lead_hours: 168      # storms are detected and totalled only from steps within this lead of each run's init

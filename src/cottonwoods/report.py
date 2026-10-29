@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from . import regimes, timefmt
+from . import blocks, regimes, timefmt
 from .config import PROCESSED_DIR
 from .storms import bin_scores, hand_obs_totals, manual_totals, run_flow, run_modes
 from .windows import window_total, within_lead
@@ -175,6 +175,67 @@ def regime_adjusted(fc: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, bool]:
     return regimes.apply_factors(fc, factors, cfg["regimes"]), True
 
 
+def storm_runs(fc: pd.DataFrame, cfg: dict, s):
+    """(model, steps) of every model's newest run that reaches a storm starting at s, within storms.max_lead_hours."""
+    for model, g in fc.groupby("model"):
+        g = within_lead(g[g["init"] == g["init"].max()], cfg["storms"]["max_lead_hours"])
+        if g["valid_end"].max() > s:
+            yield model, g
+
+
+def _snow_col(g: pd.DataFrame) -> str:
+    """The storm report's snow: regime-adjusted where there is one, like its totals table."""
+    return "snow_in_adj" if "snow_in_adj" in g.columns and g["snow_in_adj"].notna().any() else "snow_in"
+
+
+def _amount(v: float, cover: str) -> str:
+    """A block's snow as text: '-' not reached, '.' dry (under 0.05"), '2.4' / '2.4*' (only part of the block)."""
+    if cover == blocks.NONE or np.isnan(v):
+        return "-"
+    return ("." if v < 0.05 else f"{v:.1f}") + ("*" if cover == blocks.PART else "")
+
+
+def storm_block_lines(st, fc: pd.DataFrame, cfg: dict) -> list[str]:
+    """A storm in fixed 12 h blocks (blocks.py), kept to two small tables so long storms stay readable:
+      1. storms.block_point (Alta) snow by model, plus their median and the ensembles' share of wet members;
+      2. every point's median snow (of the deterministic runs covering the whole block).
+    Short-range runs fill the blocks they reach, so they count for a long storm too."""
+    bcfg = cfg["storms"]
+    blks = blocks.storm_blocks(st.fc_start, st.fc_end, bcfg["block_hours"], bcfg["block_end_utc_hour"])
+    if len(blks) < 2:
+        return []
+    wet_mm = cfg["verify"]["event_swe_in"] * MM_PER_IN
+    point, labels = bcfg["block_point"], {p: v.get("label", p) for p, v in cfg["points"].items()}
+    head = [blocks.label(b[2]) for b in blks]
+    det, ens, full = [], [], {p: [[] for _ in blks] for p in cfg["points"]}
+    for model, g in sorted(storm_runs(fc, cfg, st.fc_start), key=lambda mg: model_rank(mg[0])):
+        if "member" in g.columns and g["member"].notna().any():
+            ens.append((model, g["init"].iloc[0], blocks.ensemble_blocks(g[g["point"] == point], blks, wet_mm)))
+            continue
+        for p in cfg["points"]:
+            gp = g[g["point"] == p]
+            got = blocks.run_blocks(gp, blks, _snow_col(gp)) if not gp.empty else [(np.nan, blocks.NONE)] * len(blks)
+            for i, (v, cover) in enumerate(got):
+                if cover == blocks.FULL and not np.isnan(v):
+                    full[p][i].append(v)
+            if p == point:
+                det.append((model, g["init"].iloc[0], got))
+    med = lambda vals: (float(np.median(vals)), blocks.FULL) if vals else (np.nan, blocks.NONE)  # noqa: E731
+    w = max(8, max(len(h) for h in head) + 2)
+    row = lambda name, run, cells: (f"{f'{name:<8}{run}':<19}" + "".join(f"{c:>{w}}" for c in cells)).rstrip()  # noqa: E731
+    out = [f"    12 h blocks: {labels.get(point, point)} snow (in) by model; * = run covers only part of the block",
+           row("model", "run", head)]
+    out += [row(m, timefmt.cycle(i), [_amount(v, c) for v, c in got]) for m, i, got in det]
+    out.append(row("median", "", [_amount(*med(full[point][i])) for i in range(len(blks))]))
+    out += [row(m, timefmt.cycle(i), ["-" if c == blocks.NONE else f"{v:.0%}" + ("*" if c == blocks.PART else "")
+                                      for v, c in got]) + "  members wet" for m, i, got in ens]
+    out += ["    12 h blocks: median snow (in) of the models covering the whole block, every point",
+            row("point", "", head)]
+    out += [row(_short(labels.get(p, p)), "", [_amount(*med(full[p][i])) for i in range(len(blks))])
+            for p in cfg["points"]]
+    return out
+
+
 def storm_models(st, fc: pd.DataFrame, cfg: dict) -> list[dict]:
     """The numbers behind one storm's table: every model's newest run that reaches the storm, totalled over its
     window, in display order. Per point: deterministic {"water_in", "snow_in" (plain Kuchera), "snow_in_regime"
@@ -187,10 +248,7 @@ def storm_models(st, fc: pd.DataFrame, cfg: dict) -> list[dict]:
     s, e = st.fc_start, st.fc_end
     thr = cfg["verify"]["event_swe_in"]
     out = []
-    for model, g in fc.groupby("model"):
-        g = within_lead(g[g["init"] == g["init"].max()], cfg["storms"]["max_lead_hours"])
-        if g["valid_end"].max() <= s:
-            continue  # newest run doesn't reach the storm
+    for model, g in storm_runs(fc, cfg, s):
         r = {"model": model, "init": g["init"].iloc[0], "valid_from": g["valid_start"].min(),
              "valid_to": g["valid_end"].max(), "ensemble": bool("member" in g.columns and g["member"].notna().any()),
              "late": bool(g["valid_start"].min() > s), "points": {}, "snow_level_m": None,
@@ -277,6 +335,7 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Tim
     column (and its partial amounts); one that starts after the storm began shows "from MM/DD HHMM" and "-" (it
     can't see the whole storm, and a 0 would read like a forecast). A storm whose window has ended gets one
     "awaiting verification" line, like the feed leaving it out (owner, 2026-10-28). Times are Mountain.
+    Under each storm's totals: the same runs in fixed 12 h blocks (storm_block_lines), where short-range runs count.
     """
     fc, adjusted = regime_adjusted(fc, cfg)
     lines = ["Snow is regime-adjusted per step (each resort's history in that step's flow, regime_factors.csv)."
@@ -297,6 +356,7 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Tim
         lines += [f"    {k}: {v}" for k, v in storm_notes(st)]
         labels = {p: v.get("label", p) for p, v in cfg["points"].items()}
         lines += _storm_table(models, list(cfg["points"]), tail_w, labels) if models else ["(no model reaches this storm)"]
+        lines += storm_block_lines(st, fc, cfg) if models else []
         lines.append("")
     for _, st in ended.iterrows():
         lines.append(f"--- Storm {st.storm_id} ({timefmt.clock(st.fc_start, weekday=True)} - "
