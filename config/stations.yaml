@@ -199,6 +199,9 @@ patterns:
   step_hours: 6
   max_hours: 240
   recent_cycles: 8                       # newest cycles each pass checks (2 days: a missed pass is caught up)
+  # Around Utah at each model's OWN resolution, not averaged (owner, 2026-10-29: shortwaves matter; 1 deg smooths
+  # features under ~200-300 km). Kept to 120 h: that detail matters in the last days, and it doubles a step's size.
+  inner: {box: {lat: [35, 45], lon: [-120, -105]}, max_hours: 120}
   models:                                # IFS 00/12z only: ECMWF's server throttled us 10/28 (each step is ~3 MB)
     GFS: {cycles_utc: [0, 6, 12, 18]}
     GEFS: {cycles_utc: [0, 6, 12, 18]}

@@ -43,9 +43,19 @@ def test_finer_grids_are_averaged_over_each_1_degree_cell():
     assert np.allclose(got["t850_k"]["t850_k"], 280.0)                      # a smooth field is left alone
 
 
+def test_the_utah_box_keeps_each_models_own_grid_points_unaveraged():
+    cfg = make_cfg()
+    checker = _grid(0.25, {"vo": lambda la, lo: np.where((np.round(la * 4) + np.round(lo * 4)) % 2 == 0, 1.0, -1.0) * 1e-4})
+    got = patterns.native_box(checker, cfg["patterns"]["inner"])["vort500_s"]
+    assert len(got) == 41 * 61                                              # 35-45 N x 120-105 W every 0.25 deg
+    assert np.allclose(np.abs(got["vort500_s"]), 1e-4)                      # the shortwave-scale signal is kept
+    assert (got["lat"].min(), got["lat"].max(), got["lon"].min(), got["lon"].max()) == (35, 45, -120, -105)
+
+
 def test_a_run_is_archived_once_and_only_when_nearly_complete():
     cfg = make_cfg()
-    full = pd.DataFrame([{"lead_hr": h, "lat": 40.0, "lon": -112.0, "z500_m": 5700.0} for h in patterns.steps(cfg)])
+    full = pd.DataFrame([{"grid": "1deg", "lead_hr": h, "lat": 40.0, "lon": -112.0, "z500_m": 5700.0}
+                         for h in patterns.steps(cfg)])
     init = datetime(2026, 10, 29)
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)

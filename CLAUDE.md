@@ -368,8 +368,11 @@ incl. Alta, archived as text) as an automated Alta-total source.
 5b. BUILT 2026-10-29 (in main, runs from the next release: pass step "Pattern maps", skipped by v1.4):
    src/cottonwoods/patterns.py + scripts/archive_patterns.py, config `patterns`, data/archive/patterns/model=*/init=*.
    GFS (0.25 deg source), GEFS mean + spread (0.5), IFS (00/12z) every 6 h to 240 h, all AREA-AVERAGED onto 1 deg,
-   25-60N x 150-90W: z500, relative vort500 (GFS absv - f), u/v250, mslp, t850. ~3 MB/run, ~30 MB/day in the bucket
-   (~1 GB/month; float16 would halve it). Bucket pull skips patterns older than cloud.pull_pattern_days (3).
+   25-60N x 150-90W: z500, relative vort500 (GFS absv - f), u/v250, mslp, t850. PLUS (owner 2026-10-29, shortwaves
+   matter) grid "native": 35-45N x 120-105W at each model's own grid points (GFS/IFS 0.25, GEFS 0.5), NOT averaged,
+   to 120 h (patterns.inner). Real 48 h GFS: Utah-box peak vort500 3.3e-4 native vs 1.0e-4 at 1 deg. 3.4-4.3 MB/run,
+   ~38 MB/day, ~1.2 GB/month in the bucket (season ~7 GB: watch R2's 10 GB free tier; float16 would halve it).
+   Bucket pull skips patterns older than cloud.pull_pattern_days (3).
    Checked: GFS vs IFS same valid time r(z500) 0.997 at 48 h; vort 0.57 (GFS's 1 deg file is interpolated: 0.37).
    NOT YET: ECMWF ENS mean/spread (open data has members only), GDPS (global files; GeoMet WCS could cut the box).
    Original plan: coarse regional
