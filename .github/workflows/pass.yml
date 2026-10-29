@@ -22,9 +22,41 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read                  # the gate below lists this workflow's recent runs
 
 jobs:
+  # A late SCHEDULED run right after another pass does nothing (owner, 2026-10-29): the Worker pressed "Run workflow"
+  # at 02:50Z 10/29, GitHub's own schedule fired a minute later, and the queue (concurrency above) ran both, back to
+  # back. The Worker already skips when a pass started recently; this covers the other order. A run started from the
+  # "Run workflow" button (or by the Worker) always runs.
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - name: Skip a scheduled run created within 40 min after another pass
+        id: check
+        continue-on-error: true    # if GitHub's API fails here, the pass runs (an extra pass beats a missed one)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          skip=false
+          if [ "${{ github.event_name }}" = schedule ]; then
+            api="repos/${{ github.repository }}/actions"
+            me=$(date -d "$(gh api "$api/runs/${{ github.run_id }}" --jq .created_at)" +%s)
+            for other in $(gh api "$api/workflows/pass.yml/runs?per_page=10" \
+                             --jq '.workflow_runs[] | select(.id != ${{ github.run_id }}) | "\(.run_number)@\(.created_at)"'); do
+              ago=$(( me - $(date -d "${other#*@}" +%s) ))
+              if [ "$ago" -ge 0 ] && [ "$ago" -lt 2400 ]; then
+                echo "skip: pass #${other%@*} was created $(( ago / 60 )) min before this scheduled run"; skip=true
+              fi
+            done
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
   pass:
+    needs: gate
+    if: needs.gate.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 170
     env:
@@ -95,6 +127,11 @@ jobs:
         id: rederive
         continue-on-error: true
         run: set -o pipefail; if [ -f scripts/rederive_archive.py ]; then python scripts/rederive_archive.py 2>&1 | tee -a "$LOG"; fi
+      # Regional pattern maps of GFS / GEFS / IFS (build step 5b). Skipped by releases that don't have the script yet.
+      - name: Pattern maps
+        id: patterns
+        continue-on-error: true
+        run: set -o pipefail; if [ -f scripts/archive_patterns.py ]; then python scripts/archive_patterns.py 2>&1 | tee -a "$LOG"; fi
       - name: Observations (SNOTEL, NOAA)
         id: obs
         continue-on-error: true
@@ -119,7 +156,7 @@ jobs:
       - name: Log the step results
         if: always() && steps.pull.outcome == 'success'
         run: |
-          echo "----- steps: models ${{ steps.models.outcome }}, rederive ${{ steps.rederive.outcome }}, obs ${{ steps.obs.outcome }}," \
+          echo "----- steps: models ${{ steps.models.outcome }}, rederive ${{ steps.rederive.outcome }}, patterns ${{ steps.patterns.outcome }}, obs ${{ steps.obs.outcome }}," \
                "soundings ${{ steps.soundings.outcome }}, storms ${{ steps.storms.outcome }}," \
                "report ${{ steps.report.outcome }}, feed ${{ steps.feed.outcome }}" >> "$LOG"
 
@@ -131,7 +168,7 @@ jobs:
         if: always()
         run: |
           failed=""
-          for s in "models:${{ steps.models.outcome }}" "rederive:${{ steps.rederive.outcome }}" "obs:${{ steps.obs.outcome }}" \
+          for s in "models:${{ steps.models.outcome }}" "rederive:${{ steps.rederive.outcome }}" "patterns:${{ steps.patterns.outcome }}" "obs:${{ steps.obs.outcome }}" \
                    "soundings:${{ steps.soundings.outcome }}" "storms:${{ steps.storms.outcome }}" \
                    "report:${{ steps.report.outcome }}" "feed:${{ steps.feed.outcome }}"; do
             case "$s" in *:failure) failed="$failed ${s%%:*}";; esac

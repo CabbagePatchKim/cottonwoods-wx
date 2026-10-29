@@ -2,7 +2,8 @@
 (GitHub Actions) and the laptop can fetch the same data for development.
 
     pull  bucket -> data/: only files that are missing locally or different. Model runs older than
-          cloud.pull_forecast_days are skipped (a pass never reads them), so a fresh machine stays fast.
+          cloud.pull_forecast_days, and pattern maps older than cloud.pull_pattern_days, are skipped (a pass never
+          reads them), so a fresh machine stays fast.
           A local file NEWER than the bucket's copy is never overwritten (the laptop may have archived more since
           the last push); it's counted as "kept".
     push  data/ -> bucket: only files that are new or changed. NOTHING is ever deleted from the bucket.
@@ -21,7 +22,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 PREFIX = "data/"   # everything sits under data/ in the bucket, mirroring the project folder
-RUN_FILE = re.compile(r"(^|/)forecasts/model=[^/]+/init=(\d{10})\.\w+$")
+RUN_FILE = re.compile(r"(^|/)(forecasts|patterns)/model=[^/]+/init=(\d{10})\.\w+$")
 
 
 ENV_NAMES = ("CWX_BUCKET", "CWX_S3_ENDPOINT", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY")
@@ -67,9 +68,13 @@ def wanted(rel: str, ccfg: dict) -> bool:
         not any(fnmatch.fnmatch(rel, pat) for pat in ccfg["exclude"])
 
 
-def too_old(rel: str, oldest: datetime) -> bool:
+def too_old(rel: str, oldest: datetime, oldest_pattern: datetime | None = None) -> bool:
+    """A model run (or pattern map, with its own oldest_pattern) from before the pull window."""
     m = RUN_FILE.search(rel)
-    return bool(m) and datetime.strptime(m.group(2), "%Y%m%d%H") < oldest
+    if not m:
+        return False
+    limit = oldest_pattern if m.group(2) == "patterns" and oldest_pattern is not None else oldest
+    return datetime.strptime(m.group(3), "%Y%m%d%H") < limit
 
 
 def remote_files(s3, bucket: str) -> dict[str, tuple[int, str, float]]:
@@ -91,11 +96,12 @@ def pull(s3, bucket: str, data_dir: Path, ccfg: dict, now: datetime) -> tuple[in
     """Download what's missing or different. Returns (downloaded, skipped as too old, kept because the local
     file is newer)."""
     oldest = now - timedelta(days=ccfg["pull_forecast_days"])
+    oldest_pattern = now - timedelta(days=ccfg.get("pull_pattern_days", ccfg["pull_forecast_days"]))
     got = old = kept = 0
     for rel, (size, etag, modified) in sorted(remote_files(s3, bucket).items()):
         if not wanted(rel, ccfg):
             continue
-        if too_old(rel, oldest):
+        if too_old(rel, oldest, oldest_pattern):
             old += 1
             continue
         dest = Path(data_dir) / rel

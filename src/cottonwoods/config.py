@@ -44,6 +44,7 @@ REQUIRED = {
     "report": ["days", "deterministic_lead_hours", "ensemble_lead_hours"],
     "feed": ["regime_snow"],
     "rap": ["lag_hours", "workers"],
+    "patterns": ["box", "grid_deg", "step_hours", "max_hours", "recent_cycles", "models"],
     "verify": ["window_hours", "window_end_utc_hour", "swe_tolerance_hours", "event_swe_in", "snow_bins_in",
                "snow_bins_above", "bin_score", "bin_score_leads_hours", "score_runs_hours", "lead_bands_hours", "pillow_check"],
     "snotel_settings": ["tz_offset_hours"],

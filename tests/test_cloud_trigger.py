@@ -26,3 +26,10 @@ def test_worker_fires_five_minutes_after_every_github_slot():
 def test_worker_dispatches_this_workflow():
     assert 'const WORKFLOW = "pass.yml"' in WORKER
     assert "workflow_dispatch" in PASS            # the dispatch API needs this trigger
+
+
+def test_a_late_scheduled_run_after_another_pass_is_skipped_but_manual_runs_never_are():
+    gate = PASS[PASS.index("  gate:"):PASS.index("  pass:")]
+    assert 'github.event_name }}" = schedule' in gate and "-lt 2400" in gate      # scheduled runs only, 40 min
+    assert "needs: gate" in PASS and "if: needs.gate.outputs.skip != 'true'" in PASS
+    assert "actions: read" in PASS                                                # to list the workflow's runs

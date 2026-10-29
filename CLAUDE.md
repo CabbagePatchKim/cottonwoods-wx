@@ -243,6 +243,9 @@ Running live, TWO places for now (side-by-side check before cutover):
   (a dry run's flow would make a regime look dry). Report: per storm "flow:" line; season tables by the storm's
   FORECAST regime (defining run's dominant phase) and 12 h blocks by OBSERVED block regime (block_scores fc_regime /
   obs_regime). Verified storms get relabeled + fc_flow recomputed once RAP covers them (_backfill_verified).
+  DOUBLE-RUN GATE (owner 2026-10-29): pass.yml job "gate" ends a SCHEDULED run created < 40 min after another pass
+  (GitHub's late schedule after the Worker's dispatch, 02:50/02:51Z 10/29); manual/Worker runs always run; fails open
+  (API error -> the pass runs). LIVE NOW: workflow files run from main, independent of the release tag.
 - RELEASED v1.4 (owner approved 2026-10-28, tag on 5827cd1, pushed ~22:17Z, CI tests green; first pass #9 22:28Z
   manual by the owner: "code v1.4", all steps success, feed v1.4 published, no new runs that pass so the feed still
   showed pre-release nearest-cell 12z numbers; blended numbers arrive with each model's next run). Contents:
@@ -300,8 +303,10 @@ route (api.weather.gov lists CLN but serves no observations; never automate the 
       awake; SNOTEL DNS failures right after wake are expected (retries + catch-up cover them).
 1. Storm 2026102700 (10/27 18:00 - 10/28 06:00 MDT) should verify as DRY ~18:00 10/28 -> first bin scores
    (data/processed/bin_scores.csv, storm report Verified section).
-2. Cutover once cloud passes are reliable for a day (owner approval): disable laptop tasks "Cottonwoods models" and
-   "Cottonwoods soundings"; laptop = development only (bucket_sync.py pull).
+2. DONE 2026-10-29 (owner): laptop tasks "Cottonwoods models" and "Cottonwoods soundings" DISABLED (Task Scheduler;
+   re-enable there if ever needed). The cloud runs every pass; laptop = development only (bucket_sync.py pull). The
+   laptop's archive was re-derived (v2) and has RAP + pattern files the bucket lacks; a pull keeps newer local files,
+   so for a clean mirror delete data/archive/forecasts locally and pull.
 3. Weekend storm (now split: 10/30 12:00 - 10/31 06:00 and 10/31 18:00 - 11/02 17:00 MDT in the 10/28 runs): first
    real verification ~11/2-11/3. SessionStart hook prompts for Alta Collins readings; bin scores need them.
 3b. scripts/rederive_archive.py (owner agreed 10/28, not built): strip the derived columns (move tools/golden.py's
@@ -360,7 +365,14 @@ incl. Alta, archived as text) as an automated Alta-total source.
    factors borrow Mill-D North for Solitude. A DEM-average elevation per sub-cell was considered and rejected:
    points already use surveyed elevations. Start after a handful of verified storms (first: Sun 11/1 storm,
    verifies ~11/2-11/3); keep only if it beats raw water on verified storms (bin scores + water error).
-5b. PATTERN archive (owner approved 2026-10-27; start early so a season accumulates before step 6): coarse regional
+5b. BUILT 2026-10-29 (in main, runs from the next release: pass step "Pattern maps", skipped by v1.4):
+   src/cottonwoods/patterns.py + scripts/archive_patterns.py, config `patterns`, data/archive/patterns/model=*/init=*.
+   GFS (0.25 deg source), GEFS mean + spread (0.5), IFS (00/12z) every 6 h to 240 h, all AREA-AVERAGED onto 1 deg,
+   25-60N x 150-90W: z500, relative vort500 (GFS absv - f), u/v250, mslp, t850. ~3 MB/run, ~30 MB/day in the bucket
+   (~1 GB/month; float16 would halve it). Bucket pull skips patterns older than cloud.pull_pattern_days (3).
+   Checked: GFS vs IFS same valid time r(z500) 0.997 at 48 h; vort 0.57 (GFS's 1 deg file is interpolated: 0.37).
+   NOT YET: ECMWF ENS mean/spread (open data has members only), GDPS (global files; GeoMet WCS could cut the box).
+   Original plan: coarse regional
    fields for the long-range models (GFS, ECMWF HRES, GDPS + GEFS/ENS mean & spread): 500 mb height + vorticity,
    250 mb wind, MSLP, 850 mb temp, every 6 h, ~0.5-1 deg, box ~25-60N x 150-90W (upstream troughs to Plains).
    Few MB/run; server-side subsetting is the right tool here. Enables trough position/timing comparisons between

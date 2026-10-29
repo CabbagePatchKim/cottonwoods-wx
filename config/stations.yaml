@@ -190,6 +190,20 @@ archive:
   # (ECMWF open data keeps ~4 days). A run is tried max_tries times (data/archive/fills*.csv).
   fill: {max_age_hours: 72, per_pass: 2, max_tries: 3}
 
+# PATTERN archive (src/cottonwoods/patterns.py, scripts/archive_patterns.py; build step 5b): regional maps of the
+# long-range models (500 mb height + vorticity, 250 mb wind, sea-level pressure, 850 mb temperature) every step_hours
+# to max_hours, on a grid_deg grid over the box, for trough/ridge comparisons between models and runs.
+patterns:
+  box: {lat: [25, 60], lon: [-150, -90]}   # Pacific troughs to the Plains
+  grid_deg: 1.0
+  step_hours: 6
+  max_hours: 240
+  recent_cycles: 8                       # newest cycles each pass checks (2 days: a missed pass is caught up)
+  models:                                # IFS 00/12z only: ECMWF's server throttled us 10/28 (each step is ~3 MB)
+    GFS: {cycles_utc: [0, 6, 12, 18]}
+    GEFS: {cycles_utc: [0, 6, 12, 18]}
+    IFS: {cycles_utc: [0, 12]}
+
 # Snow / mix / rain at each station, per model step, from the model's profile moved to the station's real
 # elevation (src/cottonwoods/profile.py). Wet-bulb (not air) temperature, because snow falling into dry air cools
 # it: snow can stick with the air at +1 to +3 C. Starting values; to be fitted to Alta observations.
@@ -276,6 +290,7 @@ cloud:
                                                       # passes' monthly logs; the laptop's own data/logs is not synced)
   exclude: ["*.lock", "processed/golden/*", "*.tmp"]  # never synced
   pull_forecast_days: 25   # a pull skips model runs older than this (passes read <= 20 days); they stay in the bucket
+  pull_pattern_days: 3     # pattern maps (archive/patterns) older than this aren't pulled: passes only check recent ones
 
 # What the website feed publishes (feed.py). regime_snow false (owner, 2026-10-28, v1.4): snow_in_regime is sent as
 # null and snow_regime_adjusted false; the regime adjustment stays in the local reports until it is verified.
