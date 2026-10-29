@@ -43,11 +43,12 @@ def test_dry_storm_is_scored_without_hand_entries_and_wet_storm_waits_for_them()
                            "init": pd.to_datetime(["2026-10-25 00:00", "2026-10-27 18:00", "2026-10-27 18:00",
                                                    "2026-10-27 18:00"]),
                            "member": [np.nan, np.nan, np.nan, 0], "lead_to_start_hr": [72, 6, 6, 6],
-                           "fc_water_in": [0.1, 0.4, 0.0, 0.2], "fc_snow_in": [1.0, 4.0, 0.0, np.nan]})
+                           "fc_water_in": [0.1, 0.4, 0.0, 0.2], "fc_snow_in": [1.0, 4.0, 0.0, np.nan],
+                           "obs_water_in": 0.0, "fc_event": [True, True, False, True], "obs_event": False})
     b = bin_scores(pd.DataFrame([st]), scores, pd.DataFrame(), None, cfg)
     assert len(b) == 3 and "GEFS" not in set(b.model)          # ensembles have no snow: not bin-scored
     assert b.set_index(["model", "lead_to_start_hr"])["points"].to_dict() == {
-        ("NAMNEST", 72): 2, ("NAMNEST", 6): -1, ("HRRR", 6): 2}
+        ("NAMNEST", 72): 0, ("NAMNEST", 6): -1, ("HRRR", 6): 2}             # 1" in the right bin, but a false alarm
     text = render_verified(pd.DataFrame([st]), scores, pd.DataFrame(), cfg, pd.Timestamp("2026-10-29"), binned=b)
     assert "observed bin: 0-2" in text and "2-4 -1" in text and "0-2 +2" in text
     assert "-1 (0 of 1 right)" in text and "+2 (1 of 1 right)" in text   # NAMNEST: last run -1, 72 h run +2

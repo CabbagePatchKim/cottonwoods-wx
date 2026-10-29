@@ -185,7 +185,8 @@ def test_hand_entered_collins_totals_match_a_verified_storm_and_show_in_the_repo
                     "obs_water_in": 1.52})
     m = manual_totals(st, totals, cfg)
     assert m["new_snow_in"] == 18 and abs(m["water_in"] - 1.45) < 1e-9 and m["sources"] == "collins"
-    scores = pd.DataFrame({"storm_id": "2026103112", "model": ["GFS", "GFS", "GEFS", "GEFS"],
+    scores = pd.DataFrame({"storm_id": "2026103112", "point": "alta", "obs_water_in": 1.52, "fc_event": True,
+                           "obs_event": True, "model": ["GFS", "GFS", "GEFS", "GEFS"],
                            "init": pd.to_datetime(["2026-10-30 12:00", "2026-10-31 06:00", "2026-10-31 06:00", "2026-10-31 06:00"]),
                            "member": [np.nan, np.nan, 0, 1], "lead_to_start_hr": [24, 6, 6, 6],
                            "fc_water_in": [1.0, 1.2, 0.5, 0.7], "fc_snow_in": [12, 14, np.nan, np.nan]})
@@ -417,3 +418,55 @@ def test_a_short_or_late_run_fills_the_blocks_it_reaches():
     assert short[2][0] == pytest.approx(3.0)                                                  # its 6 hours only
     late = blocks.run_blocks(run("2026-10-31 06:00", "2026-11-02 00:00"), blk, "snow_in")     # began mid-storm
     assert [c for _, c in late] == [blocks.NONE, blocks.PART, blocks.FULL, blocks.FULL]
+
+
+def test_every_gauged_point_is_scored_and_runs_are_scored_on_the_blocks_they_cover():
+    from cottonwoods import storms
+    cfg = make_cfg()
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        def pull(i, fxx, points, s=None):                 # 0.5 mm/h from 11/02 00z to 11/03 00z, everywhere
+            rows = []
+            for f in fxx:
+                vs = pd.Timestamp(i) + pd.Timedelta(hours=f - 1)
+                for name in points:
+                    rows.append({"model": "HRRR", "init": pd.Timestamp(i), "lead_hr": f, "valid_start": vs,
+                                 "valid_end": vs + pd.Timedelta(hours=1), "point": name, "grid_dist_km": 1.0,
+                                 "qpf_mm": 0.5 if pd.Timestamp("2026-11-02") <= vs < pd.Timestamp("2026-11-03") else 0.0,
+                                 **{f"t_{lev}_k": 265.0 for lev in (700, 600, 500)}})
+            return pd.DataFrame(rows)
+        fa.archive_run("HRRR", datetime(2026, 11, 1, 12), cfg, root=root, puller=pull)
+        storms.run(fa.load_forecasts(cfg, root=root), pd.DataFrame(), cfg, pd.Timestamp("2026-11-01 15:00"), root=root)
+        fa.archive_run("HRRR", datetime(2026, 11, 2, 6), cfg, root=root, puller=pull)   # began mid-storm
+        fc = fa.load_forecasts(cfg, root=root)
+        wet = [0.0] * 12 + [0.1] * 3 + [0.0] * 9 + [0.1] * 6 + [0.0] * 20                # 0.3" then 0.6" (12-18z)
+        obs = pd.concat([snotel_prec("2026-11-01 12:00", wet), snotel_prec("2026-11-01 12:00", [0.0] * 50, site="snowbird")])
+        storms.run(fc, obs, cfg, pd.Timestamp("2026-11-03 14:00"), root=root)
+        sc = pd.read_csv(root / "storm_scores.csv")
+        assert set(sc["point"]) == {"alta", "snowbird"}                       # every point with a gauge
+        snowbird = sc[sc["point"] == "snowbird"].iloc[0]
+        assert snowbird.fc_event and not snowbird.obs_event                    # its gauge stayed dry: a false alarm
+        bl = storms.load_block_scores(root)
+        alta = bl[bl["point"] == "alta"].sort_values(["init", "block_start"])
+        assert len(alta[alta["init"] == pd.Timestamp("2026-11-01 12:00")]) == 2   # both blocks of the storm
+        late = alta[alta["init"] == pd.Timestamp("2026-11-02 06:00")]
+        assert list(late["block_start"]) == [pd.Timestamp("2026-11-02 12:00")]   # only the block after its start
+        assert late["fc_water_in"].iloc[0] == pytest.approx(12 * 0.5 / 25.4)
+        assert late["obs_water_in"].iloc[0] == pytest.approx(0.6)
+
+
+def test_a_storm_under_way_shows_observed_water_so_far_and_each_models_rest_of_storm():
+    from cottonwoods.report import storm_block_lines
+    cfg = make_cfg()
+    t = pd.date_range("2026-11-01 12:00", "2026-11-03 12:00", freq="1h")
+    fc = pd.DataFrame([{"model": "GFS", "init": pd.Timestamp("2026-11-01 12:00"), "point": "alta",
+                        "valid_start": a, "valid_end": b, "qpf_mm": 1.0, "snow_in": 0.5} for a, b in zip(t[:-1], t[1:])])
+    st = pd.Series({"fc_start": pd.Timestamp("2026-11-02 00:00"), "fc_end": pd.Timestamp("2026-11-03 00:00")})
+    osteps = hourly("2026-11-02 00:00", [0.254] * 18)                   # 0.01" water an hour so far
+    now = pd.Timestamp("2026-11-02 18:00")
+    lines = storm_block_lines(st, fc, cfg, now, osteps)
+    gfs = next(line for line in lines if line.startswith("GFS"))
+    assert gfs.split()[-1] == "3.0"                                     # 6 h left x 0.5"
+    observed = next(line for line in lines if line.startswith("observed"))
+    assert "0.12" in observed and "0.06*" in observed                    # first block done, second still going
+    assert not any(line.startswith("observed") for line in storm_block_lines(st, fc, cfg, st.fc_start - pd.Timedelta(hours=1), osteps))

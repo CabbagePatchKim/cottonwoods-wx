@@ -208,8 +208,21 @@ Running live, TWO places for now (side-by-side check before cutover):
   Fixed blocks ending 00z/12z, clipped to the storm (they add up to its total); each run fills the blocks it
   reaches, "*" = part of a block. Kept small (owner: "keep the report from getting too busy"): ONE table of
   block_point (Alta) snow by model + median + ensemble % members wet, ONE table of every point's median.
-  NEXT (agreed, not built): blocks already over -> observed SNOTEL amount (rest-of-storm for mid-storm runs);
-  block-level verification so short-range models get scored; feed only in a later approved release.
+  Under way (now inside the storm): an "observed" row (block_point's SNOTEL WATER per block so far, "*" = block
+  still going; water, not snow: SNOTEL depth is too noisy) and a "rest" column (each model's snow from now to the end).
+  Also in main, same bundle: SCORING (owner 2026-10-29, "keep all the scoring internal"; feed.NOT_MODEL_DATA already
+  refuses score/obs keys). Why: NAM Nest's 1.4" (and 4.1" 12 h out) for the DRY 10/27 storm scored +2 like HRRR's 0.
+  (A) event call: a false alarm / miss (>= event_swe_in water) scores at most verify.bin_score.event_cap (0) even in
+  the right bin; bin_points keeps the uncapped score; report marks FA / miss. (B) snow_err_in / water_err_in in
+  bin_scores. (C) every deterministic run within verify.score_runs_hours (72) of the storm, averaged (per storm table
+  + season "all runs"). (D) every point with a SNOTEL gauge is scored (storms.point_steps; storm_scores has a row
+  per point; Snowbird, Mill-D North, Brighton SNOTEL besides Alta; observed snow there = hand entry or 0 if its
+  gauge was dry); storms verified earlier get the new points added (_score_new_points) while their runs are loaded.
+  BLOCK SCORES: data/archive/block_scores.csv (storms.score_blocks): each deterministic run on every 12 h block it
+  covered, issued before the block began, vs that block's SNOTEL water, every gauged point; report columns
+  "12h blocks / block water off / block FA/miss" (runs within 72 h of each block). Real 10/27 re-score: NAM Nest
+  last run +2 -> +0 FA, avg +0.4 over 8 runs, 10 FA; IFS 24 h run FA; HRRR/RDPS/GFS/GDPS +2.
+  NOT BUILT: block snow bins (no observed snow per block: Collins boards could give Alta's); feed: never for scores.
 - RELEASED v1.4 (owner approved 2026-10-28, tag on 5827cd1, pushed ~22:17Z, CI tests green; first pass #9 22:28Z
   manual by the owner: "code v1.4", all steps success, feed v1.4 published, no new runs that pass so the feed still
   showed pre-release nearest-cell 12z numbers; blended numbers arrive with each model's next run). Contents:

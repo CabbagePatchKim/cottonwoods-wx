@@ -27,16 +27,21 @@ storms.subperiod_gap_hours or more inside the defining run), so a two-part storm
 stays visible.
 
 data/archive/storms.csv            one row per storm (status: forecast -> verified / dropped / merged)
-data/archive/storm_scores.csv      one row per storm x model run (x member for ensembles) once verified
-data/processed/bin_scores.csv      the deterministic runs of those with the owner's bin score, once the storm has an
-                                   observed snow total (hand entries, or 0 for a dry storm); rebuilt every pass
+data/archive/storm_scores.csv      one row per storm x point x model run (x member for ensembles) once verified,
+                                   at every point with a SNOTEL gauge (point_steps); the storm's point decides when
+data/archive/block_scores.csv      the same storms in 12 h blocks (blocks.py): every deterministic run that covered a
+                                   whole block, issued before it began, vs that block's observed water, so short-range
+                                   models are scored on long storms (owner, 2026-10-29)
+data/processed/bin_scores.csv      the deterministic runs of those with the owner's bin score, once that point has an
+                                   observed snow total (hand entries, or 0 when its gauge was dry), with the event
+                                   call and the snow / water error; rebuilt every pass
 """
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-from . import bins, modes, regimes, timefmt
+from . import bins, blocks, modes, regimes, timefmt
 from .windows import window_total, within_lead
 from .archive.io import write_df
 from .gauge import gauge_increments
@@ -96,6 +101,17 @@ def obs_steps(obs: pd.DataFrame, sites: list[str], gcfg: dict) -> pd.DataFrame:
     inc = pd.concat(parts, axis=1).mean(axis=1).dropna()
     return pd.DataFrame({"valid_start": inc.index - pd.Timedelta(hours=1), "valid_end": inc.index,
                          "qpf_mm": inc.to_numpy() * MM_PER_IN}).reset_index(drop=True)
+
+
+def point_steps(obs: pd.DataFrame, cfg: dict) -> dict[str, pd.DataFrame]:
+    """{point: observed steps} for every point with SNOTEL gauge data among its obs sites (config points.*.obs)."""
+    out = {}
+    for p, v in cfg["points"].items():
+        sites = [s for s in (v.get("obs") or []) if s in cfg["snotel"]]
+        steps = obs_steps(obs, sites, cfg["gauge"]) if sites and not obs.empty else pd.DataFrame()
+        if not steps.empty:
+            out[p] = steps
+    return out
 
 
 # --- forecast storm windows ------------------------------------------------------------------
@@ -318,12 +334,18 @@ def ready_to_verify(storm: pd.Series, osteps: pd.DataFrame, cfg: dict, now: pd.T
     return {"obs_start": ev["start"].min(), "obs_end": obs_end}
 
 
-def score_storm(storm: pd.Series, fc_all: pd.DataFrame, osteps: pd.DataFrame, cfg: dict) -> pd.DataFrame:
-    """Every archived run that started before the storm ended, totalled over the final window, vs observed."""
+def score_storm(storm: pd.Series, fc_all: pd.DataFrame, psteps: dict[str, pd.DataFrame], cfg: dict) -> pd.DataFrame:
+    """Every archived run that started before the storm ended, totalled over the final window, vs observed, at every
+    point in psteps (point_steps)."""
+    return pd.concat([_score_point(storm, p, fc_all, o, cfg) for p, o in psteps.items()] or [pd.DataFrame()],
+                     ignore_index=True)
+
+
+def _score_point(storm: pd.Series, point: str, fc_all: pd.DataFrame, osteps: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     s, e = storm.final_start, storm.final_end
     obs_mm = window_total(osteps, s, e)
     thr = cfg["verify"]["event_swe_in"] * MM_PER_IN
-    fc = fc_all[(fc_all["point"] == storm.point) & (fc_all["init"] < e)]
+    fc = fc_all[(fc_all["point"] == point) & (fc_all["init"] < e)]
     rows = []
     keys = ["model", "init"] + (["member"] if "member" in fc.columns else [])
     for key, g in fc.groupby(keys, dropna=False):
@@ -333,13 +355,55 @@ def score_storm(storm: pd.Series, fc_all: pd.DataFrame, osteps: pd.DataFrame, cf
         member = key[2] if len(key) > 2 else np.nan
         water = window_total(g, s, e) / MM_PER_IN
         snow = window_total(g, s, e, "snow_in") if "snow_in" in g.columns and g["snow_in"].notna().any() else np.nan
-        rows.append({"storm_id": storm.storm_id, "point": storm.point, "model": model, "init": init, "member": member,
+        rows.append({"storm_id": storm.storm_id, "point": point, "model": model, "init": init, "member": member,
                      "lead_to_start_hr": (s - init) / pd.Timedelta(hours=1), "fc_water_in": water,
                      "fc_snow_in": snow, "obs_water_in": obs_mm / MM_PER_IN,
                      "fc_event": water * MM_PER_IN >= thr, "obs_event": obs_mm >= thr,
                      "fc_flow": run_flow(g, storm.point, s, e, cfg), "fc_modes": run_modes(g, storm.point, s, e, cfg),
                      "obs_flow": storm.get("obs_flow", "")})
     return pd.DataFrame(rows)
+
+
+def score_blocks(storm: pd.Series, fc_all: pd.DataFrame, psteps: dict[str, pd.DataFrame], cfg: dict) -> pd.DataFrame:
+    """The verified storm in 12 h blocks at every point in psteps: each deterministic run that covers a whole block and
+    was issued before it began (within storms.max_lead_hours), its water and snow there vs the observed water."""
+    scfg, thr = cfg["storms"], cfg["verify"]["event_swe_in"]
+    blks = blocks.storm_blocks(storm.final_start, storm.final_end, scfg["block_hours"], scfg["block_end_utc_hour"])
+    det = fc_all[fc_all["member"].isna()] if "member" in fc_all.columns else fc_all
+    rows = []
+    for point, osteps in psteps.items():
+        fp = det[det["point"] == point]
+        for bs, be, _ in blks:
+            obs_in = window_total(osteps, bs, be) / MM_PER_IN
+            runs = fp[(fp["init"] <= bs) & (fp["init"] >= bs - pd.Timedelta(hours=scfg["max_lead_hours"]))]
+            for (model, init), g in runs.groupby(["model", "init"]):
+                if g["valid_start"].min() > bs or g["valid_end"].max() < be:
+                    continue                             # the run doesn't cover the whole block
+                water = window_total(g, bs, be) / MM_PER_IN
+                rows.append({"storm_id": storm.storm_id, "point": point, "block_start": bs, "block_end": be,
+                             "model": model, "init": init, "lead_to_block_hr": (bs - init) / pd.Timedelta(hours=1),
+                             "fc_water_in": water, "fc_snow_in": window_total(g, bs, be, "snow_in")
+                             if "snow_in" in g.columns else np.nan, "obs_water_in": obs_in,
+                             "fc_event": water >= thr, "obs_event": obs_in >= thr})
+    return pd.DataFrame(rows)
+
+
+def load_block_scores(root=None) -> pd.DataFrame:
+    p = (root or ARCHIVE_DIR) / "block_scores.csv"
+    return pd.read_csv(p, parse_dates=["init", "block_start", "block_end"]) if p.exists() else pd.DataFrame()
+
+
+def append_block_scores(scores: pd.DataFrame, root=None) -> None:
+    """Add a storm's block scores; a storm scored again replaces its rows."""
+    if scores.empty:
+        return
+    p = (root or ARCHIVE_DIR) / "block_scores.csv"
+    if p.exists():
+        old = pd.read_csv(p)
+        scores = pd.concat([old[~old["storm_id"].astype(str).isin(scores["storm_id"].astype(str))], scores],
+                           ignore_index=True)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    scores.to_csv(p, index=False)
 
 
 def storm_span(storm: pd.Series) -> tuple[pd.Timestamp, pd.Timestamp]:
@@ -349,15 +413,17 @@ def storm_span(storm: pd.Series) -> tuple[pd.Timestamp, pd.Timestamp]:
     return s, e
 
 
-def manual_totals(storm: pd.Series, totals: pd.DataFrame, cfg: dict) -> dict | None:
-    """Hand-entered totals (data/entries/storm_totals.csv) for this storm: rows at its point overlapping its window,
+def manual_totals(storm: pd.Series, totals: pd.DataFrame, cfg: dict, point: str | None = None) -> dict | None:
+    """Hand-entered totals (data/entries/storm_totals.csv) for this storm: rows at `point` (default: the storm's
+    point) overlapping its window,
     give or take storms.manual_match_hours (hand-entered times are approximate). Several rows (e.g. daily totals) are
     summed. {"new_snow_in", "water_in", "sources"}, or None if nothing was entered."""
     if totals is None or totals.empty:
         return None
     s, e = storm_span(storm)
     slack = pd.Timedelta(hours=cfg["storms"]["manual_match_hours"])
-    m = totals[(totals["site"] == storm.point) & (totals["start_utc"] < e + slack) & (totals["end_utc"] > s - slack)]
+    m = totals[(totals["site"] == (point or storm.point)) & (totals["start_utc"] < e + slack)
+               & (totals["end_utc"] > s - slack)]
     if m.empty:
         return None
     return {"new_snow_in": pd.to_numeric(m["new_snow_in"], errors="coerce").sum(min_count=1),
@@ -410,34 +476,44 @@ def hand_obs_totals(storm: pd.Series, readings: pd.DataFrame, cfg: dict, source:
             "sources": f"{source} ({', '.join(kinds)})" if kinds else source}
 
 
-def observed_snow(storm: pd.Series, totals: pd.DataFrame, readings: pd.DataFrame | None, cfg: dict) -> tuple[float, str]:
-    """A verified storm's observed new snow and where it came from: the owner's hand-entered storm total, else the
-    hand-copied (Collins) readings, else 0 when SNOTEL saw no measurable water (no water, no snow). SNOTEL depth is
-    too noisy for new snow, so a wet storm without hand entries has no observed snow yet: (nan, "")."""
-    for found in (manual_totals(storm, totals, cfg), hand_obs_totals(storm, readings, cfg)):
+def observed_snow(storm: pd.Series, totals: pd.DataFrame, readings: pd.DataFrame | None, cfg: dict,
+                  point: str | None = None, obs_water_in: float | None = None) -> tuple[float, str]:
+    """A verified storm's observed new snow at `point` (default: the storm's point) and where it came from: the owner's
+    hand-entered storm total, else (the storm's point only: Alta) the hand-copied Collins readings, else 0 when that
+    point's SNOTEL gauge saw no measurable water (obs_water_in; default the storm's). SNOTEL depth is too noisy for new
+    snow, so a wet storm without hand entries has no observed snow yet: (nan, "")."""
+    point = point or storm.point
+    water = storm.get("obs_water_in") if obs_water_in is None else obs_water_in
+    hand = [manual_totals(storm, totals, cfg, point)]
+    if point == storm.point:
+        hand.append(hand_obs_totals(storm, readings, cfg))
+    for found in hand:
         if found and pd.notna(found["new_snow_in"]):
             return float(found["new_snow_in"]), found["sources"]
-    if pd.notna(storm.get("obs_water_in")) and storm.obs_water_in < cfg["verify"]["event_swe_in"]:
+    if pd.notna(water) and water < cfg["verify"]["event_swe_in"]:
         return 0.0, "SNOTEL dry"
     return np.nan, ""
 
 
 def bin_scores(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataFrame, readings: pd.DataFrame | None,
                cfg: dict) -> pd.DataFrame:
-    """Every scored deterministic run (any lead) of every verified storm that has an observed snow total, with its
-    bin score (cottonwoods.bins): storm_scores columns + obs_snow_in, obs_snow_source, fc_bin, obs_bin, bins_off,
-    hit, points. Rebuilt each pass because hand totals arrive after a storm is verified."""
+    """Every scored deterministic run (any lead) of every verified storm, at every scored point that has an observed
+    snow total, with its bin score (cottonwoods.bins, event call included): storm_scores columns + obs_snow_in,
+    obs_snow_source, fc_bin, obs_bin, bins_off, hit, bin_points, points, event, snow_err_in, water_err_in (forecast
+    minus observed). Rebuilt each pass because hand totals arrive after a storm is verified."""
     if scores.empty or storms.empty:
         return pd.DataFrame()
     rows = []
     for _, st in storms[storms["status"] == "verified"].iterrows():
-        obs_in, source = observed_snow(st, totals, readings, cfg)
-        if np.isnan(obs_in):
-            continue
         sc = scores[(scores["storm_id"].astype(str) == str(st.storm_id)) & scores["fc_snow_in"].notna()]
-        for _, r in sc.iterrows():
-            rows.append({**r.to_dict(), "obs_snow_in": obs_in, "obs_snow_source": source,
-                         **bins.bin_score(r.fc_snow_in, obs_in, cfg["verify"])})
+        for point, g in sc.groupby("point"):
+            obs_in, source = observed_snow(st, totals, readings, cfg, point, g["obs_water_in"].iloc[0])
+            if np.isnan(obs_in):
+                continue
+            for _, r in g.iterrows():
+                rows.append({**r.to_dict(), "obs_snow_in": obs_in, "obs_snow_source": source,
+                             **bins.bin_score(r.fc_snow_in, obs_in, cfg["verify"], r.fc_event, r.obs_event),
+                             "snow_err_in": r.fc_snow_in - obs_in, "water_err_in": r.fc_water_in - r.obs_water_in})
     return pd.DataFrame(rows)
 
 
@@ -453,13 +529,36 @@ def load_scores(root=None) -> pd.DataFrame:
 
 
 def append_scores(scores: pd.DataFrame, root=None) -> None:
+    """Add a storm's scores; rows for a (storm, point) already scored are replaced (re-scoring)."""
     p = (root or ARCHIVE_DIR) / "storm_scores.csv"
+    if scores.empty:
+        return
     if p.exists():
         old = pd.read_csv(p)
-        old = old[~old["storm_id"].astype(str).isin(scores["storm_id"].astype(str))]  # re-scoring replaces
+        done = set(zip(scores["storm_id"].astype(str), scores["point"]))
+        old = old[[k not in done for k in zip(old["storm_id"].astype(str), old["point"])]]
         scores = pd.concat([old, scores], ignore_index=True)
     p.parent.mkdir(parents=True, exist_ok=True)
     scores.to_csv(p, index=False)
+
+
+def _score_new_points(storms: pd.DataFrame, fc: pd.DataFrame, psteps: dict, cfg: dict, root=None) -> None:
+    """Score verified storms at points they weren't scored at yet (storms verified before every gauged point was
+    scored, 2026-10-29, or a point that gained a gauge), and in blocks if they have none yet, while their runs are
+    still loaded. Existing storm-score rows stay."""
+    scores, blocked = load_scores(root), load_block_scores(root)
+    if scores.empty or fc.empty:
+        return
+    have = set(zip(scores["storm_id"].astype(str), scores["point"]))
+    done = set(blocked["storm_id"].astype(str)) if not blocked.empty else set()
+    for _, st in storms[storms["status"] == "verified"].iterrows():
+        if pd.isna(st.final_start) or st.final_start < fc["init"].min():
+            continue                                     # its runs are no longer loaded
+        new = {p: o for p, o in psteps.items() if (str(st.storm_id), p) not in have}
+        if new:
+            append_scores(score_storm(st, fc, new, cfg), root)
+        if str(st.storm_id) not in done:
+            append_block_scores(score_blocks(st, fc, psteps, cfg), root)
 
 
 def run(fc: pd.DataFrame, obs: pd.DataFrame, cfg: dict, now: pd.Timestamp, root=None,
@@ -469,9 +568,8 @@ def run(fc: pd.DataFrame, obs: pd.DataFrame, cfg: dict, now: pd.Timestamp, root=
     soundings: balloon summaries (cottonwoods.obs.sounding.summarize) for the observed regime phases.
     """
     storms = update_forecast_storms(load_storms(root), fc, cfg, now)
-    point = cfg["storms"]["point"]
-    sites = [s for s in (cfg["points"][point].get("obs") or []) if s in cfg["snotel"]]
-    osteps = obs_steps(obs, sites, cfg["gauge"]) if not obs.empty else pd.DataFrame(columns=["valid_start", "valid_end", "qpf_mm"])
+    psteps = point_steps(obs, cfg)
+    osteps = psteps.get(cfg["storms"]["point"], pd.DataFrame(columns=["valid_start", "valid_end", "qpf_mm"]))
     for i, st in storms[storms["status"] == "forecast"].iterrows():
         done = ready_to_verify(st, osteps, cfg, now)
         if done is None:
@@ -485,6 +583,8 @@ def run(fc: pd.DataFrame, obs: pd.DataFrame, cfg: dict, now: pd.Timestamp, root=
             storms.at[i, "obs_flow"] = regimes.phase_string(regimes.phases(ss, {**cfg["regimes"], "min_phase_hours": 12}, "w"))
         storms.at[i, "status"] = "verified"
         storms.at[i, "updated_at"] = now
-        append_scores(score_storm(storms.loc[i], fc, osteps, cfg), root)
+        append_scores(score_storm(storms.loc[i], fc, psteps, cfg), root)
+        append_block_scores(score_blocks(storms.loc[i], fc, psteps, cfg), root)
+    _score_new_points(storms, fc, psteps, cfg, root)
     write_df(storms[COLS], storms_path(root))
     return storms

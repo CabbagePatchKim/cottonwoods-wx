@@ -43,11 +43,13 @@ d_snd = load_soundings(start=d_obs["time_utc"].min() - timedelta(days=1)) if fir
 days = verify.gauge_pillow_days(d_obs, cfg, summarize(d_snd).set_index("time_utc") if not d_snd.empty else None)
 days = verify.merge_gauge_pillow_days(days, days_path)
 verify.undercatch_summary(days, cfg).to_csv(PROCESSED_DIR / "undercatch_summary.csv", index=False)
-text = f"Storms, {timefmt.now_line(now)}. Times are Mountain (MDT/MST), 24-hour.\n\n" + render_storms(table, fc, cfg, now)
+text = (f"Storms, {timefmt.now_line(now)}. Times are Mountain (MDT/MST), 24-hour.\n\n"
+        + render_storms(table, fc, cfg, now, storms.point_steps(obs, cfg)))
 scores, totals, readings = storms.load_scores(), load_storm_totals(), load_hand_obs()
 binned = storms.bin_scores(table, scores, totals, readings, cfg)
 storms.save_bin_scores(binned)
-verified = render_verified(table, scores, totals, cfg, now, readings=readings, binned=binned)
+verified = render_verified(table, scores, totals, cfg, now, readings=readings, binned=binned,
+                           block_scores=storms.load_block_scores())
 if verified:
     text += "\n" + verified
 newly = table[(table.status == "verified") & (table.updated_at == now)]
