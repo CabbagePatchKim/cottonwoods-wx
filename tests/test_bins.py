@@ -54,3 +54,16 @@ def test_dry_storm_is_scored_without_hand_entries_and_wet_storm_waits_for_them()
     assert "-1 (0 of 1 right)" in text and "+2 (1 of 1 right)" in text   # NAMNEST: last run -1, 72 h run +2
     later = render_verified(pd.DataFrame([st]), scores, pd.DataFrame(), cfg, pd.Timestamp("2026-11-20"), binned=b)
     assert "none" in later and "-1 (0 of 1 right)" in later    # weeks later: no recent storm, season totals stay
+
+
+def test_season_scores_are_averaged_by_how_far_ahead_each_run_was_issued():
+    from cottonwoods.report import bin_totals
+    cfg = make_cfg()
+    binned = pd.DataFrame({"storm_id": "s1", "point": "alta", "member": np.nan, "fc_bin": "0-2", "hit": True,
+                           "model": ["GFS", "GFS", "GFS", "HRRR"], "init": pd.to_datetime(
+                               ["2026-10-22 00:00", "2026-10-26 00:00", "2026-10-27 18:00", "2026-10-27 18:00"]),
+                           "lead_to_start_hr": [144, 48, 6, 6], "points": [-1, 2, 2, 2],
+                           "snow_err_in": [3.0, 0.5, 0.0, 0.0], "fc_water_in": 0.0, "fc_snow_in": [3.0, 0.5, 0.0, 0.0]})
+    t = bin_totals(binned, cfg).set_index("model")
+    assert t.at["GFS", "0-24 h"] == '+2.0 0.0" (1)' and t.at["GFS", "1-3 d"] == '+2.0 0.5" (1)'
+    assert t.at["GFS", "3-7 d"] == '-1.0 3.0" (1)' and t.at["HRRR", "3-7 d"] == ""   # HRRR never reaches that far

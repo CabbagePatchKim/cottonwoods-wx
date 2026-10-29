@@ -222,6 +222,10 @@ Running live, TWO places for now (side-by-side check before cutover):
   covered, issued before the block began, vs that block's SNOTEL water, every gauged point; report columns
   "12h blocks / block water off / block FA/miss" (runs within 72 h of each block). Real 10/27 re-score: NAM Nest
   last run +2 -> +0 FA, avg +0.4 over 8 runs, 10 FA; IFS 24 h run FA; HRRR/RDPS/GFS/GDPS +2.
+  LEAD RANGES (owner: "more fair"): the season table averages every deterministic run by lead before the storm
+  (verify.lead_bands_hours: 0-24 h, 1-3 d, 3-7 d; report.bin_totals), so models are compared only at the same
+  distance and long-range calls get credit. Run counts differ by design: HRRR/NAM Nest ranges stop short, GDPS runs
+  2x/day; for 10/27 GFS/IFS also had fewer because their archive starts 10/25 12z (RDPS backfilled to 10/24 18z).
   NOT BUILT: block snow bins (no observed snow per block: Collins boards could give Alta's); feed: never for scores.
 - RELEASED v1.4 (owner approved 2026-10-28, tag on 5827cd1, pushed ~22:17Z, CI tests green; first pass #9 22:28Z
   manual by the owner: "code v1.4", all steps success, feed v1.4 published, no new runs that pass so the feed still

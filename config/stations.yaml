@@ -257,6 +257,9 @@ verify:
   # Besides those picked runs, the report averages EVERY run issued this many hours or less before a storm, at every
   # scored point, so a model jumping between 1" and 4" run to run shows (owner, 2026-10-29)
   score_runs_hours: 72
+  # The season table also averages every run by how far ahead it was issued (hours before the storm), so a model is
+  # only compared with others forecasting from as far out, and long-range calls get credit (owner, 2026-10-29)
+  lead_bands_hours: [[0, 24], [24, 72], [72, 168]]
   bin_score_leads_hours: [24, 72]   # besides each model's last run, the report scores its newest run at least this
                                     # far ahead of the storm, so short-range models don't win on lead time alone
 

@@ -477,29 +477,36 @@ def all_runs_table(binned: pd.DataFrame, scores: pd.DataFrame, storm_id: str, cf
     return t.fillna("").sort_values("model", key=lambda c: c.map(model_rank))
 
 
+def band_name(lo: int, hi: int) -> str:
+    """A lead range's column name: '0-24 h', '1-3 d', '3-7 d'."""
+    return f"{lo}-{hi} h" if hi <= 24 else f"{lo // 24}-{hi // 24} d"
+
+
 def bin_totals(binned: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Season bin score per model over every verified storm with an observed snow total: per kind (last run, 24 h,
-    ...) the summed points and right bins at the storm's point, e.g. "+3 (2 of 3 right)"; then "all runs": the average
-    over every run within score_runs_hours at every scored point, with the average snow error."""
-    out, every = {}, []
+    ...) the summed points and right bins at the storm's point, e.g. "+3 (2 of 3 right)"; then per lead range
+    (verify.lead_bands_hours: 0-24 h, 1-3 d, 3-7 d) the average over every deterministic run issued that far ahead, at
+    every scored point, with the average snow error, so each model is compared with others forecasting from the same
+    distance and long-range models get credit for early calls (owner, 2026-10-29)."""
+    out = {}
     main = binned[binned["point"] == cfg["storms"]["point"]] if not binned.empty else binned
     for sid in binned["storm_id"].astype(str).unique() if not binned.empty else []:
         for kind, rows in bin_picks(main, sid, cfg).items():
             for _, r in rows.iterrows():
                 t = out.setdefault(r.model, {}).setdefault(kind, [0, 0, 0])
                 t[0], t[1], t[2] = t[0] + r.points, t[1] + bool(r.hit), t[2] + 1
-        every.append(recent_runs(binned, sid, cfg))
     rows = [{"model": m, **{k: f"{p:+d} ({h} of {n} right)" for k, (p, h, n) in kinds.items()}}
             for m, kinds in out.items()]
     if not rows:
         return pd.DataFrame()
     t = pd.DataFrame(rows)
-    allr = pd.concat(every, ignore_index=True)
-    if not allr.empty:
-        avg = allr.groupby("model").agg(pts=("points", "mean"), err=("snow_err_in", lambda x: x.abs().mean()),
+    det = binned[binned["member"].isna()] if "member" in binned else binned
+    for lo, hi in cfg["verify"]["lead_bands_hours"]:
+        band = det[(det["lead_to_start_hr"] > lo) & (det["lead_to_start_hr"] <= hi)]
+        avg = band.groupby("model").agg(pts=("points", "mean"), err=("snow_err_in", lambda x: x.abs().mean()),
                                         n=("points", "size"))
-        t["all runs"] = t["model"].map(lambda m: f"{avg.at[m, 'pts']:+.1f} avg, {avg.at[m, 'err']:.1f}\" off "
-                                                 f"({avg.at[m, 'n']} runs x points)" if m in avg.index else "")
+        t[band_name(lo, hi)] = t["model"].map(lambda m: f"{avg.at[m, 'pts']:+.1f} {avg.at[m, 'err']:.1f}\" ({avg.at[m, 'n']})"
+                                 if m in avg.index else "")
     return t.fillna("")
 
 
@@ -565,9 +572,11 @@ def render_verified(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataF
             lines.append(("TABLE", len(tables) - 1))
     season = bin_totals(binned, cfg)
     if not season.empty:
-        lines += ["", "=== Bin score, all verified storms with an observed snow total (score, right bins)"]
+        lines += ["", "=== Bin score, all verified storms with an observed snow total (score, right bins); by lead "
+                  "range: average score, average snow error and (runs x points), every run issued that far ahead"]
+        bands = [band_name(lo, hi) for lo, hi in cfg["verify"]["lead_bands_hours"]]
         season = season.rename(columns={k: f"bin {k}" if k == "last" else f"bin at {k}" for k in season.columns
-                                        if k not in ("model", "all runs")})
+                                        if k not in ["model", *bands]})
         tables.append(season.sort_values("model", key=lambda c: c.map(model_rank)))
         lines.append(("TABLE", len(tables) - 1))
     rendered = _aligned(tables)
