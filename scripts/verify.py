@@ -29,8 +29,10 @@ pd.set_option("display.max_columns", 30)  # and without hiding middle columns be
 # Every archived deterministic model run (filtered by the flags), stacked into one table. Ensembles are skipped
 # by build_pairs anyway, and after a year they're 10+ million rows, so they aren't read at all.
 deterministic = [m for m, spec in REGISTRY.items() if spec.members == 0]
-fc = load_forecasts(cfg, models=[m for m in (args.models or deterministic) if m.upper() in deterministic],
-                    start=args.since)
+want = [m for m in (args.models or deterministic) if m.upper() in deterministic]
+# Blended models' unmodified runs are verified next to them, as "GFS raw" etc. (archive/forecasts_raw)
+fc = pd.concat([load_forecasts(cfg, models=want, start=args.since),
+                load_forecasts(cfg, models=want, start=args.since, raw=True)], ignore_index=True)
 if fc.empty:
     raise SystemExit("No archived forecasts found. Run scripts/archive_forecasts.py first.")
 # Only load observations for the dates the forecasts cover (plus 2 days of padding) to keep it small.

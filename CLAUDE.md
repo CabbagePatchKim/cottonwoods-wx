@@ -59,6 +59,15 @@ Pulling model runs (`models/`)
 Archive (`archive/`)
 - `forecasts.py`: one file per run; `run_points` (resort points + coarse models' 2x2 `model_cells`); `archive_run`
   (completeness check); `derive_run_fields` = THE derivation entry point: regimes -> modes -> add_snowfall.
+  BLENDED + UNMODIFIED, STORED APART (owner 2026-10-29): for every blended model (cells.blends: GFS, IFS, ENS, GDPS,
+  RDPS) archive_run also writes data/archive/forecasts_raw/model=X/init=Y = the same pull, resort points only at
+  their nearest grid point, derived with blend=False (raw_run). data/archive/forecasts stays BLENDED: the reports
+  and the feed read only it (owner: feed keeps the blend). load_forecasts(raw=True) labels them "GFS raw"
+  (RAW_LABEL); storms.run(fc_raw=) and scripts/verify.py SCORE them beside the blended runs (storm_scores,
+  block_scores, bin_scores, verification_pairs rows "GFS raw"); never used to find or time storms; report sorts
+  "X raw" right after X (model_rank). fill.py fills the raw copy from the same pull; rederive covers both stores;
+  bucket.RUN_FILE knows forecasts_raw. FROM 2026-10-29 ON ONLY (owner): older runs have no raw copy (their resort
+  rows were overwritten by the blend; e.g. Brighton's GDPS nearest point isn't in the block, so unrecoverable).
 - `runner.py`: an archive pass: PassLock, build_jobs (newest first; Canada 3-day catch-up), FailureLog
   (skip after 4 tries), run_jobs, split_streams/run_streams (one process per server), clear_caches.
   `scripts/archive_forecasts.py` is only its command line.
@@ -397,23 +406,21 @@ incl. Alta, archived as text) as an automated Alta-total source.
    factors borrow Mill-D North for Solitude. A DEM-average elevation per sub-cell was considered and rejected:
    points already use surveyed elevations. Start after a handful of verified storms (first: Sun 11/1 storm,
    verifies ~11/2-11/3); keep only if it beats raw water on verified storms (bin scores + water error).
-5a2. RDPS CELL BLEND: owner wants it (2026-10-29: "keep the blended"), NOT implemented yet. Why: RDPS (10 km rotated
-   grid) has no model_cells, so alta/snowbird/solitude/brighton/brighton_snotel all take ONE grid point (j369 i430,
-   40.605 -111.622, ground 9,204 ft, its local peak): identical water and profile; only Mill-D North differs (j370
-   i430, 7,834 ft). cells.py can't take it: its block is lat/lon lines named by lat/lon, the RDPS grid is rotated.
-   Method prototyped 10/29 on RDPS 10/29 06z (re-pulled with the 8 surrounding grid points): each point's
-   fractional (j, i) on the rotated grid (Newton steps on the local lat/lon Jacobian), bilinear weights of its 4
-   surrounding grid points, blend raw columns, derive. Result (storm from 10/30 18Z), nearest -> blended: ground
-   9,204 -> 8,600-8,900 ft; water 1.39" everywhere -> Alta 1.69 / Snowbird 1.63 / Solitude 1.24 / Brighton 1.58 /
-   Mill-D 0.23->0.67 / Brighton SNTL 1.40; snow Alta 7.5->6.4, Snowbird 0.9->0.0, Solitude 0.4->0.1, Brighton
-   5.0->4.5 (nearest re-derive matched the archive exactly). Building it = grid-index blocks in cells.py + the
-   Canada puller pulling those grid points + tests + release; only new runs get it.
+5a2. RDPS CELL BLEND: BUILT 2026-10-29 (owner: "keep the blended", then build it with the separate stores; in main,
+   not released). Why: RDPS (10 km rotated grid) gave alta/snowbird/solitude/brighton/brighton_snotel ONE grid point
+   (j369 i430, 40.605 -111.622, ground 9,204 ft, its local peak): identical water and profile. Config model_cells
+   RDPS grid_points = its own 3x3 grid points (rows 368-370, cols 429-431); cells._grid_weights blends each point
+   bilinearly inside the grid square holding it (inverse bilinear from the square's corners; outside: nearest
+   square, clipped). winds.earth_winds now locates block cells too (RDPS is the first grid-relative model with
+   cells). Real check, RDPS 10/29 12z archived with the new code: the raw copy = the cloud's archived run exactly;
+   blended (storm from 10/30 18Z) Alta 3.60" / Snowbird 3.63 / Solitude 2.87 / Brighton 3.14 / Mill-D 2.13 /
+   Brighton SNTL 2.96 (nearest: 3.19 everywhere, Mill-D 1.53); ground 8,600-8,900 ft. Owner checked 06z + 12z:
+   likes the water; the snow totals make sense given the models' freezing levels. Golden check IDENTICAL (old
+   RDPS runs have no cells, so they stay nearest-point).
    RAIN/SNOW RULE STAYS 0 -> 1 C wet-bulb (owner 2026-10-29). Context: the owner says Alta 6" / Snowbird 0" from the
    same water "won't happen". Cause: Snowbird's point is 492 ft lower (~0.7 C warmer wet-bulb) and the 1 C ramp spans
    only ~700 ft. Tested on archived 10/29 runs: 0 -> 2 C gives RDPS Alta/Snowbird 8.8/4.0 (now 7.5/0.9), IFS 12.5/7.7
    (11.6/5.4); GFS/NAM (cold) unchanged. Revisit with the weekend storm's Alta vs Snowbird gauges (marginal storm).
-   Owner, after checking the models' freezing levels (2026-10-29): likes the blended water correction, and the
-   blended snow totals "make sense now" (so the Alta/Snowbird split itself is accepted for this storm).
 5b. BUILT 2026-10-29 (in main, runs from the next release: pass step "Pattern maps", skipped by v1.4):
    src/cottonwoods/patterns.py + scripts/archive_patterns.py, config `patterns`, data/archive/patterns/model=*/init=*.
    GFS (0.25 deg source), GEFS mean + spread (0.5), IFS (00/12z) every 6 h to 240 h, all AREA-AVERAGED onto 1 deg,

@@ -76,6 +76,15 @@ model_cells:
   GDPS: {lats: [40.50, 40.65], lons: [-111.75, -111.60]}   # 0.15 deg (~17 x 13 km)
   GEFS: {lats: [40.50, 41.00], lons: [-112.00, -111.50],   # 0.5 deg (~55 x 42 km: the cells reach the valley and Park City)
          blend: false}   # owner 2026-10-28: keep the nearest cell; blending would mix Salt Lake Valley precip into the resorts
+  # RDPS (owner 2026-10-29): a rotated ~10 km grid, so its cells don't sit on lat/lon lines: grid_points lists the
+  # model's own 3x3 grid points (rows south -> north, columns west -> east; Datamart RLatLon0.09 rows 368-370,
+  # columns 429-431), each point blended inside the grid square around it. Before this every resort and Brighton
+  # SNOTEL took ONE grid point (40.605 -111.622, ground 9,204 ft: identical water everywhere).
+  RDPS:
+    grid_points:
+      - [[40.4933, -111.6970], [40.5186, -111.5875], [40.5437, -111.4780]]
+      - [[40.5796, -111.7317], [40.6050, -111.6220], [40.6302, -111.5123]]
+      - [[40.6660, -111.7664], [40.6914, -111.6566], [40.7166, -111.5467]]
 
 # Observed event thresholds
 obs_thresholds:

@@ -110,7 +110,9 @@ def test_every_coarse_model_stores_its_own_2x2_cells():
         pts = fa.run_points(model, cfg)
         cells = [p for p in pts if p not in cfg["points"]]
         assert len(cells) == 4 and name in cells, model
-    for model in ("HRRR", "NAMNEST", "NAM", "RDPS"):   # fine grids: resort points only
+    rdps = [p for p in fa.run_points("RDPS", cfg) if p not in cfg["points"]]   # rotated grid: its own 3x3 grid points
+    assert len(rdps) == 9 and "rdps_40.60N_111.62W" in rdps
+    for model in ("HRRR", "NAMNEST", "NAM"):   # fine grids: resort points only
         assert set(fa.run_points(model, cfg)) == set(cfg["points"]), model
 
 

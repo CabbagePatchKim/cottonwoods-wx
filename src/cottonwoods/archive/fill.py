@@ -11,6 +11,7 @@ hours could give a wrong step amount) and:
   2. fills only what is missing: empty values, and missing steps (a merged step is split back only if the new
      steps add up to the archived amount);
   3. re-derives the run (forecasts.derive_run_fields) and records filled_at / filled_values; fetched_at stays.
+     A blended model's unmodified copy (forecasts_raw) is filled from the same pull, under the same check.
 Values are never estimated or interpolated: a hole is filled with the model's own number or stays empty.
 """
 from __future__ import annotations
@@ -116,6 +117,22 @@ def merge_holes(old: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
     return out.sort_values([c for c in ("point", "member", "valid_start") if c in out]).reset_index(drop=True)
 
 
+def _fill_raw(model: str, init, cfg: dict, root: Path | None, new: pd.DataFrame, filled_at) -> None:
+    """Fill the unmodified copy of the run (forecasts_raw) from the same fresh pull; left as it is if it disagrees."""
+    path = run_path(model, init, cfg, root, raw=True)
+    if not path.exists():
+        return
+    old = read_df(path)
+    try:
+        merged = merge_holes(old, new)
+    except FillMismatch:
+        return
+    out = derive_run_fields(merged, cfg, blend=False)
+    out["fetched_at"] = old["fetched_at"].iloc[0] if "fetched_at" in old else pd.NaT
+    out["filled_at"] = filled_at
+    write_df(out, path)
+
+
 def fill_run(model: str, init: datetime, cfg: dict, root: Path | None = None, save_dir: str | None = None,
              puller=None, now: datetime | None = None) -> tuple[str, int, int]:
     """Re-pull an archived run and fill its holes. Returns (status, values filled, holes left), status one of
@@ -141,6 +158,7 @@ def fill_run(model: str, init: datetime, cfg: dict, root: Path | None = None, sa
     out["filled_at"] = pd.Timestamp(now or datetime.now(timezone.utc).replace(tzinfo=None))
     out["filled_values"] = int(old["filled_values"].iloc[0] if "filled_values" in old else 0) + before - after
     write_df(out, path)
+    _fill_raw(model, init, cfg, root, new, out["filled_at"].iloc[0])
     _append_manifest({"model": model, "init": f"{pd.Timestamp(init):%Y-%m-%d %H:%M}", "n_expected": None,
                       "n_valid": int(out["qpf_mm"].notna().sum()),
                       "fetched_at": f"{out['filled_at'].iloc[0]:%Y-%m-%d %H:%M}",

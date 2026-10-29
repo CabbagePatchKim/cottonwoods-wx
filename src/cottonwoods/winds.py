@@ -48,7 +48,7 @@ def grid_angle(model: str, lat: float, lon: float) -> float:
 
 def earth_winds(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Turn the run's u_<lev>_ms / v_<lev>_ms to earth-relative at each point (its lat/lon from config points or the
-    cell name), unless already done (uv_earth). Models with earth-relative grids are only marked. A step missing one
+    model's block of cells, config model_cells), unless already done (uv_earth). Models with earth-relative grids are only marked. A step missing one
     of the pair loses the other too: one grid-relative component can't be turned (fill.py restores both)."""
     if df.empty or "model" not in df.columns or ("uv_earth" in df.columns and df["uv_earth"].all()):
         return df
@@ -56,7 +56,9 @@ def earth_winds(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     model = out["model"].iloc[0]
     pairs = [(c, "v" + c[1:]) for c in out.columns if c.startswith("u_") and c.endswith("_ms") and "v" + c[1:] in out]
     if model in GRIDS and pairs:
-        where = {p: (v["lat"], v["lon"]) for p, v in cfg["points"].items()}
+        from .archive.cells import cell_points, model_cells
+        cells = model_cells(model, cfg)
+        where = {p: (v["lat"], v["lon"]) for p, v in {**cfg["points"], **(cell_points(model, cells) if cells else {})}.items()}
         ang = np.radians(out["point"].map(lambda p: grid_angle(model, *where[p]) if p in where else np.nan))
         if ang.isna().any():
             raise ValueError(f"{model}: no location for points {sorted(set(out.loc[ang.isna(), 'point']))}")

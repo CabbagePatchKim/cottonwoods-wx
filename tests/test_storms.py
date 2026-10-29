@@ -77,6 +77,28 @@ def test_storm_verifies_only_after_twelve_dry_observed_hours_and_widens_window()
         assert len(sc) == 1 and abs(sc.fc_water_in[0] - 12 / 25.4) < 1e-9
 
 
+def test_unmodified_runs_are_scored_beside_the_blended_ones_but_never_shape_storms():
+    from cottonwoods import storms
+    from cottonwoods.report import model_rank
+    cfg = make_cfg()
+    i = pd.Timestamp("2026-11-01 12:00")
+    def run(model, qpf, end):
+        vs = pd.date_range(i, "2026-11-03 12:00", freq="h", inclusive="left")
+        wet = (vs >= pd.Timestamp("2026-11-02")) & (vs < pd.Timestamp(end))
+        return pd.DataFrame({"model": model, "init": i, "lead_hr": range(1, len(vs) + 1), "valid_start": vs,
+                             "valid_end": vs + pd.Timedelta(hours=1), "point": "alta", "qpf_mm": np.where(wet, qpf, 0.0)})
+    fc, raw = run("GFS", 1.0, "2026-11-02 12:00"), run("GFS raw", 2.0, "2026-11-02 20:00")   # raw: longer + wetter
+    obs = snotel_prec("2026-11-01 12:00", [0.0] * 12 + [0.1] * 12 + [0.0] * 14)
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        t = storms.run(fc, obs, cfg, pd.Timestamp("2026-11-03 06:00"), root=root, fc_raw=raw)
+        assert len(t) == 1 and t.iloc[0].fc_end == pd.Timestamp("2026-11-02 12:00")   # the window ignores the raw run
+        sc = pd.read_csv(root / "storm_scores.csv").set_index("model")
+        assert abs(sc.loc["GFS", "fc_water_in"] - 12 / 25.4) < 1e-9
+        assert abs(sc.loc["GFS raw", "fc_water_in"] - 24 / 25.4) < 1e-9
+    assert model_rank("GFS") < model_rank("GFS raw") < model_rank("GDPS")
+
+
 def test_staleness_lists_only_models_with_missing_due_runs():
     from cottonwoods.report import staleness
     cfg = make_cfg()

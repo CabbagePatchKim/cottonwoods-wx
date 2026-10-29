@@ -79,9 +79,12 @@ def model_days(fc: pd.DataFrame, cfg: dict, point: str, days: int | None = None,
     return _by_model_order(out)
 
 
-def model_rank(model: str) -> int:
-    """Position in the display order (MODEL_ORDER); unknown models go last."""
-    return MODEL_ORDER.index(model) if model in MODEL_ORDER else len(MODEL_ORDER)
+def model_rank(model: str) -> float:
+    """Position in the display order (MODEL_ORDER); a scored unmodified run ("GFS raw") right after its model;
+    unknown models go last."""
+    from .archive.forecasts import RAW_LABEL
+    base, raw = (model[:-len(RAW_LABEL)], 0.5) if model.endswith(RAW_LABEL) else (model, 0)
+    return (MODEL_ORDER.index(base) if base in MODEL_ORDER else len(MODEL_ORDER)) + raw
 
 
 def _by_model_order(rows: list[dict]) -> list[dict]:

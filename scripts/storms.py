@@ -29,13 +29,14 @@ cfg = load_config()
 now = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
 # Runs from the last 20 days cover any storm still being tracked; obs from the last 25 days cover its window.
 fc = load_forecasts(cfg, start=now - timedelta(days=20))
+fc_raw = load_forecasts(cfg, start=now - timedelta(days=20), raw=True)   # unmodified copies: scored, not reported
 obs = load_snotel(start=now - timedelta(days=25))
 if fc.empty:
     raise SystemExit("No archived model runs in the last 20 days.")
 
 snd = load_soundings(start=now - timedelta(days=25))
 table = storms.run(fc, obs, cfg, now, soundings=summarize(snd) if not snd.empty else None,
-                   rap=load_rap(start=now - timedelta(days=25)))
+                   rap=load_rap(start=now - timedelta(days=25)), fc_raw=fc_raw)
 
 days_path = PROCESSED_DIR / "gauge_pillow_days.csv"
 first = not days_path.exists()        # the first time: the whole archive; balloons only from the first SNOTEL day

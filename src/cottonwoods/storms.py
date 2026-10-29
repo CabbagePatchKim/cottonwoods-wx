@@ -599,13 +599,17 @@ def _backfill_verified(storms: pd.DataFrame, fc: pd.DataFrame, psteps: dict, ost
 
 
 def run(fc: pd.DataFrame, obs: pd.DataFrame, cfg: dict, now: pd.Timestamp, root=None,
-        soundings: pd.DataFrame | None = None, rap: pd.DataFrame | None = None) -> pd.DataFrame:
+        soundings: pd.DataFrame | None = None, rap: pd.DataFrame | None = None,
+        fc_raw: pd.DataFrame | None = None) -> pd.DataFrame:
     """One pass: update forecast storms from the newest runs, verify any that are over. Returns the table.
 
     soundings: balloon summaries (cottonwoods.obs.sounding.summarize); rap: hourly RAP analyses
     (archive.obs.load_rap). Together they give the observed regime phases (regimes.observed_regime).
+    fc_raw: blended models' unmodified runs (load_forecasts raw=True, "GFS raw"): scored next to fc, never used to
+    find or time storms.
     """
     storms = update_forecast_storms(load_storms(root), fc, cfg, now)
+    fc = pd.concat([fc, fc_raw], ignore_index=True) if fc_raw is not None and not fc_raw.empty else fc
     psteps = point_steps(obs, cfg)
     osteps = psteps.get(cfg["storms"]["point"], pd.DataFrame(columns=["valid_start", "valid_end", "qpf_mm"]))
     for i, st in storms[storms["status"] == "forecast"].iterrows():

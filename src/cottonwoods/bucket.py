@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 PREFIX = "data/"   # everything sits under data/ in the bucket, mirroring the project folder
-RUN_FILE = re.compile(r"(^|/)(forecasts|patterns)/model=[^/]+/init=(\d{10})\.\w+$")
+RUN_FILE = re.compile(r"(^|/)(forecasts|forecasts_raw|patterns)/model=[^/]+/init=(\d{10})\.\w+$")
 
 
 ENV_NAMES = ("CWX_BUCKET", "CWX_S3_ENDPOINT", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY")

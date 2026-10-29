@@ -3,6 +3,9 @@
     data/archive/forecasts/model=HRRR/init=2026110212.parquet
     data/archive/forecasts/model=GFS/init=2026110212.parquet
     data/archive/manifest.csv      (what was archived, how complete it was, when)
+    data/archive/forecasts_raw/model=GFS/init=2026110212.parquet
+                                   (blended models only: the same run unmodified, each point at its nearest grid
+                                    point; scored as "GFS raw" next to the blended "GFS", never in reports or feed)
 
 Each file holds one row per (valid step, point) with step QPF, the layer temperatures, and per-step Kuchera
 snowfall. Files are never edited after the run is archived, so the archive is an honest record of what the
@@ -33,17 +36,26 @@ DERIVED = ["tmax_k", "slr_kuchera", "snow_in", "snow_in_raw", "z_ground_m", "t_s
            "cell_blend", "derive_version"]
 
 
-def forecast_dir(root: Path | None = None) -> Path:
-    return (root or ARCHIVE_DIR) / "forecasts"
+RAW_LABEL = " raw"   # model label suffix of an unmodified (unblended) run when it is scored: "GFS raw"
+
+
+def forecast_dir(root: Path | None = None, raw: bool = False) -> Path:
+    """The archive of runs as reports and the feed use them, or (raw) blended models' unmodified runs."""
+    return (root or ARCHIVE_DIR) / ("forecasts_raw" if raw else "forecasts")
 
 
 # root is only passed by the tests (a temporary folder). Normal use leaves it None -> data/archive.
-def run_path(model: str, init, cfg: dict, root: Path | None = None) -> Path:
+def run_path(model: str, init, cfg: dict, root: Path | None = None, raw: bool = False) -> Path:
     suffix = suffix_for(cfg["archive"]["format"])
-    return forecast_dir(root) / f"model={model}" / f"init={pd.Timestamp(init):%Y%m%d%H}{suffix}"
+    return forecast_dir(root, raw) / f"model={model}" / f"init={pd.Timestamp(init):%Y%m%d%H}{suffix}"
 
 
-def derive_run_fields(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+def raw_run(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """A pulled run's configured points derived WITHOUT the cell blend (each at its nearest grid point)."""
+    return derive_run_fields(df[df["point"].isin(cfg["points"])].copy(), cfg, blend=False)
+
+
+def derive_run_fields(df: pd.DataFrame, cfg: dict, blend: bool = True) -> pd.DataFrame:
     """Everything computed from a run's raw pulled fields: THE place to look when a derived number seems wrong.
 
     Steps, in order:
@@ -54,9 +66,12 @@ def derive_run_fields(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
       2. modes.add_precip_modes    frontal / post-frontal / cellular / lake-effect per step: precip_mode, front_time
       3. add_snowfall              station profile + wet-bulb snow/mix/rain + Kuchera: snow_in, snow_level_m, ...
     Steps 1-3 add columns and leave the pulled ones alone. Ensembles are archived as precip only (no
-    temperatures), so they get step 0 (blended precip per member) and nothing else.
+    temperatures), so they get step 0 (blended precip per member) and nothing else. blend=False skips the blend
+    (the unmodified copy in forecasts_raw, raw_run).
     """
-    df = cellblend.blend_points(winds.earth_winds(df, cfg), cfg)
+    df = winds.earth_winds(df, cfg)
+    if blend:
+        df = cellblend.blend_points(df, cfg)
     if _temp_cols(df):
         df = add_snowfall(modes.add_precip_modes(regimes.add_step_regimes(df, cfg["regimes"]), cfg["regimes"]), cfg)
     return df.assign(derive_version=DERIVE_VERSION)
@@ -119,9 +134,7 @@ def run_points(model: str, cfg: dict) -> dict[str, dict]:
     points = dict(cfg["points"])
     cells = cellblend.model_cells(model, cfg)
     if cells:
-        for lat in cells["lats"]:
-            for lon in cells["lons"]:
-                points[cellblend.cell_name(model, lat, lon)] = {"lat": lat, "lon": lon}
+        points.update(cellblend.cell_points(model, cells))
     return points
 
 
@@ -193,8 +206,11 @@ def archive_run(
             f"(likely still posting); not archived, will retry"
         )
 
+    fetched = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
+    if cellblend.blends(model, cfg):          # the unmodified run, kept apart from the blended one
+        write_df(raw_run(df, cfg).assign(fetched_at=fetched), run_path(model, init, cfg, root, raw=True))
     df = derive_run_fields(df, cfg)
-    df["fetched_at"] = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
+    df["fetched_at"] = fetched
     write_df(df, path)
     _append_manifest(
         {"model": model, "init": f"{pd.Timestamp(init):%Y-%m-%d %H:%M}", "n_expected": expected, "n_valid": valid,
@@ -209,9 +225,11 @@ def _init_from_name(p: Path) -> pd.Timestamp:
     return pd.to_datetime(p.stem.split("=")[1], format="%Y%m%d%H")
 
 
-def load_forecasts(cfg: dict | None = None, models=None, start=None, end=None, root: Path | None = None) -> pd.DataFrame:
-    """Read archived runs (optionally filtered by model and init-time range) into one frame."""
-    base = forecast_dir(root)
+def load_forecasts(cfg: dict | None = None, models=None, start=None, end=None, root: Path | None = None,
+                   raw: bool = False) -> pd.DataFrame:
+    """Read archived runs (optionally filtered by model and init-time range) into one frame. raw: the blended
+    models' unmodified runs instead, labeled for scoring ("GFS raw", RAW_LABEL)."""
+    base = forecast_dir(root, raw)
     if not base.exists():
         return pd.DataFrame()
     # glob finds files matching a wildcard pattern. Filtering on file NAMES before reading means we only open
@@ -225,4 +243,7 @@ def load_forecasts(cfg: dict | None = None, models=None, start=None, end=None, r
     if end is not None:
         files = [p for p in files if _init_from_name(p) <= pd.Timestamp(end)]
     frames = [read_df(p) for p in sorted(files)]
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    out = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if raw and not out.empty:
+        out["model"] = out["model"] + RAW_LABEL
+    return out
