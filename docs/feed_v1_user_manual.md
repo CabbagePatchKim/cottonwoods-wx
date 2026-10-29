@@ -203,6 +203,18 @@ Every model's newest run, day by day, for each resort.
 - Only owner-approved releases of the forecast program can publish; development code never reaches the feed.
 - v1 contains **model forecasts only**: no observations or verification scores.
 
+### Changes by version
+
+Each published version puts its own copy of this manual here, so this list is current for the feed you're reading.
+
+- **v1.4:** `snow_in` is plain Kuchera snow and `snow_in_regime` is always `null`; GFS, ECMWF, GDPS and the ECMWF
+  ensemble blend the 4 grid points around each resort (higher resorts no longer get less snow from landing in a
+  different grid cell); a storm leaves `storms.json` once its window ends; runs that start after a storm began have
+  `null` amounts and `covers_full_storm: false`; GEFS is not blended.
+- **Next version:** `flow` text corrected for HRRR, NAM Nest, NAM and RDPS runs. Their 700 mb winds were read 7-18
+  degrees off true north, so a wind near a boundary could carry the wrong direction label (`SW` instead of `W`).
+  Snow and water amounts are unchanged.
+
 ## 10. Credits and licences
 
 If you show the data, show the disclaimer and credit the sources. `meta.json` → `credits` lists them:

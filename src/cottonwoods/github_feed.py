@@ -6,7 +6,9 @@ never pushed. Settings: the optional config section `feed_github` (repo, key_fil
 section nothing is pushed.
 
 How: a clone of the feed repo lives in data/feed_repo (it holds ONLY generated files, so it's simply reset to the
-remote before each update). The new v1/*.json are copied in, committed, and pushed. Unchanged files = no commit.
+remote before each update). The new v1/*.json are copied in, with the release's user manual as the repo's README.md
+(owner, 2026-10-29: the website's owner reads the repo, so each published version carries its own manual), then
+committed and pushed. Unchanged files = no commit.
 Safety: a deploy key that can write to that one repository only; BatchMode (never prompts) and StrictHostKeyChecking
 against a known_hosts file holding GitHub's published host key.
 """
@@ -28,9 +30,10 @@ def ssh_command(gcfg: dict) -> str:
             f'-o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="{kh}" -o ConnectTimeout=30')
 
 
-def publish(gcfg: dict, local_dir: Path, clone_dir: Path, version: str, generated: str, run=subprocess.run) -> str:
-    """Push <local_dir>/*.json to <repo>/<local_dir's name>/ on gcfg['branch']. Returns a one-line result;
-    raises RuntimeError with git's message on failure."""
+def publish(gcfg: dict, local_dir: Path, clone_dir: Path, version: str, generated: str, run=subprocess.run,
+            readme: Path | None = None) -> str:
+    """Push <local_dir>/*.json to <repo>/<local_dir's name>/ on gcfg['branch'], and `readme` (the user manual) as the
+    repo's README.md. Returns a one-line result; raises RuntimeError with git's message on failure."""
     env = {**os.environ, "GIT_SSH_COMMAND": ssh_command(gcfg)}
     branch = gcfg.get("branch", "main")
 
@@ -51,6 +54,8 @@ def publish(gcfg: dict, local_dir: Path, clone_dir: Path, version: str, generate
     names = sorted(p.name for p in Path(local_dir).glob("*.json"))
     for n in names:
         shutil.copyfile(Path(local_dir) / n, sub / n)
+    if readme is not None:
+        shutil.copyfile(readme, clone_dir / "README.md")
     (clone_dir / ".nojekyll").touch()   # serve files as-is (GitHub Pages would otherwise run Jekyll)
     git("add", "-A")
     if not git("status", "--porcelain").strip():

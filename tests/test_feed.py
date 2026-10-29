@@ -186,10 +186,14 @@ def test_github_publish_commits_changed_files_and_skips_unchanged():
         assert "pushed 1 files" in github_feed.publish(gcfg, out, d / "clone", "v1.0", "now")
         assert "unchanged" in github_feed.publish(gcfg, out, d / "clone", "v1.0", "later")
         (out / "meta.json").write_text('{"a": 2}')
-        assert "pushed" in github_feed.publish(gcfg, out, d / "clone", "v1.1", "later")
+        manual = d / "manual.md"
+        manual.write_text("# Manual v1.1")
+        assert "pushed" in github_feed.publish(gcfg, out, d / "clone", "v1.1", "later", readme=manual)
         shown = subprocess.run(["git", "-C", str(remote), "show", "main:v1/meta.json"], capture_output=True, text=True)
         log = subprocess.run(["git", "-C", str(remote), "log", "--format=%s", "main"], capture_output=True, text=True)
+        readme = subprocess.run(["git", "-C", str(remote), "show", "main:README.md"], capture_output=True, text=True)
         assert shown.stdout == '{"a": 2}' and log.stdout.splitlines() == ["feed v1.1, later", "feed v1.0, now", "init"]
+        assert readme.stdout == "# Manual v1.1"                     # the release's manual is the repo's README
     assert "BatchMode=yes" in github_feed.ssh_command(gcfg) and "StrictHostKeyChecking=yes" in github_feed.ssh_command(gcfg)
 
 

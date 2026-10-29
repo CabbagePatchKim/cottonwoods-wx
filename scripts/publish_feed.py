@@ -8,6 +8,7 @@ development code can't feed the website, even when run by hand. An approved feed
 Pages repository if config has a `feed_github` section (cottonwoods/github_feed.py); previews are never pushed.
 Pushing also needs CWX_PUBLISH=1, which only the cloud pass sets (.github/workflows/pass.yml): the laptop can sit on
 an approved tag too (right after a release), and two machines with different archives must not both publish.
+Each push also puts that release's docs/feed_v1_user_manual.md in the feed repo as its README.md.
 """
 import argparse
 import os
@@ -47,6 +48,7 @@ if not args.preview and cfg.get("feed_github") and os.environ.get("CWX_PUBLISH")
     print("approved release, but publishing is off on this machine (CWX_PUBLISH=1 is set only in the cloud pass)")
 elif not args.preview and cfg.get("feed_github"):
     try:
-        print(github_feed.publish(cfg["feed_github"], out, DATA_DIR / "feed_repo", version, data["meta"]["generated"]))
+        print(github_feed.publish(cfg["feed_github"], out, DATA_DIR / "feed_repo", version, data["meta"]["generated"],
+                                  readme=ROOT / "docs" / "feed_v1_user_manual.md"))
     except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
         sys.exit(f"PUSH FAILED (feed kept locally in {out}): {e}")
