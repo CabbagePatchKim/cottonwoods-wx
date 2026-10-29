@@ -3,7 +3,9 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+import pytest
 
 from cottonwoods.archive import forecasts as fa
 from cottonwoods.verify import build_pairs
@@ -197,3 +199,30 @@ def test_two_nearby_sites_in_different_nearest_cells_now_follow_elevation():
     out = derive_run_fields(df, cfg).set_index("point")
     assert out.loc["low", "snow_in"] <= out.loc["high", "snow_in"]
     assert abs(out.loc["low", "qpf_mm"] - out.loc["high", "qpf_mm"]) < 0.2
+
+
+def test_grid_relative_winds_are_turned_to_true_north_once():
+    from cottonwoods import winds
+    cfg = make_cfg()
+    assert round(winds.grid_angle("HRRR", 40.5764, -111.6383), 2) == 8.80        # measured on real files: 8.80
+    assert round(winds.grid_angle("NAM", 40.5764, -111.6383), 1) == 7.0           # 7.01
+    assert round(winds.grid_angle("RDPS", 40.5764, -111.6383), 1) == 16.9         # 16.84 over one grid step
+    assert winds.grid_angle("GFS", 40.5764, -111.6383) == 0.0
+    west = pd.DataFrame({"model": "HRRR", "point": ["alta"], "u_700_ms": [10.0], "v_700_ms": [0.0]})
+    once = winds.earth_winds(west, cfg)
+    a = np.radians(winds.grid_angle("HRRR", cfg["points"]["alta"]["lat"], cfg["points"]["alta"]["lon"]))
+    assert once["u_700_ms"].iloc[0] == pytest.approx(10 * np.cos(a)) and once["v_700_ms"].iloc[0] == pytest.approx(10 * np.sin(a))
+    pd.testing.assert_frame_equal(winds.earth_winds(once, cfg), once)              # derived again: not turned twice
+    gfs = winds.earth_winds(west.assign(model="GFS"), cfg)
+    assert gfs["u_700_ms"].iloc[0] == 10.0 and gfs["uv_earth"].all()
+
+
+def test_derivation_marks_its_version_so_older_runs_can_be_rederived():
+    cfg = make_cfg()
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        path, _ = fa.archive_run("HRRR", datetime(2026, 11, 2, 12), cfg, root=root, puller=fake_puller())
+        df = fa.read_df(path)
+        assert (df["derive_version"] == fa.DERIVE_VERSION).all()
+        again = fa.derive_run_fields(df.drop(columns=[c for c in fa.DERIVED if c in df]), cfg)
+        pd.testing.assert_series_equal(again["snow_in"], df["snow_in"], check_names=False)

@@ -21,7 +21,7 @@ import pandas as pd
 from cottonwoods import storms, timefmt, verify
 from cottonwoods.report import render_storms, render_verified
 from cottonwoods.archive.forecasts import load_forecasts
-from cottonwoods.archive.obs import load_hand_obs, load_snotel, load_soundings, load_storm_totals
+from cottonwoods.archive.obs import load_hand_obs, load_rap, load_snotel, load_soundings, load_storm_totals
 from cottonwoods.obs.sounding import summarize
 from cottonwoods.config import PROCESSED_DIR, REPORTS_DIR, load_config
 
@@ -34,7 +34,8 @@ if fc.empty:
     raise SystemExit("No archived model runs in the last 20 days.")
 
 snd = load_soundings(start=now - timedelta(days=25))
-table = storms.run(fc, obs, cfg, now, soundings=summarize(snd) if not snd.empty else None)
+table = storms.run(fc, obs, cfg, now, soundings=summarize(snd) if not snd.empty else None,
+                   rap=load_rap(start=now - timedelta(days=25)))
 
 days_path = PROCESSED_DIR / "gauge_pillow_days.csv"
 first = not days_path.exists()        # the first time: the whole archive; balloons only from the first SNOTEL day

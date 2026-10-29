@@ -227,6 +227,22 @@ Running live, TWO places for now (side-by-side check before cutover):
   distance and long-range calls get credit. Run counts differ by design: HRRR/NAM Nest ranges stop short, GDPS runs
   2x/day; for 10/27 GFS/IFS also had fewer because their archive starts 10/25 12z (RDPS backfilled to 10/24 18z).
   NOT BUILT: block snow bins (no observed snow per block: Collins boards could give Alta's); feed: never for scores.
+  WIND BUG FIXED (found 2026-10-29 building regimes): HRRR / NAM Nest / NAM (Lambert) and RDPS (rotated lat-lon)
+  store GRID-relative u/v (GRIB uvRelativeToGrid=1); never turned, so their 700 mb directions read +16/+7/+12/+18 deg
+  clockwise vs GFS/IFS and flow labels were off (the 10/27 storm's defining NAM Nest run said "W 89%"; RAP + the
+  turned run say SW). winds.py (grid geometry; angles at Alta 8.80 / 7.03 / 16.90 deg = real files) turns them as
+  derive step 0, once (uv_earth). DERIVE_VERSION 2 + scripts/rederive_archive.py (agenda 3b, now BUILT) re-derive
+  older runs (winds + blend + elevations); laptop archive done 10/29 (122 runs, 91 s; backup of v1 runs in the
+  session scratchpad); every pass (cloud step "Re-derive older runs", skipped by releases without the script; laptop
+  run_models.bat) runs it, so the bucket's runs get re-derived by the first pass of the next release. After it, all
+  models are within +-5 deg of GFS/IFS. fill.py turns a fresh pull the same way before comparing.
+  OBSERVED REGIME (owner 2026-10-29): hourly RAP analyses (obs/rap.py, archive obs/rap, config rap; fetched by
+  archive_obs.py, only new hours; backfilled locally from 10/25) at each point, weighted by observed SNOTEL precip
+  (equal weights for a dry storm), = storms.obs_flow (obs_flow_source rap); SLC balloons (also precip-weighted) kept in
+  obs_flow_balloon, report flags "balloons disagree". Owner: group by the STORM's regime, never each model's own flow
+  (a dry run's flow would make a regime look dry). Report: per storm "flow:" line; season tables by the storm's
+  FORECAST regime (defining run's dominant phase) and 12 h blocks by OBSERVED block regime (block_scores fc_regime /
+  obs_regime). Verified storms get relabeled + fc_flow recomputed once RAP covers them (_backfill_verified).
 - RELEASED v1.4 (owner approved 2026-10-28, tag on 5827cd1, pushed ~22:17Z, CI tests green; first pass #9 22:28Z
   manual by the owner: "code v1.4", all steps success, feed v1.4 published, no new runs that pass so the feed still
   showed pre-release nearest-cell 12z numbers; blended numbers arrive with each model's next run). Contents:

@@ -19,7 +19,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 
-from cottonwoods.archive.obs import archive_ghcn, archive_snotel, archive_synoptic, catchup_begin, with_retries
+from cottonwoods.archive.obs import archive_ghcn, archive_rap, archive_snotel, archive_synoptic, catchup_begin, with_retries
 from cottonwoods.obs import synoptic
 from cottonwoods.config import ensure_dirs, load_config
 
@@ -65,6 +65,8 @@ elif cfg.get("synoptic"):
 # NOAA GHCN-Daily (ALTA). Daily values, so even a 20-year span is only ~7,000 rows per element.
 if cfg.get("ghcn"):
     sources.append(("obs:ghcn", archive_ghcn))
+# Hourly RAP analyses: the observed 700 mb flow for storm regimes (only hours not stored yet are fetched)
+sources.append(("obs:rap", archive_rap))
 
 failed = False
 for tag, archive in sources:

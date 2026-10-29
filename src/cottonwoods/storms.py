@@ -13,8 +13,10 @@ Rules (owner's, config `storms:`):
     observed event if it started earlier or ended later than forecast.
 
 Flow regimes change through a storm, so they're kept as PHASES (cottonwoods.regimes.phases), e.g.
-"SW warm 65% -> NW cold 35%": fc_flow from the run that defines the window, obs_flow from the Salt Lake City
-balloons once verified, and every scored run's own phases in storm_scores. Resort snow in the report is scaled
+"SW warm 65% -> NW cold 35%": fc_flow from the run that defines the window; once verified, obs_flow from hourly RAP
+analyses weighted by observed precip (obs_flow_source "rap"; the SLC balloons when RAP is missing), with the
+balloons' own phases kept as the cross-check (obs_flow_balloon); every scored run's own phases in storm_scores.
+Resort snow in the report is scaled
 step by step by that step's regime factor (data/processed/regime_factors.csv, scripts/regime_factors.py).
 
 A tracked storm's status: forecast -> verified, or
@@ -50,9 +52,9 @@ from .units import MM_PER_IN
 
 COLS = ["storm_id", "point", "status", "fc_start", "fc_end", "defining_model", "defining_init", "outside_note",
         "fc_flow", "fc_modes", "fc_periods", "fc_subperiods", "obs_start", "obs_end", "final_start", "final_end",
-        "obs_water_in", "obs_flow", "note", "updated_at"]
+        "obs_water_in", "obs_flow", "obs_flow_source", "obs_flow_balloon", "note", "updated_at"]
 TEXT_COLS = ("storm_id", "point", "status", "defining_model", "outside_note", "fc_flow", "fc_modes", "fc_periods",
-             "fc_subperiods", "obs_flow", "note")
+             "fc_subperiods", "obs_flow", "obs_flow_source", "obs_flow_balloon", "note")
 TIME_COLS = ("fc_start", "fc_end", "defining_init", "obs_start", "obs_end", "final_start", "final_end", "updated_at")
 
 
@@ -364,16 +366,35 @@ def _score_point(storm: pd.Series, point: str, fc_all: pd.DataFrame, osteps: pd.
     return pd.DataFrame(rows)
 
 
-def score_blocks(storm: pd.Series, fc_all: pd.DataFrame, psteps: dict[str, pd.DataFrame], cfg: dict) -> pd.DataFrame:
+def _block_regimes(storm: pd.Series, blks, fc_all: pd.DataFrame, psteps: dict, rap, soundings, cfg: dict) -> list:
+    """[(forecast regime, observed regime)] per block, the same for every model and point: the storm's defining run
+    (its own flow, weighted by its precip) and the observed flow (regimes.observed_regime); '' where unknown."""
+    g = fc_all[(fc_all["model"] == storm.get("defining_model")) & (fc_all["init"] == storm.get("defining_init"))
+               & (fc_all["point"] == storm.point)]
+    g = regimes.with_bands(g, cfg["regimes"]) if len(g) else g
+    out = []
+    for bs, be, _ in blks:
+        steps = g[(g["valid_end"] > bs) & (g["valid_start"] < be)] if len(g) else g
+        steps = steps.assign(w=steps["qpf_mm"] if steps["qpf_mm"].sum() > 0 else 1.0) if len(steps) else steps
+        fc = regimes.dominant(regimes.phase_string(regimes.phases(steps, cfg["regimes"], "w"))) if len(steps) else ""
+        obs = regimes.observed_regime(bs, be, storm.point, rap, soundings, psteps.get(storm.point), cfg)
+        out.append((fc, regimes.dominant(obs["flow"])))
+    return out
+
+
+def score_blocks(storm: pd.Series, fc_all: pd.DataFrame, psteps: dict[str, pd.DataFrame], cfg: dict,
+                 rap: pd.DataFrame | None = None, soundings: pd.DataFrame | None = None) -> pd.DataFrame:
     """The verified storm in 12 h blocks at every point in psteps: each deterministic run that covers a whole block and
-    was issued before it began (within storms.max_lead_hours), its water and snow there vs the observed water."""
+    was issued before it began (within storms.max_lead_hours), its water and snow there vs the observed water, with
+    the block's forecast and observed regime (_block_regimes)."""
     scfg, thr = cfg["storms"], cfg["verify"]["event_swe_in"]
     blks = blocks.storm_blocks(storm.final_start, storm.final_end, scfg["block_hours"], scfg["block_end_utc_hour"])
     det = fc_all[fc_all["member"].isna()] if "member" in fc_all.columns else fc_all
+    regs = _block_regimes(storm, blks, det, psteps, rap, soundings, cfg)
     rows = []
     for point, osteps in psteps.items():
         fp = det[det["point"] == point]
-        for bs, be, _ in blks:
+        for (bs, be, _), (fc_regime, obs_regime) in zip(blks, regs):
             obs_in = window_total(osteps, bs, be) / MM_PER_IN
             runs = fp[(fp["init"] <= bs) & (fp["init"] >= bs - pd.Timedelta(hours=scfg["max_lead_hours"]))]
             for (model, init), g in runs.groupby(["model", "init"]):
@@ -384,7 +405,8 @@ def score_blocks(storm: pd.Series, fc_all: pd.DataFrame, psteps: dict[str, pd.Da
                              "model": model, "init": init, "lead_to_block_hr": (bs - init) / pd.Timedelta(hours=1),
                              "fc_water_in": water, "fc_snow_in": window_total(g, bs, be, "snow_in")
                              if "snow_in" in g.columns else np.nan, "obs_water_in": obs_in,
-                             "fc_event": water >= thr, "obs_event": obs_in >= thr})
+                             "fc_event": water >= thr, "obs_event": obs_in >= thr,
+                             "fc_regime": fc_regime, "obs_regime": obs_regime})
     return pd.DataFrame(rows)
 
 
@@ -542,30 +564,46 @@ def append_scores(scores: pd.DataFrame, root=None) -> None:
     scores.to_csv(p, index=False)
 
 
-def _score_new_points(storms: pd.DataFrame, fc: pd.DataFrame, psteps: dict, cfg: dict, root=None) -> None:
-    """Score verified storms at points they weren't scored at yet (storms verified before every gauged point was
-    scored, 2026-10-29, or a point that gained a gauge), and in blocks if they have none yet, while their runs are
-    still loaded. Existing storm-score rows stay."""
+def _set_observed_flow(storms: pd.DataFrame, i, osteps: pd.DataFrame, rap, soundings, cfg: dict) -> None:
+    st = storms.loc[i]
+    o = regimes.observed_regime(st.final_start, st.final_end, st.point, rap, soundings, osteps, cfg)
+    storms.at[i, "obs_flow"], storms.at[i, "obs_flow_source"], storms.at[i, "obs_flow_balloon"] = \
+        o["flow"], o["source"], o["balloons"]
+
+
+def _backfill_verified(storms: pd.DataFrame, fc: pd.DataFrame, psteps: dict, osteps: pd.DataFrame, rap, soundings,
+                       cfg: dict, root=None) -> None:
+    """Bring storms verified before a scoring change up to date, while their runs are still loaded (2026-10-29):
+    the RAP observed flow where they only had the balloons (and the forecast flow again from the defining run, whose
+    winds are now earth-relative), scores at points not scored yet, and block scores (with block regimes) where they
+    have none or were made before RAP covered them. Existing storm-score rows stay."""
     scores, blocked = load_scores(root), load_block_scores(root)
     if scores.empty or fc.empty:
         return
     have = set(zip(scores["storm_id"].astype(str), scores["point"]))
-    done = set(blocked["storm_id"].astype(str)) if not blocked.empty else set()
-    for _, st in storms[storms["status"] == "verified"].iterrows():
+    for i, st in storms[storms["status"] == "verified"].iterrows():
         if pd.isna(st.final_start) or st.final_start < fc["init"].min():
             continue                                     # its runs are no longer loaded
+        relabel = st.get("obs_flow_source") != "rap"
+        if relabel:
+            _set_observed_flow(storms, i, osteps, rap, soundings, cfg)
+            run = fc[(fc["model"] == st.defining_model) & (fc["init"] == st.defining_init)]
+            if len(run):
+                storms.at[i, "fc_flow"] = run_flow(run, st.point, st.fc_start, st.fc_end, cfg)
         new = {p: o for p, o in psteps.items() if (str(st.storm_id), p) not in have}
         if new:
-            append_scores(score_storm(st, fc, new, cfg), root)
-        if str(st.storm_id) not in done:
-            append_block_scores(score_blocks(st, fc, psteps, cfg), root)
+            append_scores(score_storm(storms.loc[i], fc, new, cfg), root)
+        mine = blocked[blocked["storm_id"].astype(str) == str(st.storm_id)] if not blocked.empty else blocked
+        if mine.empty or "obs_regime" not in mine or (relabel and storms.at[i, "obs_flow_source"] == "rap"):
+            append_block_scores(score_blocks(storms.loc[i], fc, psteps, cfg, rap, soundings), root)
 
 
 def run(fc: pd.DataFrame, obs: pd.DataFrame, cfg: dict, now: pd.Timestamp, root=None,
-        soundings: pd.DataFrame | None = None) -> pd.DataFrame:
+        soundings: pd.DataFrame | None = None, rap: pd.DataFrame | None = None) -> pd.DataFrame:
     """One pass: update forecast storms from the newest runs, verify any that are over. Returns the table.
 
-    soundings: balloon summaries (cottonwoods.obs.sounding.summarize) for the observed regime phases.
+    soundings: balloon summaries (cottonwoods.obs.sounding.summarize); rap: hourly RAP analyses
+    (archive.obs.load_rap). Together they give the observed regime phases (regimes.observed_regime).
     """
     storms = update_forecast_storms(load_storms(root), fc, cfg, now)
     psteps = point_steps(obs, cfg)
@@ -578,13 +616,11 @@ def run(fc: pd.DataFrame, obs: pd.DataFrame, cfg: dict, now: pd.Timestamp, root=
         storms.at[i, "final_start"] = min(st.fc_start, done["obs_start"]) if pd.notna(done["obs_start"]) else st.fc_start
         storms.at[i, "final_end"] = max(st.fc_end, done["obs_end"]) if pd.notna(done["obs_end"]) else st.fc_end
         storms.at[i, "obs_water_in"] = window_total(osteps, storms.at[i, "final_start"], storms.at[i, "final_end"]) / MM_PER_IN
-        if soundings is not None and not soundings.empty:
-            ss = regimes.sounding_steps(soundings, storms.at[i, "final_start"], storms.at[i, "final_end"], cfg["regimes"])
-            storms.at[i, "obs_flow"] = regimes.phase_string(regimes.phases(ss, {**cfg["regimes"], "min_phase_hours": 12}, "w"))
+        _set_observed_flow(storms, i, osteps, rap, soundings, cfg)
         storms.at[i, "status"] = "verified"
         storms.at[i, "updated_at"] = now
         append_scores(score_storm(storms.loc[i], fc, psteps, cfg), root)
-        append_block_scores(score_blocks(storms.loc[i], fc, psteps, cfg), root)
-    _score_new_points(storms, fc, psteps, cfg, root)
+        append_block_scores(score_blocks(storms.loc[i], fc, psteps, cfg, rap, soundings), root)
+    _backfill_verified(storms, fc, psteps, osteps, rap, soundings, cfg, root)
     write_df(storms[COLS], storms_path(root))
     return storms

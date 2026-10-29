@@ -21,6 +21,9 @@ if not exist "%COTTONWOODS_DATA%\logs" mkdir "%COTTONWOODS_DATA%\logs"
 echo ===== %DATE% %TIME% (%CD%) >> %LOG%
 %PY% scripts\archive_forecasts.py >> %LOG% 2>&1
 echo ----- archive_forecasts.py exit %ERRORLEVEL% (%TIME%) >> %LOG%
+rem runs archived by an older derivation are derived again once (archive/forecasts.DERIVE_VERSION)
+%PY% scripts\rederive_archive.py >> %LOG% 2>&1
+echo ----- rederive_archive.py exit %ERRORLEVEL% (%TIME%) >> %LOG%
 rem SNOTEL (+ NOAA) observations every pass, so a storm's end (12 h dry) is noticed and verified promptly
 %PY% scripts\archive_obs.py --days 3 >> %LOG% 2>&1
 echo ----- archive_obs.py exit %ERRORLEVEL% (%TIME%) >> %LOG%

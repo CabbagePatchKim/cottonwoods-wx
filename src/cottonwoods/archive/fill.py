@@ -21,6 +21,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .. import winds
 from ..models.registry import REGISTRY, get_puller
 from .forecasts import DERIVED, _append_manifest, derive_run_fields, run_path, run_points
 from .io import read_df, write_df
@@ -129,6 +130,8 @@ def fill_run(model: str, init: datetime, cfg: dict, root: Path | None = None, sa
     new = pull(init, REGISTRY[model].fxx_list(init, cfg), run_points(model, cfg), save_dir)
     if new is None or new.empty:
         raise RuntimeError(f"{model} {init:%Y-%m-%d %H}z: nothing retrieved for the fill")
+    if "uv_earth" in old.columns and old["uv_earth"].all():
+        new = winds.earth_winds(new, cfg)                    # compare winds the way the archive holds them
     merged = merge_holes(old, new)
     after = count_holes(merged, model, init, cfg)
     if after >= before:

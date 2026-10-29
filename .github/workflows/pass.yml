@@ -89,6 +89,12 @@ jobs:
         id: models
         continue-on-error: true
         run: set -o pipefail; python scripts/archive_forecasts.py 2>&1 | tee -a "$LOG"
+      # Runs archived by an older derivation are derived again once (archive/forecasts.DERIVE_VERSION; v2: earth-relative
+      # winds, the cell blend, surveyed elevations). Skipped by releases that don't have the script yet.
+      - name: Re-derive older runs
+        id: rederive
+        continue-on-error: true
+        run: set -o pipefail; if [ -f scripts/rederive_archive.py ]; then python scripts/rederive_archive.py 2>&1 | tee -a "$LOG"; fi
       - name: Observations (SNOTEL, NOAA)
         id: obs
         continue-on-error: true
@@ -113,7 +119,7 @@ jobs:
       - name: Log the step results
         if: always() && steps.pull.outcome == 'success'
         run: |
-          echo "----- steps: models ${{ steps.models.outcome }}, obs ${{ steps.obs.outcome }}," \
+          echo "----- steps: models ${{ steps.models.outcome }}, rederive ${{ steps.rederive.outcome }}, obs ${{ steps.obs.outcome }}," \
                "soundings ${{ steps.soundings.outcome }}, storms ${{ steps.storms.outcome }}," \
                "report ${{ steps.report.outcome }}, feed ${{ steps.feed.outcome }}" >> "$LOG"
 
@@ -125,7 +131,7 @@ jobs:
         if: always()
         run: |
           failed=""
-          for s in "models:${{ steps.models.outcome }}" "obs:${{ steps.obs.outcome }}" \
+          for s in "models:${{ steps.models.outcome }}" "rederive:${{ steps.rederive.outcome }}" "obs:${{ steps.obs.outcome }}" \
                    "soundings:${{ steps.soundings.outcome }}" "storms:${{ steps.storms.outcome }}" \
                    "report:${{ steps.report.outcome }}" "feed:${{ steps.feed.outcome }}"; do
             case "$s" in *:failure) failed="$failed ${s%%:*}";; esac

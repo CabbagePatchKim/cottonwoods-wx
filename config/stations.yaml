@@ -35,6 +35,12 @@ ghcn:
 soundings:
   slc:            {name: "Salt Lake City", station: "KSLC", wmo: 72572, elev_ft: 4226}
 
+# Hourly RAP analyses (obs/rap.py, owner 2026-10-29): the observed 700 mb flow at every point, the storms' observed
+# regime (weighted by observed precip); the SLC balloons above are the cross-check. NOAA AWS through Herbie, no key.
+rap:
+  lag_hours: 2             # an hour's analysis is fetched once it is this old (RAP posts ~1 h after the hour)
+  workers: 4               # parallel downloads
+
 # Model extraction points (lat, lon, real elevation in ft): the four Cottonwood resorts at MID-MOUNTAIN, where
 # their snow is reported. Elevation drives the station profile (temps, wet-bulb, snow / rain).
 #   alta      Collins study plot (Alta's official snow site), 9,662 ft

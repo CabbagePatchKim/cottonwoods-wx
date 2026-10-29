@@ -5,8 +5,12 @@ Thresholds live in config/stations.yaml and should be tuned, not trusted.
 """
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pandas as pd
+
+from .windows import window_total
 
 
 def wind_dir_deg(u, v):
@@ -163,6 +167,53 @@ def sounding_steps(summary, start, end, cfg: dict):
                         "w": 1.0})
     out["regime"] = [f"{flow_label(d, cfg)} {band_label(t, cfg)}" for d, t in zip(s["wdir700"], s["t700_c"])]
     return out
+
+
+def weighted_by_obs(steps: pd.DataFrame, osteps: pd.DataFrame | None) -> pd.DataFrame:
+    """steps with weight `w` = observed precip (mm, osteps) inside each step, so the snowy hours set a storm's
+    regime; equal weights when nothing was observed (a dry storm still gets the flow it had)."""
+    out = steps.copy()
+    w = ([window_total(osteps, s, e) for s, e in zip(out["valid_start"], out["valid_end"])]
+         if osteps is not None and not osteps.empty and len(out) else [])
+    out["w"] = w if sum(w) > 0 else 1.0
+    return out
+
+
+def rap_steps(rap: pd.DataFrame, point: str, start, end, cfg: dict) -> pd.DataFrame:
+    """Hourly observed regime steps at a point from RAP analyses (archive.obs.load_rap): each analysis stands for the
+    hour after it."""
+    r = rap[(rap["point"] == point) & (rap["time_utc"] >= start) & (rap["time_utc"] < end)] if not rap.empty else rap
+    if r.empty:
+        return pd.DataFrame()
+    steps = pd.DataFrame({"valid_start": r["time_utc"].to_numpy(), "valid_end": (r["time_utc"] + pd.Timedelta(hours=1)).to_numpy(),
+                          "u_700_ms": r["u_700_ms"].to_numpy(), "v_700_ms": r["v_700_ms"].to_numpy(),
+                          "t_700_k": r["t_700_k"].to_numpy()})
+    return add_step_regimes(steps, cfg)
+
+
+def observed_regime(start, end, point: str, rap: pd.DataFrame | None, snd: pd.DataFrame | None,
+                    osteps: pd.DataFrame | None, cfg: dict, min_rap_share: float = 0.75) -> dict:
+    """A window's observed regime phases, weighted by observed precip: from hourly RAP analyses at the point when
+    they cover at least min_rap_share of its hours, else from the SLC balloons; the balloons' phases are always
+    returned too, as the cross-check. {"flow", "source" ("rap" / "balloons" / ""), "balloons"}."""
+    rcfg = cfg["regimes"]
+    hours = max((pd.Timestamp(end) - pd.Timestamp(start)) / pd.Timedelta(hours=1), 1)
+    rs = rap_steps(rap, point, start, end, rcfg) if rap is not None else pd.DataFrame()
+    bs = sounding_steps(snd, start, end, rcfg) if snd is not None and not snd.empty else pd.DataFrame()
+    balloons = phase_string(phases(weighted_by_obs(bs, osteps), {**rcfg, "min_phase_hours": 12}, "w")) if len(bs) else ""
+    if len(rs) >= min_rap_share * hours:
+        return {"flow": phase_string(phases(weighted_by_obs(rs, osteps), rcfg, "w")), "source": "rap", "balloons": balloons}
+    return {"flow": balloons, "source": "balloons" if balloons else "", "balloons": balloons}
+
+
+_PHASE = re.compile(r"(\S+ \S+)(?: -?\d+C)? (\d+)%")
+
+
+def dominant(phase_text) -> str:
+    """The regime holding the most water in a phase string: 'SW warm 1C 30% -> W warm -2C 70%' -> 'W warm'; '' if
+    there are none (the first wins a tie)."""
+    found = _PHASE.findall(phase_text) if isinstance(phase_text, str) else []
+    return max(found, key=lambda f: int(f[1]))[0] if found else ""
 
 
 def balloon_regime(snd, times, cfg: dict) -> dict | None:

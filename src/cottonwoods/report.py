@@ -510,6 +510,51 @@ def bin_totals(binned: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     return t.fillna("")
 
 
+def regime_table(binned: pd.DataFrame, storms: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Season bin score per model by the storm's FORECAST regime (the dominant phase of its defining run: what is known
+    ahead), every deterministic run within score_runs_hours at every scored point: "+1.8 (12)" = average score (runs x
+    points). Each storm carries one regime for every model, so a model that called it dry is credited in that regime
+    too (owner, 2026-10-29: the flow shouldn't come from each model's own run)."""
+    if binned.empty or storms.empty or "fc_flow" not in storms:
+        return pd.DataFrame()
+    regime = storms.set_index(storms["storm_id"].astype(str))["fc_flow"].map(regimes.dominant)
+    runs = pd.concat([recent_runs(binned, sid, cfg) for sid in binned["storm_id"].astype(str).unique()], ignore_index=True)
+    if runs.empty:
+        return pd.DataFrame()
+    runs = runs.assign(regime=runs["storm_id"].astype(str).map(regime).replace("", "?"))
+    avg = runs.groupby(["model", "regime"])["points"].agg(["mean", "size"])
+    t = avg.apply(lambda r: f"{r['mean']:+.1f} ({r['size']:.0f})", axis=1).unstack("regime").fillna("").reset_index()
+    return t.sort_values("model", key=lambda c: c.map(model_rank))
+
+
+def block_regime_table(block_scores: pd.DataFrame | None, cfg: dict) -> pd.DataFrame:
+    """Season 12 h block scores per model by the block's OBSERVED regime (RAP, weighted by observed precip), runs
+    within score_runs_hours of each block: "0.04\" 1/12" = average water error, false alarms + misses / blocks."""
+    if block_scores is None or block_scores.empty or "obs_regime" not in block_scores:
+        return pd.DataFrame()
+    bl = block_scores[block_scores["lead_to_block_hr"] <= cfg["verify"]["score_runs_hours"]]
+    bl = bl.assign(err=(bl["fc_water_in"] - bl["obs_water_in"]).abs(), bad=bl["fc_event"] != bl["obs_event"],
+                   regime=bl["obs_regime"].fillna("").replace("", "?"))
+    agg = bl.groupby(["model", "regime"]).agg(err=("err", "mean"), bad=("bad", "sum"), n=("err", "size"))
+    t = agg.apply(lambda r: f"{r['err']:.2f}\" {r['bad']:.0f}/{r['n']:.0f}", axis=1).unstack("regime").fillna("")
+    return t.reset_index().sort_values("model", key=lambda c: c.map(model_rank))
+
+
+def _flow_line(st) -> str:
+    """'flow: forecast SW warm -1C 100% | observed SW warm 1C 100% (RAP) | balloons SW 50% -> W 50%' plus a flag when
+    the balloons' dominant regime differs from the observed one."""
+    obs = st.get("obs_flow") if isinstance(st.get("obs_flow"), str) else ""
+    src = {"rap": "RAP, weighted by observed precip", "balloons": "SLC balloons"}.get(st.get("obs_flow_source"), "")
+    fc = st.get("fc_flow") if isinstance(st.get("fc_flow"), str) else ""
+    line = f"    flow: forecast {fc or '-'} | observed {obs or '-'}" + (f" ({src})" if src else "")
+    balloon = st.get("obs_flow_balloon") if isinstance(st.get("obs_flow_balloon"), str) else ""
+    if balloon and st.get("obs_flow_source") == "rap":
+        line += f" | balloons {balloon}"
+        if regimes.dominant(balloon) != regimes.dominant(obs):
+            line += "  ** balloons disagree"
+    return line
+
+
 def render_verified(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataFrame, cfg: dict, now,
                     readings: pd.DataFrame | None = None, binned: pd.DataFrame | None = None,
                     block_scores: pd.DataFrame | None = None) -> str:
@@ -543,6 +588,7 @@ def render_verified(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataF
         if not found:
             obs += " | Collins: not entered yet (data/entries/)"
         lines.append(f"    observed: {obs}")
+        lines.append(_flow_line(st))
         picks = bin_picks(binned[binned["point"] == st.point] if not binned.empty else binned, st.storm_id, cfg)
         if picks:
             first = next(iter(picks.values())).iloc[0]
@@ -579,5 +625,14 @@ def render_verified(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataF
                                         if k not in ["model", *bands]})
         tables.append(season.sort_values("model", key=lambda c: c.map(model_rank)))
         lines.append(("TABLE", len(tables) - 1))
+    for title, table in (("=== By the storm's forecast regime (defining run's dominant flow): average bin score "
+                          f"(runs x points), runs up to {cfg['verify']['score_runs_hours']} h before",
+                          regime_table(binned, storms, cfg)),
+                         ("=== 12 h blocks by observed regime (RAP): average water error, false alarms + misses / blocks",
+                          block_regime_table(block_scores, cfg))):
+        if not table.empty:
+            lines += ["", title]
+            tables.append(table)
+            lines.append(("TABLE", len(tables) - 1))
     rendered = _aligned(tables)
     return "\n".join(rendered[x[1]] if isinstance(x, tuple) else x for x in lines) + "\n"

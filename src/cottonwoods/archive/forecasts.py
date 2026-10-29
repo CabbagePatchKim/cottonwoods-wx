@@ -16,18 +16,21 @@ from pathlib import Path
 
 import pandas as pd
 
-from .. import modes, profile, regimes, slr
+from .. import modes, profile, regimes, slr, winds
 from . import cells as cellblend
 from ..config import ARCHIVE_DIR
 from ..models.registry import REGISTRY, check_cycle, get_puller
 from .io import read_df, suffix_for, write_df
 
 MIN_COMPLETE = 0.90  # a run missing more than 10% of its steps is not archived (cron retries it next time)
+# Bump when derive_run_fields changes what it computes: runs derived by an older version are re-derived by
+# scripts/rederive_archive.py (2: earth-relative winds + the cell blend + surveyed elevations, 2026-10-29)
+DERIVE_VERSION = 2
 # Every column derive_run_fields adds: strip these and derive again to recompute a run (tools/golden.py, fill.py)
 DERIVED = ["tmax_k", "slr_kuchera", "snow_in", "snow_in_raw", "z_ground_m", "t_stn_c", "tw_stn_c", "tw_eff_c",
            "rh_sub", "dry_nudge", "tmax_stn_k", "freezing_level_m", "snow_level_m", "snow_frac", "flow_dir700",
            "flow_spd700_kt", "flow", "thermal", "regime", "lapse_700_500", "lake_delta_c", "front_time", "precip_mode",
-           "cell_blend"]
+           "cell_blend", "derive_version"]
 
 
 def forecast_dir(root: Path | None = None) -> Path:
@@ -44,7 +47,8 @@ def derive_run_fields(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Everything computed from a run's raw pulled fields: THE place to look when a derived number seems wrong.
 
     Steps, in order:
-      0. cells.blend_points        coarse models (config model_cells): each resort point's pulled numbers become
+      0. winds.earth_winds         grid-relative u/v (HRRR, NAM Nest, NAM, RDPS) turned to true north, once (uv_earth)
+         cells.blend_points        coarse models (config model_cells): each resort point's pulled numbers become
                                    the bilinear blend of the 2x2 cells around it (cell rows untouched); cell_blend
       1. regimes.add_step_regimes  700 mb flow per step: flow_dir700, flow (SW/W/NW/N/S/E), thermal, regime
       2. modes.add_precip_modes    frontal / post-frontal / cellular / lake-effect per step: precip_mode, front_time
@@ -52,12 +56,10 @@ def derive_run_fields(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     Steps 1-3 add columns and leave the pulled ones alone. Ensembles are archived as precip only (no
     temperatures), so they get step 0 (blended precip per member) and nothing else.
     """
-    df = cellblend.blend_points(df, cfg)
-    if not _temp_cols(df):
-        return df
-    df = regimes.add_step_regimes(df, cfg["regimes"])
-    df = modes.add_precip_modes(df, cfg["regimes"])
-    return add_snowfall(df, cfg)
+    df = cellblend.blend_points(winds.earth_winds(df, cfg), cfg)
+    if _temp_cols(df):
+        df = add_snowfall(modes.add_precip_modes(regimes.add_step_regimes(df, cfg["regimes"]), cfg["regimes"]), cfg)
+    return df.assign(derive_version=DERIVE_VERSION)
 
 
 def _temp_cols(df: pd.DataFrame) -> dict[int, str]:

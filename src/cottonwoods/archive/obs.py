@@ -4,6 +4,7 @@
     data/archive/obs/synoptic/ym=2026-11.parquet   hourly Synoptic/MesoWest stations (e.g. Alta Collins), same layout
     data/archive/obs/ghcn/ym=2026-11.parquet       daily NOAA coop stations (e.g. ALTA); time_utc = end of the obs day
     data/archive/obs/sounding/ym=2026-11.parquet   weather-balloon soundings (KSLC), every reported level
+    data/archive/obs/rap/ym=2026-11.parquet        hourly RAP analyses: 700 mb wind + temperature at each point
     data/manual/new_snow.csv                        hand-entered ski-area / UAC snowfall
 
 SNOTEL values can be revised after the fact, so each run re-fetches a trailing window and later fetches
@@ -20,7 +21,7 @@ import pandas as pd
 
 from ..config import ARCHIVE_DIR, ENTRIES_DIR, MANUAL_DIR
 from ..timefmt import LOCAL_TZ
-from ..obs import ghcn, snotel, sounding, synoptic
+from ..obs import ghcn, rap, snotel, sounding, synoptic
 from .io import read_df, suffix_for, write_df
 
 KEY = ["station", "element", "time_utc"]  # these three together identify one observation
@@ -40,6 +41,10 @@ def ghcn_dir(root: Path | None = None) -> Path:
 
 def sounding_dir(root: Path | None = None) -> Path:
     return (root or ARCHIVE_DIR) / "obs" / "sounding"
+
+
+def rap_dir(root: Path | None = None) -> Path:
+    return (root or ARCHIVE_DIR) / "obs" / "rap"
 
 
 def to_utc(df: pd.DataFrame, tz_offset_hours: float) -> pd.DataFrame:
@@ -163,6 +168,31 @@ def archive_soundings(cfg: dict, begin: str, end: str, root: Path | None = None,
         total += merge_into_store(df, cfg, store=sounding_dir(root),
                                   key=["station", "time_utc", "pressure_hpa", "levelcode"])
     return total
+
+
+def archive_rap(cfg: dict, begin: str, end: str, root: Path | None = None, fetcher=None, now=None) -> int:
+    """Every hour in [begin, end) UTC that the store lacks and RAP has had time to post (config rap.lag_hours): its
+    700 mb analysis at every point (obs/rap.py), merged into the store. Analyses don't change, so stored hours are
+    never fetched again."""
+    now = pd.Timestamp(now or datetime.now(timezone.utc).replace(tzinfo=None))
+    hours = pd.date_range(pd.Timestamp(begin), (now - pd.Timedelta(hours=cfg["rap"]["lag_hours"])).floor("h"), freq="h")
+    hours = hours[hours < pd.Timestamp(end)]
+    have = load_rap(begin, end, root)
+    if not have.empty:
+        full = have.groupby("time_utc")["point"].nunique() >= len(cfg["points"])
+        hours = hours.difference(full[full].index)
+    if hours.empty:
+        return 0
+    df = (fetcher or rap.fetch)(list(hours), cfg["points"], cfg, workers=cfg["rap"]["workers"])
+    if df.empty:
+        return 0
+    df["fetched_at"] = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
+    return merge_into_store(df, cfg, store=rap_dir(root), key=["point", "time_utc"])
+
+
+def load_rap(start=None, end=None, root: Path | None = None) -> pd.DataFrame:
+    """Archived hourly RAP 700 mb analyses (time_utc, point, u_700_ms, v_700_ms, t_700_k)."""
+    return _load_store(rap_dir(root), start, end)
 
 
 def _load_store(base: Path, start=None, end=None) -> pd.DataFrame:

@@ -470,3 +470,56 @@ def test_a_storm_under_way_shows_observed_water_so_far_and_each_models_rest_of_s
     observed = next(line for line in lines if line.startswith("observed"))
     assert "0.12" in observed and "0.06*" in observed                    # first block done, second still going
     assert not any(line.startswith("observed") for line in storm_block_lines(st, fc, cfg, st.fc_start - pd.Timedelta(hours=1), osteps))
+
+
+def _rap(start, hours, dirs):
+    """Fake RAP analyses at alta: 20 m/s from each hour's direction (deg), -2 C."""
+    t = pd.date_range(start, periods=hours, freq="h")
+    d = np.radians(np.resize(dirs, hours))
+    return pd.DataFrame({"time_utc": t, "point": "alta", "u_700_ms": -20 * np.sin(d), "v_700_ms": -20 * np.cos(d),
+                         "t_700_k": 271.15})
+
+
+def test_observed_regime_is_rap_weighted_by_observed_precip_with_balloons_as_fallback():
+    from cottonwoods import regimes
+    cfg = make_cfg()
+    s, e = pd.Timestamp("2026-11-02 00:00"), pd.Timestamp("2026-11-03 00:00")
+    rap = _rap(s, 24, [220] * 16 + [270] * 8)                           # 16 h SW, then 8 h W
+    wet_late = hourly(s, [0.0] * 16 + [2.0] * 8)                        # all the snow fell in the W hours
+    o = regimes.observed_regime(s, e, "alta", rap, None, wet_late, cfg)
+    assert o["source"] == "rap" and regimes.dominant(o["flow"]) == "W warm"
+    dry = regimes.observed_regime(s, e, "alta", rap, None, hourly(s, [0.0] * 24), cfg)
+    assert regimes.dominant(dry["flow"]) == "SW warm"                   # nothing fell: every hour counts the same
+    snd = pd.DataFrame({"time_utc": [s, s + pd.Timedelta(hours=12)], "wdir700": [300.0, 300.0],
+                        "wspd700_kt": [30.0, 30.0], "t700_c": [-8.0, -8.0]})
+    sparse = regimes.observed_regime(s, e, "alta", rap.iloc[:6], snd, wet_late, cfg)
+    assert sparse["source"] == "balloons" and regimes.dominant(sparse["flow"]).startswith("NW")
+    assert regimes.dominant("SW warm 1C 30% -> W warm -2C 70%") == "W warm" and regimes.dominant(None) == ""
+
+
+def test_rap_hours_are_fetched_once_and_only_after_they_post():
+    from cottonwoods.archive.obs import archive_rap, load_rap
+    cfg = make_cfg()
+    asked = []
+
+    def fetcher(hours, points, cfg, workers=4):
+        asked.append(list(hours))
+        return pd.concat([_rap(h, 1, [250]).assign(point=p) for h in hours for p in points], ignore_index=True)
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        now = pd.Timestamp("2026-11-02 06:30")
+        archive_rap(cfg, "2026-11-02", "2026-11-03", root=root, fetcher=fetcher, now=now)
+        assert asked[0][-1] == pd.Timestamp("2026-11-02 04:00")         # 2 h lag: 05z and later not posted yet
+        archive_rap(cfg, "2026-11-02", "2026-11-03", root=root, fetcher=fetcher, now=now + pd.Timedelta(hours=2))
+        assert asked[1] == [pd.Timestamp("2026-11-02 05:00"), pd.Timestamp("2026-11-02 06:00")]   # only the new ones
+        assert load_rap(root=root)["time_utc"].nunique() == 7
+
+
+def test_every_model_is_credited_under_the_storms_forecast_regime_even_when_it_called_it_dry():
+    from cottonwoods.report import regime_table
+    cfg = make_cfg()
+    storms_t = pd.DataFrame({"storm_id": ["s1"], "fc_flow": ["SW warm 0C 20% -> W warm -1C 80%"]})
+    binned = pd.DataFrame({"storm_id": "s1", "point": "alta", "member": np.nan, "lead_to_start_hr": [6, 6],
+                           "model": ["RDPS", "NAMNEST"], "points": [2, 0]})
+    t = regime_table(binned, storms_t, cfg).set_index("model")
+    assert list(t.columns) == ["W warm"] and t.at["RDPS", "W warm"] == "+2.0 (1)" and t.at["NAMNEST", "W warm"] == "+0.0 (1)"
