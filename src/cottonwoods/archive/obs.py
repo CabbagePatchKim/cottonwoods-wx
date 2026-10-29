@@ -108,6 +108,12 @@ def catchup_begin(cfg: dict, today, days: int, root: Path | None = None):
     return max(begin, floor)
 
 
+def ghcn_begin(cfg: dict, today, begin):
+    """First day a scheduled NOAA coop fetch covers: `begin` (the SNOTEL catch-up), or further back to
+    obs_fetch.ghcn_days. Coop days post 1-3 weeks late, so the SNOTEL trailing days alone never reached them."""
+    return min(begin, today - timedelta(days=cfg["obs_fetch"]["ghcn_days"]))
+
+
 def with_retries(fetch, cfg: dict, label: str, log=print, sleep=time.sleep):
     """fetch() with up to obs_fetch.retries tries, obs_fetch.retry_wait_s apart (a DNS or server blip shouldn't cost a
     pass its observations). The last failure is raised."""

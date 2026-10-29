@@ -127,6 +127,15 @@ def test_scheduled_obs_fetch_reaches_back_to_the_newest_stored_hour_of_every_sit
         assert oa.catchup_begin(cfg, today, 3, root=root) == date(2026, 11, 17)
 
 
+def test_scheduled_noaa_coop_fetch_reaches_past_its_posting_delay():
+    from datetime import date
+    cfg = make_cfg()
+    today = date(2026, 10, 29)
+    cfg["obs_fetch"]["ghcn_days"] = 35
+    assert oa.ghcn_begin(cfg, today, date(2026, 10, 26)) == date(2026, 9, 24)   # ALTA's newest day was 10/22
+    assert oa.ghcn_begin(cfg, today, date(2026, 9, 1)) == date(2026, 9, 1)      # a longer SNOTEL catch-up wins
+
+
 def test_obs_fetch_is_retried_and_the_last_failure_is_raised():
     cfg = make_cfg()
     cfg["obs_fetch"].update(retries=3, retry_wait_s=60)

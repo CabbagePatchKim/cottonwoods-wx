@@ -66,6 +66,9 @@ Archive (`archive/`)
   (2026-10-27): `with_retries` (config obs_fetch: 3 tries, 60 s apart; a failed source no longer stops the others)
   and `catchup_begin` (a scheduled fetch reaches back to the newest stored SNOTEL gauge hour of every site, max
   obs_fetch.catchup_max_days 30). Laptop network often fails right after wake (2 SNOTEL connection errors 10/27).
+  NOAA COOP (ALTA) FIX (2026-10-29, in main, not released): every cloud pass logged "[obs:ghcn] ... 0 rows": NOAA
+  posts ALTA 1-3 weeks late (10/29: newest day 10/22) and the pass asked only the trailing ~4 days. Now
+  obs.ghcn_begin: a scheduled fetch re-asks the last obs_fetch.ghcn_days (35). Real check: 87 rows 9/24-10/22.
 
 Derivation (pure functions, all tested offline)
 - `profile.py`: profile at the station's real elevation, wet-bulb snow/mix/rain (NWS WR TA 19-01), dry-air nudge.
@@ -394,6 +397,23 @@ incl. Alta, archived as text) as an automated Alta-total source.
    factors borrow Mill-D North for Solitude. A DEM-average elevation per sub-cell was considered and rejected:
    points already use surveyed elevations. Start after a handful of verified storms (first: Sun 11/1 storm,
    verifies ~11/2-11/3); keep only if it beats raw water on verified storms (bin scores + water error).
+5a2. RDPS CELL BLEND: owner wants it (2026-10-29: "keep the blended"), NOT implemented yet. Why: RDPS (10 km rotated
+   grid) has no model_cells, so alta/snowbird/solitude/brighton/brighton_snotel all take ONE grid point (j369 i430,
+   40.605 -111.622, ground 9,204 ft, its local peak): identical water and profile; only Mill-D North differs (j370
+   i430, 7,834 ft). cells.py can't take it: its block is lat/lon lines named by lat/lon, the RDPS grid is rotated.
+   Method prototyped 10/29 on RDPS 10/29 06z (re-pulled with the 8 surrounding grid points): each point's
+   fractional (j, i) on the rotated grid (Newton steps on the local lat/lon Jacobian), bilinear weights of its 4
+   surrounding grid points, blend raw columns, derive. Result (storm from 10/30 18Z), nearest -> blended: ground
+   9,204 -> 8,600-8,900 ft; water 1.39" everywhere -> Alta 1.69 / Snowbird 1.63 / Solitude 1.24 / Brighton 1.58 /
+   Mill-D 0.23->0.67 / Brighton SNTL 1.40; snow Alta 7.5->6.4, Snowbird 0.9->0.0, Solitude 0.4->0.1, Brighton
+   5.0->4.5 (nearest re-derive matched the archive exactly). Building it = grid-index blocks in cells.py + the
+   Canada puller pulling those grid points + tests + release; only new runs get it.
+   RAIN/SNOW RULE STAYS 0 -> 1 C wet-bulb (owner 2026-10-29). Context: the owner says Alta 6" / Snowbird 0" from the
+   same water "won't happen". Cause: Snowbird's point is 492 ft lower (~0.7 C warmer wet-bulb) and the 1 C ramp spans
+   only ~700 ft. Tested on archived 10/29 runs: 0 -> 2 C gives RDPS Alta/Snowbird 8.8/4.0 (now 7.5/0.9), IFS 12.5/7.7
+   (11.6/5.4); GFS/NAM (cold) unchanged. Revisit with the weekend storm's Alta vs Snowbird gauges (marginal storm).
+   Owner, after checking the models' freezing levels (2026-10-29): likes the blended water correction, and the
+   blended snow totals "make sense now" (so the Alta/Snowbird split itself is accepted for this storm).
 5b. BUILT 2026-10-29 (in main, runs from the next release: pass step "Pattern maps", skipped by v1.4):
    src/cottonwoods/patterns.py + scripts/archive_patterns.py, config `patterns`, data/archive/patterns/model=*/init=*.
    GFS (0.25 deg source), GEFS mean + spread (0.5), IFS (00/12z) every 6 h to 240 h, all AREA-AVERAGED onto 1 deg,

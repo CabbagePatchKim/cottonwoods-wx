@@ -48,7 +48,7 @@ REQUIRED = {
     "verify": ["window_hours", "window_end_utc_hour", "swe_tolerance_hours", "event_swe_in", "snow_bins_in",
                "snow_bins_above", "bin_score", "bin_score_leads_hours", "score_runs_hours", "lead_bands_hours", "pillow_check"],
     "snotel_settings": ["tz_offset_hours"],
-    "obs_fetch": ["retries", "retry_wait_s", "catchup_max_days"],
+    "obs_fetch": ["retries", "retry_wait_s", "catchup_max_days", "ghcn_days"],
     "gauge": ["median_hours", "reset_drop_in"],
     "local_settings": ["standard_offset_hours"],
     "points": [],

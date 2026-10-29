@@ -144,6 +144,8 @@ obs_fetch:
   retries: 3              # tries per source per pass
   retry_wait_s: 60        # wait between tries (a DNS or network blip, e.g. right after the laptop wakes)
   catchup_max_days: 30    # furthest back a scheduled fetch reaches for missed hours
+  ghcn_days: 35           # NOAA coop (ALTA) posts ~1-3 weeks late (10/29: newest day 10/22), so its scheduled
+                          # fetch always re-asks this many days (one small request)
 
 # Precip gauge running totals -> real hourly precip (src/cottonwoods/gauge.py). The gauges wobble 0.1-0.2" with no
 # precip; summing every rise counted that as precip (30-300% too much). Rises above the highest level so far count.
