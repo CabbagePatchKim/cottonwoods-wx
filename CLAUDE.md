@@ -313,7 +313,14 @@ published 12 h data exists (Hive doi:10.7278/S50d-nsy5-8bje, CC BY-NC); Collins 
 route (api.weather.gov lists CLN but serves no observations; never automate the NWS page).
 
 ## Next session's agenda (owner: come back after the cloud has run v1.3 a couple of times)
-0. FIRST THING: report on BOTH passes before anything else.
+0. FIRST THING (session ended 2026-10-29 ~07:25Z, right after tagging v1.5): check v1.5's first passes in the bucket log
+   (data/logs/cloud/models_2026-10.log) + api.github.com .../pass.yml/runs: "Running approved release v1.5"; steps
+   models, rederive ("re-derived ~130 runs to version 2" once, then 0), patterns (~20 runs first time), obs (obs:rap),
+   storms, report, feed all success; feed meta code_version v1.5; README.md on cwx-feed = the v1.5 manual; the gate
+   (a scheduled run < 40 min after another pass shows job "pass" skipped; never both skipped). Then the weekend storm
+   (starts Fri 10/30 09:00 MDT): blocks + "observed so far" in data/reports/storms_latest.txt; verifies ~11/2-11/3 ->
+   Collins entries, first long-storm block scores. Older notes for this item below.
+0. (older) FIRST THING: report on BOTH passes before anything else.
    a. Cloud (bucket log data/logs/cloud/models_2026-10.log + api.github.com/repos/CabbagePatchKim/cottonwoods-wx/
       actions/workflows/pass.yml/runs): first v1.3 pass shows "Running approved release v1.3"; IFS archived again
       (10/28 12z onward, no FileNotFoundError); ENS back on 0.25 deg; solitude_snotel/brighton_snotel rows in new
