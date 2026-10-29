@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from cottonwoods.archive import fill
 from cottonwoods.archive import forecasts as fa
@@ -60,7 +59,7 @@ def test_a_missing_step_is_split_back_only_when_its_precip_adds_up():
         new = read_df(fa.run_path("HRRR", INIT, cfg, root))
         alta = new[new["point"] == "alta"].set_index("lead_hr")
         assert alta.loc[5, "qpf_mm"] == 1.0 and alta.loc[6, "qpf_mm"] == 1.0 and len(alta) == 48
-        assert new["qpf_mm"].sum() == pytest.approx(old["qpf_mm"].sum())
+        assert abs(new["qpf_mm"].sum() - old["qpf_mm"].sum()) < 1e-9
 
         fa.archive_run("HRRR", INIT, cfg, root=root, force=True, puller=_holey(fake_puller(), skip_hour=5))
 
@@ -68,8 +67,11 @@ def test_a_missing_step_is_split_back_only_when_its_precip_adds_up():
             df = fake_puller()(i, f, p, s)
             df.loc[df["lead_hr"].isin([5, 6]), "qpf_mm"] = 1.5
             return df
-        with pytest.raises(fill.FillMismatch, match="add to"):
+        try:
             fill.fill_run("HRRR", INIT, cfg, root=root, puller=wetter)
+            raise AssertionError("expected FillMismatch")
+        except fill.FillMismatch as e:
+            assert "add to" in str(e)
 
 
 def test_a_pull_that_disagrees_with_the_archive_changes_nothing():
@@ -79,8 +81,11 @@ def test_a_pull_that_disagrees_with_the_archive_changes_nothing():
         _archive(cfg, root, _holey(fake_puller(), field_at=("t_700_k", 3)))
         path = fa.run_path("HRRR", INIT, cfg, root)
         before = path.read_bytes()
-        with pytest.raises(fill.FillMismatch, match="t_850_k"):
+        try:
             fill.fill_run("HRRR", INIT, cfg, root=root, puller=fake_puller(tK=270.0))
+            raise AssertionError("expected FillMismatch")
+        except fill.FillMismatch as e:
+            assert "t_850_k" in str(e)
         assert path.read_bytes() == before
 
 

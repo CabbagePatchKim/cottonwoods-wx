@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from cottonwoods.archive import forecasts as fa
 from cottonwoods.verify import build_pairs
@@ -211,7 +210,7 @@ def test_grid_relative_winds_are_turned_to_true_north_once():
     west = pd.DataFrame({"model": "HRRR", "point": ["alta"], "u_700_ms": [10.0], "v_700_ms": [0.0]})
     once = winds.earth_winds(west, cfg)
     a = np.radians(winds.grid_angle("HRRR", cfg["points"]["alta"]["lat"], cfg["points"]["alta"]["lon"]))
-    assert once["u_700_ms"].iloc[0] == pytest.approx(10 * np.cos(a)) and once["v_700_ms"].iloc[0] == pytest.approx(10 * np.sin(a))
+    assert abs(once["u_700_ms"].iloc[0] - 10 * np.cos(a)) < 1e-9 and abs(once["v_700_ms"].iloc[0] - 10 * np.sin(a)) < 1e-9
     pd.testing.assert_frame_equal(winds.earth_winds(once, cfg), once)              # derived again: not turned twice
     gfs = winds.earth_winds(west.assign(model="GFS"), cfg)
     assert gfs["u_700_ms"].iloc[0] == 10.0 and gfs["uv_earth"].all()

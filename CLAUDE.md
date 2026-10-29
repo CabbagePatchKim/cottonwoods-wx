@@ -124,6 +124,10 @@ Observation clients (`obs/`): `snotel.py` (AWDB), `synoptic.py` (CLN, needs toke
 - Change behavior in ONE place: a new derived field goes in derive_run_fields' chain, a new model in registry.py +
   a puller returning the `fields.py` columns, a new threshold in config (and `config.REQUIRED`), never a code default.
 - Edit, don't rewrite: modify the function that owns the behavior; don't add a second copy "for now".
+- Tests never import pytest: CI (tests.yml) runs tests/run_offline.py in environment-ci.yml, which has no pytest.
+  Use `abs(a - b) < 1e-9` and try/except + AssertionError. 10/29: four new files imported pytest and CI failed on
+  every commit from 6a01f7f to 5e9b983 unnoticed. After every push, CHECK the tests.yml run (api.github.com/repos/
+  CabbagePatchKim/cottonwoods-wx/actions/workflows/tests.yml/runs); never tag a commit whose CI isn't green.
 - Behavior-preserving refactors: snapshot outputs first (re-derive archived runs + render both reports), refactor,
   confirm identical. Intended behavior changes are reported to the owner separately.
 - Every fix or feature gets an offline test in the matching `tests/test_<area>.py` (helpers in `tests/helpers.py`);

@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from cottonwoods.archive import forecasts as fa
 
@@ -404,7 +403,7 @@ def test_storm_blocks_sit_on_the_fixed_00z_12z_grid_and_add_up_to_the_storm():
     steps = pd.DataFrame({"valid_start": hours[:-1], "valid_end": hours[1:], "snow_in": np.arange(len(hours) - 1.0)})
     got = blocks.run_blocks(steps, blk, "snow_in")
     assert {c for _, c in got} == {blocks.FULL}
-    assert sum(v for v, _ in got) == pytest.approx(window_total(steps, s, e, "snow_in"))
+    assert abs(sum(v for v, _ in got) - window_total(steps, s, e, "snow_in")) < 1e-9
 
 
 def test_a_short_or_late_run_fills_the_blocks_it_reaches():
@@ -415,7 +414,7 @@ def test_a_short_or_late_run_fills_the_blocks_it_reaches():
         return pd.DataFrame({"valid_start": t[:-1], "valid_end": t[1:], "snow_in": 0.5})
     short = blocks.run_blocks(run("2026-10-30 12:00", "2026-10-31 18:00"), blk, "snow_in")    # ends mid-block
     assert [c for _, c in short] == [blocks.FULL, blocks.FULL, blocks.PART, blocks.NONE]
-    assert short[2][0] == pytest.approx(3.0)                                                  # its 6 hours only
+    assert abs(short[2][0] - 3.0) < 1e-9                                                  # its 6 hours only
     late = blocks.run_blocks(run("2026-10-31 06:00", "2026-11-02 00:00"), blk, "snow_in")     # began mid-storm
     assert [c for _, c in late] == [blocks.NONE, blocks.PART, blocks.FULL, blocks.FULL]
 
@@ -451,8 +450,8 @@ def test_every_gauged_point_is_scored_and_runs_are_scored_on_the_blocks_they_cov
         assert len(alta[alta["init"] == pd.Timestamp("2026-11-01 12:00")]) == 2   # both blocks of the storm
         late = alta[alta["init"] == pd.Timestamp("2026-11-02 06:00")]
         assert list(late["block_start"]) == [pd.Timestamp("2026-11-02 12:00")]   # only the block after its start
-        assert late["fc_water_in"].iloc[0] == pytest.approx(12 * 0.5 / 25.4)
-        assert late["obs_water_in"].iloc[0] == pytest.approx(0.6)
+        assert abs(late["fc_water_in"].iloc[0] - 12 * 0.5 / 25.4) < 1e-9
+        assert abs(late["obs_water_in"].iloc[0] - 0.6) < 1e-9
 
 
 def test_a_storm_under_way_shows_observed_water_so_far_and_each_models_rest_of_storm():

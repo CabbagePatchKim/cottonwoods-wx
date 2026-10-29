@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pytest
 import xarray as xr
 
 from cottonwoods import bucket, patterns
@@ -59,8 +58,11 @@ def test_a_run_is_archived_once_and_only_when_nearly_complete():
     init = datetime(2026, 10, 29)
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        with pytest.raises(RuntimeError, match="still posting"):
+        try:
             patterns.archive_pattern("GFS", init, cfg, root=root, puller=lambda *a, **k: full.iloc[:20])
+            raise AssertionError("expected RuntimeError")
+        except RuntimeError as e:
+            assert "still posting" in str(e)
         path, status = patterns.archive_pattern("GFS", init, cfg, root=root, puller=lambda *a, **k: full)
         assert status == "archived" and patterns.load_pattern("GFS", init, cfg, root)["lead_hr"].nunique() == 40
         assert patterns.archive_pattern("GFS", init, cfg, root=root, puller=None)[1] == "exists"
