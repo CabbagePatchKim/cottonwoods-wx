@@ -211,9 +211,12 @@ Each published version puts its own copy of this manual here, so this list is cu
   ensemble blend the 4 grid points around each resort (higher resorts no longer get less snow from landing in a
   different grid cell); a storm leaves `storms.json` once its window ends; runs that start after a storm began have
   `null` amounts and `covers_full_storm: false`; GEFS is not blended.
-- **Next version:** `flow` text corrected for HRRR, NAM Nest, NAM and RDPS runs. Their 700 mb winds were read 7-18
+- **v1.5:** `flow` text corrected for HRRR, NAM Nest, NAM and RDPS runs. Their 700 mb winds were read 7-18
   degrees off true north, so a wind near a boundary could carry the wrong direction label (`SW` instead of `W`).
-  Snow and water amounts are unchanged.
+  A run that lost a few values to a download timeout now gets them back from the model's own files a pass or two
+  later, so its amounts can change by a tenth of an inch or so after it first appears (the corrected number is the
+  model's). No fields were added, removed or renamed. This manual is now published with every version as the
+  README of the feed's repository.
 
 ## 10. Credits and licences
 
