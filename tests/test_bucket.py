@@ -2,7 +2,7 @@
 import hashlib
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from cottonwoods import bucket
@@ -92,3 +92,17 @@ def test_settings_problems_are_named_without_showing_values():
     problems = bucket.check_env(bad)
     assert len(problems) == 2 and "AWS_SECRET_ACCESS_KEY is not set" in problems
     assert not any("topsecret" in p or "aaaa" in p for p in problems)
+
+
+def test_push_never_overwrites_a_bucket_file_changed_after_the_local_copy():
+    s3 = FakeS3()
+    with tempfile.TemporaryDirectory() as d:
+        data = Path(d)
+        _write(data, "archive/entries.csv", "stale copy pulled at the start of a pass")
+        s3.objects["data/archive/entries.csv"] = b"the owner's entry, sent during the pass"
+        s3.modified = datetime.now(timezone.utc) + timedelta(minutes=5)    # changed in the bucket after the pull
+        kept = []
+        assert bucket.push(s3, "b", data, CCFG, log=kept.append) == 0
+        assert s3.objects["data/archive/entries.csv"] == b"the owner's entry, sent during the pass"
+        assert "kept the bucket's newer archive/entries.csv" in kept[0]
+        assert bucket.push(s3, "b", data, CCFG, only=["archive/entries.csv"]) == 1      # sent on purpose: goes up

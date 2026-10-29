@@ -6,7 +6,9 @@
           reads them), so a fresh machine stays fast.
           A local file NEWER than the bucket's copy is never overwritten (the laptop may have archived more since
           the last push); it's counted as "kept".
-    push  data/ -> bucket: only files that are new or changed. NOTHING is ever deleted from the bucket.
+    push  data/ -> bucket: only files that are new or changed. NOTHING is ever deleted from the bucket, and a
+          bucket file changed AFTER the local copy was written is never overwritten (2026-10-29: a pass that pulled
+          before the owner's Collins entry arrived pushed its stale copy back over it at the end of the pass).
 
 What's synced is config `cloud` (dirs, exclude patterns). Credentials and the bucket come from the environment,
 never from the code or config: CWX_BUCKET, CWX_S3_ENDPOINT, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY.
@@ -116,10 +118,12 @@ def pull(s3, bucket: str, data_dir: Path, ccfg: dict, now: datetime) -> tuple[in
     return got, old, kept
 
 
-def push(s3, bucket: str, data_dir: Path, ccfg: dict, only: list[str] | None = None) -> int:
-    """Upload what's new or changed. Returns the number uploaded. Never deletes anything in the bucket.
+def push(s3, bucket: str, data_dir: Path, ccfg: dict, only: list[str] | None = None, log=print) -> int:
+    """Upload what's new or changed. Returns the number uploaded. Never deletes anything in the bucket, and keeps a
+    bucket file that changed after the local file was last written (someone else's newer copy).
     only: paths under data/ (e.g. ["processed/regime_factors.csv"]) to upload just those files. Use it from the
-    laptop once the cloud runs the passes, so the laptop's older archive files never overwrite the cloud's."""
+    laptop once the cloud runs the passes, so the laptop's older archive files never overwrite the cloud's. Files
+    named this way are sent on purpose (send_entries.bat), so they go up even if the bucket's copy is newer."""
     remote = remote_files(s3, bucket)
     sent = 0
     for f in sorted(Path(data_dir).rglob("*")):
@@ -127,6 +131,9 @@ def push(s3, bucket: str, data_dir: Path, ccfg: dict, only: list[str] | None = N
         if not f.is_file() or not wanted(rel, ccfg) or (only is not None and rel not in only):
             continue
         if rel in remote and same(f, *remote[rel][:2]):
+            continue
+        if only is None and rel in remote and remote[rel][2] > f.stat().st_mtime:
+            log(f"[bucket] kept the bucket's newer {rel} (changed there after this copy was written)")
             continue
         s3.upload_file(str(f), bucket, PREFIX + rel)
         sent += 1

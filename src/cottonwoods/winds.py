@@ -48,7 +48,8 @@ def grid_angle(model: str, lat: float, lon: float) -> float:
 
 def earth_winds(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Turn the run's u_<lev>_ms / v_<lev>_ms to earth-relative at each point (its lat/lon from config points or the
-    cell name), unless already done (uv_earth). Models with earth-relative grids are only marked."""
+    cell name), unless already done (uv_earth). Models with earth-relative grids are only marked. A step missing one
+    of the pair loses the other too: one grid-relative component can't be turned (fill.py restores both)."""
     if df.empty or "model" not in df.columns or ("uv_earth" in df.columns and df["uv_earth"].all()):
         return df
     out = df.copy()

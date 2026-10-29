@@ -246,6 +246,18 @@ Running live, TWO places for now (side-by-side check before cutover):
   DOUBLE-RUN GATE (owner 2026-10-29): pass.yml job "gate" ends a SCHEDULED run created < 40 min after another pass
   (GitHub's late schedule after the Worker's dispatch, 02:50/02:51Z 10/29); manual/Worker runs always run; fails open
   (API error -> the pass runs). LIVE NOW: workflow files run from main, independent of the release tag.
+  FULL TEST OF EVERYTHING SINCE v1.4 (owner 2026-10-29, at 67e3a75+): 135 offline tests + ruff; then the BUCKET pulled
+  into a scratch data folder (COTTONWOODS_DATA) and every pass step run with main's code: fills (RDPS 10/29 00z 48,
+  10/28 18z 24; NAMNEST 10/27 18z + ENS 10/26 12z correctly refused: moved points / old 0.4 deg grid), rederive 124
+  runs (winds within +-6 deg of GFS/IFS after, 6-19 before; a step missing one wind component loses both: by design),
+  patterns 20 runs / 71 MB first catch-up (~12 min; later passes ~2 min), RAP 77 h, storms (blocks, labels, RAP flow,
+  balloons-disagree flag, FA, lead ranges, regime tables), model report, feed preview: SAME KEYS as live v1.4 in
+  meta/storms/daily, no score/obs keys. FOUND + FIXED: (1) BUCKET RACE: pass #13 (05:50Z) pulled before the owner's
+  Collins entry was pushed and its final push at 06:27Z overwrote it with its stale copy. bucket.push now keeps any
+  bucket file changed after the local copy was written (an explicit --only push, e.g. send_entries.bat, still
+  forces). Entry re-sent 07:01Z. UNTIL THE NEXT RELEASE the cloud still runs v1.4's push: send entries only when no
+  pass is running (passes ~:45-:15 after 02/05/08/11/14/17/20/23Z). (2) RAP's Herbie cache went to ~/data; now
+  data/raw/herbie_rap, cleared after each fetch.
 - RELEASED v1.4 (owner approved 2026-10-28, tag on 5827cd1, pushed ~22:17Z, CI tests green; first pass #9 22:28Z
   manual by the owner: "code v1.4", all steps success, feed v1.4 published, no new runs that pass so the feed still
   showed pre-release nearest-cell 12z numbers; blended numbers arrive with each model's next run). Contents:

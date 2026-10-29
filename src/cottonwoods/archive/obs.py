@@ -12,6 +12,7 @@ replace earlier ones for the same (station, element, hour). Synoptic stations ar
 """
 from __future__ import annotations
 
+import shutil
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -19,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from ..config import ARCHIVE_DIR, ENTRIES_DIR, MANUAL_DIR
+from ..config import ARCHIVE_DIR, ENTRIES_DIR, MANUAL_DIR, RAW_DIR
 from ..timefmt import LOCAL_TZ
 from ..obs import ghcn, rap, snotel, sounding, synoptic
 from .io import read_df, suffix_for, write_df
@@ -183,7 +184,11 @@ def archive_rap(cfg: dict, begin: str, end: str, root: Path | None = None, fetch
         hours = hours.difference(full[full].index)
     if hours.empty:
         return 0
-    df = (fetcher or rap.fetch)(list(hours), cfg["points"], cfg, workers=cfg["rap"]["workers"])
+    cache = RAW_DIR / "herbie_rap"                      # Herbie's index files; cleared once the values are read
+    try:
+        df = (fetcher or rap.fetch)(list(hours), cfg["points"], cfg, save_dir=str(cache), workers=cfg["rap"]["workers"])
+    finally:
+        shutil.rmtree(cache, ignore_errors=True)
     if df.empty:
         return 0
     df["fetched_at"] = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))

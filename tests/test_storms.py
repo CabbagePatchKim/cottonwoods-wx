@@ -502,7 +502,7 @@ def test_rap_hours_are_fetched_once_and_only_after_they_post():
     cfg = make_cfg()
     asked = []
 
-    def fetcher(hours, points, cfg, workers=4):
+    def fetcher(hours, points, cfg, save_dir=None, workers=4):
         asked.append(list(hours))
         return pd.concat([_rap(h, 1, [250]).assign(point=p) for h in hours for p in points], ignore_index=True)
     with tempfile.TemporaryDirectory() as d:
