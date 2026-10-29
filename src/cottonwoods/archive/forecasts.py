@@ -6,7 +6,8 @@
 
 Each file holds one row per (valid step, point) with step QPF, the layer temperatures, and per-step Kuchera
 snowfall. Files are never edited after the run is archived, so the archive is an honest record of what the
-model said at each init time (which is what trend and verification work needs).
+model said at each init time (which is what trend and verification work needs). The one exception is fill.py:
+values a download timeout left empty are filled from the same run's own files, checked to match the archive.
 """
 from __future__ import annotations
 
@@ -22,6 +23,11 @@ from ..models.registry import REGISTRY, check_cycle, get_puller
 from .io import read_df, suffix_for, write_df
 
 MIN_COMPLETE = 0.90  # a run missing more than 10% of its steps is not archived (cron retries it next time)
+# Every column derive_run_fields adds: strip these and derive again to recompute a run (tools/golden.py, fill.py)
+DERIVED = ["tmax_k", "slr_kuchera", "snow_in", "snow_in_raw", "z_ground_m", "t_stn_c", "tw_stn_c", "tw_eff_c",
+           "rh_sub", "dry_nudge", "tmax_stn_k", "freezing_level_m", "snow_level_m", "snow_frac", "flow_dir700",
+           "flow_spd700_kt", "flow", "thermal", "regime", "lapse_700_500", "lake_delta_c", "front_time", "precip_mode",
+           "cell_blend"]
 
 
 def forecast_dir(root: Path | None = None) -> Path:

@@ -178,6 +178,11 @@ archive:
   # covers a weekend away or a laptop left closed; for longer gaps run a one-off backfill on purpose. (29 days was
   # tried first: a month of GDPS alone is ~90 GB of downloads, mostly dry early-season runs of little value.)
   catchup_days: {RDPS: 3, GDPS: 3}
+  # Hole-filling (archive/fill.py, owner 2026-10-28): after its new runs, each scheduled pass re-pulls up to per_pass
+  # runs (per stream, newest first) that lost values to a download timeout, and fills ONLY the empty values from the
+  # run's own files, after checking every archived value matches the new pull. 72 h: every source still has the run
+  # (ECMWF open data keeps ~4 days). A run is tried max_tries times (data/archive/fills*.csv).
+  fill: {max_age_hours: 72, per_pass: 2, max_tries: 3}
 
 # Snow / mix / rain at each station, per model step, from the model's profile moved to the station's real
 # elevation (src/cottonwoods/profile.py). Wet-bulb (not air) temperature, because snow falling into dry air cools

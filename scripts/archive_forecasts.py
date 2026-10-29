@@ -62,13 +62,18 @@ def archive_here() -> dict:
     failures = runner.FailureLog(ARCHIVE_DIR / (f"failures_{args.stream}.csv" if args.stream else "failures.csv"))
     scheduled = not (args.init or args.start or args.journal or args.force)
     save_dir = str(RAW_DIR / (f"herbie_{args.stream}" if args.stream else "herbie"))
-    return runner.run_jobs(jobs, cfg, archive_run, failures, now, force=args.force, scheduled=scheduled,
-                           save_dir=save_dir, log=log)
+    n = runner.run_jobs(jobs, cfg, archive_run, failures, now, force=args.force, scheduled=scheduled,
+                        save_dir=save_dir, log=log)
+    if scheduled:   # then put back values recent runs lost to download timeouts (archive/fill.py)
+        fills = runner.FailureLog(ARCHIVE_DIR / (f"fills_{args.stream}.csv" if args.stream else "fills.csv"))
+        n["fill"] = runner.fill_holes(models, cfg, now, fills, save_dir=save_dir, log=log)
+    return n
 
 
 def summary(n: dict) -> int:
     log(f"\ndone: {n['archived']} archived, {n['present']} already present, {n['failed']} failed, "
-        f"{n['given_up']} skipped after {runner.MAX_TRIES} failed tries (data/archive/failures*.csv)")
+        f"{n['given_up']} skipped after {runner.MAX_TRIES} failed tries (data/archive/failures*.csv)"
+        + (f"; holes: {n['fill']['filled']} runs filled, {n['fill']['failed']} fills failed" if "fill" in n else ""))
     # Exit code 1 tells Task Scheduler the run failed, but only when nothing worked at all. One missing run
     # (still posting) is normal and shouldn't count as a failure.
     return 1 if n["failed"] and not n["archived"] and not n["present"] else 0

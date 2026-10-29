@@ -191,6 +191,16 @@ Running live, TWO places for now (side-by-side check before cutover):
   Also in main, same bundle: report labels for the internal SNOTEL points (points.*.label in stations.yaml):
   solitude_snotel shows as "Mill-D North SNOTEL" / "Mill-D SNTL" (owner: "solitude SNTL" was misleading; the gauge
   is ~5.7 km down-canyon of the resort), brighton_snotel as "Brighton SNOTEL". Keys unchanged (archive, verification).
+  Also in main, same bundle: HOLE-FILLING (owner 2026-10-28, "with accurate data"): archive/fill.py +
+  runner.fill_holes, run by every scheduled pass after its new runs (config archive.fill: runs <= 72 h old, 2 per
+  stream per pass, 3 tries each, data/archive/fills*.csv). Re-pulls the WHOLE run (precip is cumulative/buckets),
+  refuses if ANY archived value differs from the new pull (FillMismatch), fills only empty values and missing steps
+  (a merged step is split only if the new steps add up), re-derives, keeps fetched_at, adds filled_at /
+  filled_values, manifest note. Found by comparing laptop vs cloud archives 10/29: 29/37 runs identical, the rest
+  single timed-out files. Real-data check 10/29: HRRR 18z, RDPS 18z, GDPS 12z filled and matched the other
+  machine's independent copy value for value (GDPS resort rows differ only by the blend, re-derived). RDPS
+  06z/12z 10/28 correctly REFUSED: archived before the Solitude/Brighton move, so grid_dist differs. DERIVED list
+  moved to archive/forecasts.py (golden.py imports it; part of agenda 3b).
 - RELEASED v1.4 (owner approved 2026-10-28, tag on 5827cd1, pushed ~22:17Z, CI tests green; first pass #9 22:28Z
   manual by the owner: "code v1.4", all steps success, feed v1.4 published, no new runs that pass so the feed still
   showed pre-release nearest-cell 12z numbers; blended numbers arrive with each model's next run). Contents:

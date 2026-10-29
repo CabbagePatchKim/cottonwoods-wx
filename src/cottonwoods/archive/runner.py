@@ -5,6 +5,7 @@ scripts/archive_forecasts.py is only the command line around this module, so eac
     build_jobs        the to-do list of (model, init) for a pass: newest first, with long catch-up for Canada
     FailureLog        runs that keep failing are skipped by scheduled passes after MAX_TRIES (failures*.csv)
     run_jobs          archive each job, counting archived / already present / failed / given up
+    fill_holes        re-pull recent runs that lost values to a download timeout and fill them (archive/fill.py)
     split_streams     group models by server (registry.STREAMS) so each group can run in its own process
     run_streams       launch one child process per group and relay their output, prefixed
     clear_caches      delete the GRIB download caches once the point values are saved
@@ -161,6 +162,44 @@ def run_jobs(jobs, cfg: dict, archive, failures: FailureLog, now: datetime, forc
             tries = failures.failed(model, init, e)
             log(f"[fail]    {label} ({time.time() - t0:.0f}s, try {tries}): {e}")
         failures.save()  # after every run, so a crash mid-pass keeps the record
+    return n
+
+
+def fill_holes(models: list[str], cfg: dict, now: datetime, tries: FailureLog, root: Path | None = None,
+               save_dir: str | None = None, filler=None, log=print) -> dict:
+    """After the pass's new runs: fill the holes of the newest runs that have them (config archive.fill: runs at
+    most max_age_hours old, while every source still has them; per_pass runs per stream; a run is retried at most
+    max_tries times). Returns counts: filled, unchanged, failed."""
+    from .fill import count_holes, fill_run
+    from .forecasts import forecast_dir, _init_from_name
+    from .io import read_df
+
+    fcfg = cfg["archive"]["fill"]
+    filler = filler or fill_run
+    todo = []
+    for m in models:
+        for p in forecast_dir(root).glob(f"model={m}/init=*.*"):
+            init = _init_from_name(p).to_pydatetime()
+            if now - init <= timedelta(hours=fcfg["max_age_hours"]) and tries.tries(m, init) < fcfg["max_tries"]                     and count_holes(read_df(p), m, init, cfg):
+                todo.append((m, init))
+    n = {"filled": 0, "unchanged": 0, "failed": 0}
+    for m, init in sorted(todo, key=lambda job: job[1], reverse=True)[:fcfg["per_pass"]]:
+        label = f"{m} {init:%Y-%m-%d %Hz}"
+        try:
+            status, got, left = filler(m, init, cfg, root=root, save_dir=save_dir)
+        except Exception as e:  # noqa: BLE001  (a failed fill leaves the run as archived)
+            n["failed"] += 1
+            log(f"[fill]    {label} try {tries.failed(m, init, e)}: {e}")
+        else:
+            if status == "complete":          # filled meanwhile (e.g. by another machine)
+                continue
+            n[status] += 1
+            if left:
+                tries.failed(m, init, f"{status}, {left} holes left")
+            else:
+                tries.succeeded(m, init)
+            log(f"[fill]    {label}: {status}, {got} filled, {left} left")
+        tries.save()
     return n
 
 

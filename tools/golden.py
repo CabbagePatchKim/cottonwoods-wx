@@ -21,9 +21,7 @@ from cottonwoods.config import PROCESSED_DIR, load_config
 
 OUT = PROCESSED_DIR / "golden"
 NOW = pd.Timestamp("2026-10-27 05:00")
-DERIVED = ["tmax_k", "slr_kuchera", "snow_in", "snow_in_raw", "z_ground_m", "t_stn_c", "tw_stn_c", "tw_eff_c",
-           "rh_sub", "dry_nudge", "tmax_stn_k", "freezing_level_m", "snow_level_m", "snow_frac", "flow_dir700",
-           "flow_spd700_kt", "flow", "thermal", "regime", "lapse_700_500", "lake_delta_c", "front_time", "precip_mode"]
+from cottonwoods.archive.forecasts import DERIVED  # noqa: E402
 
 
 def derive(cfg):
