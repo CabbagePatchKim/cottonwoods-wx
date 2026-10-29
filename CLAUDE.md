@@ -189,7 +189,13 @@ Running live, TWO places for now (side-by-side check before cutover):
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
-- IN MAIN, NOT RELEASED (owner 2026-10-28: bundle with the next change, no v1.5 just for this): 82effa7 storm
+- RELEASED v1.5 (owner 2026-10-29 "make the change then publish 1.5", tag on 7860c9e, pushed ~07:20Z, CI green;
+  bucket backup of every forecast run + archive CSVs at backup/pre-v1.5/ (134 objects, outside the synced data/
+  prefix). Rollback: delete the v1.5 tag (the next pass runs v1.4) and copy backup/pre-v1.5/data/... back. First
+  v1.5 pass expected 08:45Z slot (also the gate's first real test): check "Running approved release v1.5", the
+  rederive + patterns + obs:rap steps, feed meta code_version v1.5, README.md on cwx-feed. Contents: everything
+  listed as "in main" below.
+- (was IN MAIN, now in v1.5; owner 2026-10-28: bundle with the next change, no v1.5 just for this): 82effa7 storm
   report matches the feed (ended storms = one "ENDED: awaiting verification" line; runs starting after the storm
   began show "-", not 0.00). render_storms now takes `now`. Cloud report keeps the old layout until the next release.
   Also in main, same bundle: report labels for the internal SNOTEL points (points.*.label in stations.yaml):
