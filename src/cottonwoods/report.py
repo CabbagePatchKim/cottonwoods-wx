@@ -198,6 +198,31 @@ def _amount(v: float, cover: str) -> str:
     return ("." if v < 0.05 else f"{v:.1f}") + ("*" if cover == blocks.PART else "")
 
 
+def _rest_of_storm(st, fc: pd.DataFrame, cfg: dict, point: str, now) -> dict[str, str]:
+    """{model: its snow at `point` from now to the storm's end}, "*" = its run ends sooner (deterministic runs)."""
+    rest = {}
+    for model, g in storm_runs(fc, cfg, st.fc_start):
+        gp = g[g["point"] == point]
+        if gp.empty or ("member" in gp.columns and gp["member"].notna().any()):
+            continue
+        a = max(pd.Timestamp(now), gp["valid_start"].min())
+        v = window_total(gp, a, st.fc_end, _snow_col(gp))
+        rest[model] = f"{v:.1f}" + ("*" if gp["valid_end"].max() < st.fc_end else "")
+    return rest
+
+
+def _observed_blocks(osteps: pd.DataFrame, blks, now) -> list[str]:
+    """Observed water (in) in each block so far: '' for blocks not begun, "*" for the block still going."""
+    seen = []
+    for bs, be, _ in blks:
+        if bs >= pd.Timestamp(now):
+            seen.append("")
+        else:
+            water = window_total(osteps, bs, min(be, pd.Timestamp(now))) / MM_PER_IN
+            seen.append(f"{water:.2f}" + ("*" if be > pd.Timestamp(now) else ""))
+    return seen
+
+
 def storm_block_lines(st, fc: pd.DataFrame, cfg: dict, now=None, osteps: pd.DataFrame | None = None) -> list[str]:
     """A storm in fixed 12 h blocks (blocks.py), kept to two small tables so long storms stay readable:
       1. storms.block_point (Alta) snow by model, plus their median and the ensembles' share of wet members;
@@ -230,15 +255,7 @@ def storm_block_lines(st, fc: pd.DataFrame, cfg: dict, now=None, osteps: pd.Data
     w = max(8, max(len(h) for h in head) + 2)
     row = lambda name, run, cells: (f"{f'{name:<8}{run}':<19}" + "".join(f"{c:>{w}}" for c in cells)).rstrip()  # noqa: E731
     going = now is not None and st.fc_start < pd.Timestamp(now) < st.fc_end
-    rest = {}
-    if going:
-        for model, g in storm_runs(fc, cfg, st.fc_start):
-            gp = g[g["point"] == point]
-            if gp.empty or ("member" in gp.columns and gp["member"].notna().any()):
-                continue
-            a = max(pd.Timestamp(now), gp["valid_start"].min())
-            v = window_total(gp, a, st.fc_end, _snow_col(gp))
-            rest[model] = f"{v:.1f}" + ("*" if gp["valid_end"].max() < st.fc_end else "")
+    rest = _rest_of_storm(st, fc, cfg, point, now) if going else {}
     tail = lambda m: f"  {rest.get(m, '-'):>6}" if going else ""  # noqa: E731
     out = [f"    12 h blocks: {labels.get(point, point)} snow (in) by model; * = run covers only part of the block"
            + (f"; rest = snow from now ({timefmt.clock(now, date=False)}) to the end" if going else ""),
@@ -246,14 +263,8 @@ def storm_block_lines(st, fc: pd.DataFrame, cfg: dict, now=None, osteps: pd.Data
     out += [row(m, timefmt.cycle(i), [_amount(v, c) for v, c in got]) + tail(m) for m, i, got in det]
     out.append(row("median", "", [_amount(*med(full[point][i])) for i in range(len(blks))]))
     if going and osteps is not None and not osteps.empty:
-        seen = []
-        for bs, be, _ in blks:
-            if bs >= pd.Timestamp(now):
-                seen.append("")
-            else:
-                water = window_total(osteps, bs, min(be, pd.Timestamp(now))) / MM_PER_IN
-                seen.append(f"{water:.2f}" + ("*" if be > pd.Timestamp(now) else ""))
-        out.append(row("observed", "water", seen).rstrip() + "  SNOTEL water (in) so far, not snow")
+        out.append(row("observed", "water", _observed_blocks(osteps, blks, now)).rstrip()
+                   + "  SNOTEL water (in) so far, not snow")
     out += [row(m, timefmt.cycle(i), ["-" if c == blocks.NONE else f"{v:.0%}" + ("*" if c == blocks.PART else "")
                                       for v, c in got]) + "  members wet" for m, i, got in ens]
     out += ["    12 h blocks: median snow (in) of the models covering the whole block, every point",
@@ -602,49 +613,64 @@ def render_verified(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataF
                      f"    bin score: right bin +{sc['reward']}, one bin off 0, each bin further -{sc['per_bin']}; "
                      f"FA = false alarm, miss = missed storm (>= {cfg['verify']['event_swe_in']:.2f}\" water): "
                      f"at most {sc['event_cap']:+d}"], []
-    labels = {p: v.get("label", p) for p, v in cfg["points"].items()}
     if v.empty:                                          # a dry spell: the season's bin scores still show
         lines = [f"=== Verified in the last {days} days: none"]
     for _, st in v.sort_values("final_start").iterrows():
-        lines.append(f"--- Storm {st.storm_id}: {timefmt.clock(st.final_start, weekday=True)} - "
-                     f"{timefmt.clock(st.final_end, weekday=True)}")
-        obs = f"SNOTEL {st.obs_water_in:.2f}\" water" if pd.notna(st.obs_water_in) else "SNOTEL -"
-        found = [m for m in (manual_totals(st, totals, cfg), hand_obs_totals(st, readings, cfg)) if m]
-        for man in found:
-            parts = [f"{man['new_snow_in']:.0f}\" snow" if pd.notna(man["new_snow_in"]) else "",
-                     f"{man['water_in']:.2f}\" water" if pd.notna(man["water_in"]) else ""]
-            obs += f" | {man['sources']}: " + ", ".join(p for p in parts if p)
-        if not found:
-            obs += " | Collins: not entered yet (data/entries/)"
-        lines.append(f"    observed: {obs}")
-        lines.append(_flow_line(st))
-        picks = bin_picks(binned[binned["point"] == st.point] if not binned.empty else binned, st.storm_id, cfg)
-        if picks:
-            first = next(iter(picks.values())).iloc[0]
-            lines.append(f"    observed bin: {first.obs_bin} ({first.obs_snow_in:.0f}\", {first.obs_snow_source})")
-        else:
-            lines.append("    bin score: waiting for an observed snow total (hand entry)")
-        main = scores[scores["point"] == st.point] if not scores.empty else scores
-        runs = last_runs_before(main, st.storm_id) if not main.empty else pd.DataFrame()
-        if runs.empty:
-            lines.append("    (no scored runs)")
-            continue
-        t = pd.DataFrame({"model": runs["model"], "init": runs["init"].map(timefmt.run),
-                          "lead": runs["lead_hr"].map(lambda h: f"{h:.0f} h before"),
-                          "water": runs["water_in"].map(lambda w: f"{w:.2f}\""),
-                          "snow": runs["snow_in"].map(lambda x: f"{x:.0f}\"" if pd.notna(x) else "")})
-        for kind, rows in picks.items():
-            by_model = {r.model: r for _, r in rows.iterrows()}
-            t[f"bin {kind}" if kind == "last" else f"bin at {kind}"] = runs["model"].map(lambda m: _bin_cell(by_model.get(m)))
-        tables.append(t.sort_values("model", key=lambda c: c.map(model_rank)))
+        lines += _verified_storm(st, scores, totals, readings, binned, block_scores, cfg, tables)
+    lines += _season_sections(binned, storms, block_scores, cfg, tables)
+    rendered = _aligned(tables)
+    return "\n".join(rendered[x[1]] if isinstance(x, tuple) else x for x in lines) + "\n"
+
+
+def _verified_storm(st, scores: pd.DataFrame, totals: pd.DataFrame, readings, binned: pd.DataFrame,
+                    block_scores, cfg: dict, tables: list) -> list:
+    """One verified storm's lines for render_verified: observed totals, flow, observed bin, last runs + every-run
+    tables. Tables are appended to `tables` (aligned together later) and stand in the lines as ("TABLE", index)."""
+    lines = [f"--- Storm {st.storm_id}: {timefmt.clock(st.final_start, weekday=True)} - "
+             f"{timefmt.clock(st.final_end, weekday=True)}"]
+    obs = f"SNOTEL {st.obs_water_in:.2f}\" water" if pd.notna(st.obs_water_in) else "SNOTEL -"
+    found = [m for m in (manual_totals(st, totals, cfg), hand_obs_totals(st, readings, cfg)) if m]
+    for man in found:
+        parts = [f"{man['new_snow_in']:.0f}\" snow" if pd.notna(man["new_snow_in"]) else "",
+                 f"{man['water_in']:.2f}\" water" if pd.notna(man["water_in"]) else ""]
+        obs += f" | {man['sources']}: " + ", ".join(p for p in parts if p)
+    if not found:
+        obs += " | Collins: not entered yet (data/entries/)"
+    lines += [f"    observed: {obs}", _flow_line(st)]
+    picks = bin_picks(binned[binned["point"] == st.point] if not binned.empty else binned, st.storm_id, cfg)
+    if picks:
+        first = next(iter(picks.values())).iloc[0]
+        lines.append(f"    observed bin: {first.obs_bin} ({first.obs_snow_in:.0f}\", {first.obs_snow_source})")
+    else:
+        lines.append("    bin score: waiting for an observed snow total (hand entry)")
+    main = scores[scores["point"] == st.point] if not scores.empty else scores
+    runs = last_runs_before(main, st.storm_id) if not main.empty else pd.DataFrame()
+    if runs.empty:
+        return lines + ["    (no scored runs)"]
+    t = pd.DataFrame({"model": runs["model"], "init": runs["init"].map(timefmt.run),
+                      "lead": runs["lead_hr"].map(lambda h: f"{h:.0f} h before"),
+                      "water": runs["water_in"].map(lambda w: f"{w:.2f}\""),
+                      "snow": runs["snow_in"].map(lambda x: f"{x:.0f}\"" if pd.notna(x) else "")})
+    for kind, rows in picks.items():
+        by_model = {r.model: r for _, r in rows.iterrows()}
+        t[f"bin {kind}" if kind == "last" else f"bin at {kind}"] = runs["model"].map(lambda m: _bin_cell(by_model.get(m)))
+    tables.append(t.sort_values("model", key=lambda c: c.map(model_rank)))
+    lines.append(("TABLE", len(tables) - 1))
+    labels = {p: v.get("label", p) for p, v in cfg["points"].items()}
+    every = all_runs_table(binned, scores, st.storm_id, cfg, labels, block_scores)
+    if not every.empty:
+        lines.append(f"    every run up to {cfg['verify']['score_runs_hours']} h before, every gauged point: "
+                     "average bin score and average snow error (w = water error, no observed snow there yet);"
+                     " 12 h blocks: each run on every block it covered (water, all points)")
+        tables.append(every)
         lines.append(("TABLE", len(tables) - 1))
-        every = all_runs_table(binned, scores, st.storm_id, cfg, labels, block_scores)
-        if not every.empty:
-            lines.append(f"    every run up to {cfg['verify']['score_runs_hours']} h before, every gauged point: "
-                         "average bin score and average snow error (w = water error, no observed snow there yet);"
-                         " 12 h blocks: each run on every block it covered (water, all points)")
-            tables.append(every)
-            lines.append(("TABLE", len(tables) - 1))
+    return lines
+
+
+def _season_sections(binned: pd.DataFrame, storms: pd.DataFrame, block_scores, cfg: dict, tables: list) -> list:
+    """The season tables at the end of render_verified: bin score totals by lead, by forecast regime, and 12 h blocks
+    by observed regime (tables appended to `tables`, as in _verified_storm)."""
+    lines = []
     season = bin_totals(binned, cfg)
     if not season.empty:
         lines += ["", "=== Bin score, all verified storms with an observed snow total (score, right bins); by lead "
@@ -663,5 +689,4 @@ def render_verified(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataF
             lines += ["", title]
             tables.append(table)
             lines.append(("TABLE", len(tables) - 1))
-    rendered = _aligned(tables)
-    return "\n".join(rendered[x[1]] if isinstance(x, tuple) else x for x in lines) + "\n"
+    return lines

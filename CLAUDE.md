@@ -170,6 +170,12 @@ rework); fixed season bin totals vanishing when no storm was verified in the las
 v1.2 + internal points): ruff/vulture clean, no new long functions; tidied feed.build_meta; offline suite measured
 at ~12-20 s (the "~10 min" could not be reproduced: likely a pass running at the same time); its two slowest tests
 sped up (real 2 s retry sleep -> injected sleep; nearest-index brute force 25 -> 8 points, grid built once).
+Sixth (2026-10-29, after v1.6 + freezing scores): ruff clean; vulture: era5 item + patterns.load_pattern (the reader
+for the planned pattern work, tested: keep), patterns.FIELDS removed (unused). Split report.render_verified (81 ->
+25 + _verified_storm 43 + _season_sections 23) and report.storm_block_lines (63 -> 49 + _rest_of_storm,
+_observed_blocks); freezing "wet" window moved from code to config verify.freezing_wet_hours. Golden IDENTICAL.
+Still just over 60 (cohesive): profile.station_profile 68, gfs._pull_run_aws 68, ghcn.fetch 62, regimes.phases 62,
+herbie_generic.pull_ensemble 60.
 OBSERVED WATER STANDARD, every site (owner, 2026-10-28): the precip GAUGE is primary (SNOTEL + Synoptic PREC via
 gauge.py, NOAA PRCP); a SNOTEL snow PILLOW (WTEQ) is the fallback (gauge missing AND >= min_snowpack_in on the pillow)
 and the cross-check. verify.observed_water is the one place for this rule; pairs carry gauge_obs_in, pillow_obs_in,

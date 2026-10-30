@@ -294,6 +294,8 @@ verify:
   # The season table also averages every run by how far ahead it was issued (hours before the storm), so a model is
   # only compared with others forecasting from as far out, and long-range calls get credit (owner, 2026-10-29)
   lead_bands_hours: [[0, 24], [24, 72], [72, 168]]
+  freezing_wet_hours: 12   # freezing-level scores: a balloon is "wet" with >= event_swe_in observed at the storm
+                           # point in this many hours centred on it (the marginal-storm cases)
   bin_score_leads_hours: [24, 72]   # besides each model's last run, the report scores its newest run at least this
                                     # far ahead of the storm, so short-range models don't win on lead time alone
 

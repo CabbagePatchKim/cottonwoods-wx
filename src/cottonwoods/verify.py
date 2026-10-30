@@ -295,7 +295,7 @@ def freezing_level_scores(fc: pd.DataFrame, snd: pd.DataFrame | None, osteps: pd
     without waiting for snow totals). Both are the highest height where the air crosses 0 C (MSL; the ground if it is
     below freezing all the way up). snd: sounding summaries (obs.sounding.summarize); osteps: observed precip steps at
     the point (storms.point_steps). Columns FREEZING_KEYS + lead_hr, fc_fl_ft, obs_fl_ft, err_ft (forecast minus
-    observed), wet (>= verify.event_swe_in observed in the 12 h centred on the balloon)."""
+    observed), wet (>= verify.event_swe_in observed in the verify.freezing_wet_hours centred on the balloon)."""
     cols = FREEZING_KEYS + ["lead_hr", "fc_fl_ft", "obs_fl_ft", "err_ft", "wet"]
     if fc.empty or snd is None or snd.empty or "freezing_level_m" not in fc.columns:
         return pd.DataFrame(columns=cols)
@@ -305,7 +305,7 @@ def freezing_level_scores(fc: pd.DataFrame, snd: pd.DataFrame | None, osteps: pd
     m = det[["model", "init", "valid_end", "freezing_level_m"]].merge(obs, left_on="valid_end", right_on="time_utc")
     if m.empty:
         return pd.DataFrame(columns=cols)
-    half, thr = pd.Timedelta(hours=6), cfg["verify"]["event_swe_in"]
+    half, thr = pd.Timedelta(hours=cfg["verify"]["freezing_wet_hours"] / 2), cfg["verify"]["event_swe_in"]
     wet = {t: osteps is not None and not osteps.empty and window_total(osteps, t - half, t + half) / MM_PER_IN >= thr
            for t in m["time_utc"].unique()}
     return pd.DataFrame({"model": m["model"], "init": m["init"], "time_utc": m["time_utc"],
