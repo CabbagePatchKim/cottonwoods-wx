@@ -1,6 +1,8 @@
-"""Which verified storms still need Alta Collins entries? Run by the Claude Code SessionStart hook
-(.claude/settings.local.json), so each session opens with a reminder; also fine by hand:
+"""Session-start reminders, run by the Claude Code SessionStart hook (.claude/settings.local.json); also fine by hand:
     python scripts/collins_due.py
+
+Always: the agreed plan (docs/PLAN.md, owner 2026-10-30), so each session opens by recalling it.
+Then: which verified storms still need Alta Collins entries.
 
 A storm "needs" entries when it verified (SNOTEL dry for storms.gap_hours) within storms.report_verified_days and
 nothing in data/entries/ (storm_totals.csv, collins_obs.npy/.csv) matches it. The newest storm list is taken from
@@ -50,12 +52,26 @@ def due(table: pd.DataFrame, cfg: dict, now: pd.Timestamp, totals: pd.DataFrame,
     return v.loc[missing].sort_values("final_start")
 
 
+def plan_context() -> str:
+    """The agreed plan (docs/PLAN.md), for the session's opening reply."""
+    plan = ROOT / "docs" / "PLAN.md"
+    if not plan.exists():
+        return ""
+    return ("AGREED PLAN (docs/PLAN.md, from the cottonwoods-wx SessionStart hook). At the start of your first reply, "
+            "remind the owner in two or three lines which step is next and that the plan is to measure before "
+            "building more; tick steps off in docs/PLAN.md as they finish.\n\n" + plan.read_text(encoding="utf-8"))
+
+
 def main():
     cfg = load_config()
     now = pd.Timestamp.now(tz="UTC").tz_localize(None)
+    plan = plan_context()
     table, source = newest_storms()
     need = due(table, cfg, now, load_storm_totals(), load_hand_obs())
     if need.empty:
+        if plan:
+            print(json.dumps({"systemMessage": "Reminder: the agreed plan is in docs/PLAN.md",
+                              "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": plan}}))
         return
     lines = [f"- storm {st.storm_id}: {timefmt.clock(st.final_start, weekday=True)} to "
              f"{timefmt.clock(st.final_end, weekday=True)}" for _, st in need.iterrows()]
@@ -65,8 +81,9 @@ def main():
                "else, prompt the owner to enter Collins readings for them (12 h boards and/or hourly from "
                "https://www.weather.gov/wrh/timeseries?site=CLN, read by eye; format in data/entries/README.txt; "
                "offer to type them into data/entries/collins_obs.npy for the owner, then run scripts/send_entries.bat).")
-    print(json.dumps({"systemMessage": f"Collins entries due for {len(need)} verified storm(s)",
-                      "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}}))
+    print(json.dumps({"systemMessage": f"Collins entries due for {len(need)} verified storm(s); plan in docs/PLAN.md",
+                      "hookSpecificOutput": {"hookEventName": "SessionStart",
+                                             "additionalContext": context + ("\n\n" + plan if plan else "")}}))
 
 
 if __name__ == "__main__":

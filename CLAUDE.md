@@ -351,6 +351,9 @@ published 12 h data exists (Hive doi:10.7278/S50d-nsy5-8bje, CC BY-NC); Collins 
 route (api.weather.gov lists CLN but serves no observations; never automate the NWS page).
 
 ## Next session's agenda (owner: come back after the cloud has run v1.3 a couple of times)
+**START HERE: docs/PLAN.md** (agreed 2026-10-30, shown by the SessionStart hook): measure before building more.
+Finish the v1.7 dry run + release; let the weekend storm verify; then NWS PNSSLC Collins storm totals; then the
+backfill; then keep / fix / drop. No new features until then. Tick its steps off as they finish.
 0. FIRST THING (session ended 2026-10-29 ~07:25Z, right after tagging v1.5): check v1.5's first passes in the bucket log
    (data/logs/cloud/models_2026-10.log) + api.github.com .../pass.yml/runs: "Running approved release v1.5"; steps
    models, rederive ("re-derived ~130 runs to version 2" once, then 0), patterns (~20 runs first time), obs (obs:rap),
