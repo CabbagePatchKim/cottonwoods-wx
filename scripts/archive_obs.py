@@ -19,8 +19,9 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 
+from cottonwoods import timefmt
 from cottonwoods.archive.obs import (archive_ghcn, archive_rap, archive_snotel, archive_synoptic, catchup_begin, ghcn_begin,
-                                     with_retries)
+                                     latest_obs, with_retries)
 from cottonwoods.obs import synoptic
 from cottonwoods.config import ensure_dirs, load_config
 
@@ -59,10 +60,11 @@ else:
 # Each source is tried obs_fetch.retries times per span. A failure doesn't stop the other sources (the storm step
 # after this one uses whatever is stored); the exit code is 1 if anything still failed, so the log shows it.
 sources = [("obs", archive_snotel, spans)]
+status = {}                # source tag -> what happened, shown in the table at the end
 # Synoptic/MesoWest stations (Alta Collins). cfg.get() returns None instead of erroring if the section is missing.
 # With no token we skip rather than fail, so the SNOTEL half still counts as success.
 if cfg.get("synoptic") and not synoptic.token():
-    print("[obs] SYNOPTIC_TOKEN not set; skipped Synoptic stations (Alta Collins).")
+    status["obs:synoptic"] = "skipped (no SYNOPTIC_TOKEN)"
 elif cfg.get("synoptic"):
     sources.append(("obs:synoptic", archive_synoptic, spans))
 # NOAA GHCN-Daily (ALTA). Daily values, so even a 20-year span is only ~7,000 rows per element.
@@ -75,9 +77,32 @@ failed = False
 for tag, archive, source_spans in sources:
     for begin, end in source_spans:
         try:
-            n = with_retries(lambda: archive(cfg, begin, end), cfg, f"{tag} {begin}..{end}")
-            print(f"[{tag}] {begin}..{end}: store now holds {n:,} rows in touched months")
-        except Exception as e:  # noqa: BLE001
+            with_retries(lambda: archive(cfg, begin, end), cfg, f"{tag} {begin}..{end}")
+            status.setdefault(tag, f"ok ({begin}..{end})")
+        except Exception as e:  # noqa: BLE001  (failures print in full; the tables follow)
             print(f"[{tag}] {begin}..{end} FAILED after {cfg['obs_fetch']['retries']} tries: {e}")
+            status[tag] = "FAILED (see above)"
             failed = True
+
+# The step's output is two tables (owner, 2026-10-30): each source's status and newest value, then each site's latest
+now = datetime.now(timezone.utc).replace(tzinfo=None)
+newest, sites = latest_obs(cfg, now)
+names = {"SNOTEL": "obs", "NOAA ALTA": "obs:ghcn", "RAP (observed flow)": "obs:rap"}
+when = lambda t: timefmt.clock(t, weekday=True) if t == t else "-"   # noqa: E731  (t != t: NaT)
+print(f"Observations, {timefmt.now_line(now)}. Times Mountain.")
+rows = [(r.source, status.get(names[r.source], "not fetched"),
+         f"{timefmt.local(r.newest):%a %m/%d} (observer day)" if r.source == "NOAA ALTA" and r.newest == r.newest
+         else when(r.newest)) for r in newest.itertuples()]
+rows += [("Synoptic (Collins)", status["obs:synoptic"], "-")] if "obs:synoptic" in status and "skipped" in status["obs:synoptic"] else []
+print(f"{'source':<22}{'status':<30}newest")
+print("\n".join(f"{a:<22}{b:<30}{c}" for a, b, c in rows))
+if "NOAA ALTA" in set(newest["source"]):
+    print("  (NOAA ALTA = the observer's day ending 6 pm MST; it posts 1-3 weeks late)")
+print(f"\n{'site':<20}{'elev ft':>8}  {'newest':<22}{'water 6 h':>10}{'24 h':>7}{'depth':>7}{'pillow':>8}{'temp':>6}")
+f = lambda x, spec, unit="": "-" if x != x else format(x, spec) + unit   # noqa: E731
+for r in sites.itertuples():
+    print(f"{r.site:<20}{r.elev_ft:>8,}  {when(r.newest):<22}{f(r.water_6h_in, '.2f', chr(34)):>10}"
+          f"{f(r.water_24h_in, '.2f', chr(34)):>7}{f(r.depth_in, '.0f', chr(34)):>7}{f(r.pillow_in, '.1f', chr(34)):>8}"
+          f"{f(r.temp_f, '.0f', 'F'):>6}")
+print("  water = gauge precip (noise-filtered, gauge.py); pillow = snow water on the pillow (blank without snowpack)")
 sys.exit(1 if failed else 0)

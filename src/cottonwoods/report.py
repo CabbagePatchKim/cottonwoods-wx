@@ -13,11 +13,13 @@ import pandas as pd
 from . import blocks, regimes, timefmt
 from .config import PROCESSED_DIR
 from .storms import bin_scores, hand_obs_totals, manual_totals, run_flow, run_modes
+from .models.registry import kind_of
 from .windows import window_total, within_lead
 from .units import FT_PER_M, MM_PER_IN
 
 # Display order: short-range high-res first, then global, then ensembles
-MODEL_ORDER = ["HRRR", "NAMNEST", "NAM", "RDPS", "GFS", "GDPS", "IFS", "GEFS", "ENS"]
+MODEL_ORDER = ["HRRR", "RRFS", "NAMNEST", "NAM", "RDPS", "GFS", "GDPS", "IFS", "UUHRRR", "UUGFS", "GEFS", "ENS",
+               "RRFSENS"]
 
 
 def _aligned(tables: list[pd.DataFrame]) -> list[str]:
@@ -56,6 +58,7 @@ def model_days(fc: pd.DataFrame, cfg: dict, point: str, days: int | None = None,
     or None where the run doesn't cover the whole day, or the day ends past the run's shown lead (config report:
     deterministic 168 h, ensembles 240 h for the 8-10 day tail). Used by the text report and the website feed."""
     rcfg = cfg["report"]
+    fc = fc[fc["model"].map(kind_of) != "guidance"]      # guidance has its own table in the storm reports
     fc = latest_runs(fc[fc["point"] == point])
     start = start or pd.Timestamp.now(tz="UTC").tz_localize(None)
     wins = day_windows(start, days or rcfg["days"], cfg["verify"]["window_end_utc_hour"])
@@ -290,7 +293,8 @@ def storm_models(st, fc: pd.DataFrame, cfg: dict) -> list[dict]:
         r = {"model": model, "init": g["init"].iloc[0], "valid_from": g["valid_start"].min(),
              "valid_to": g["valid_end"].max(), "ensemble": bool("member" in g.columns and g["member"].notna().any()),
              "late": bool(g["valid_start"].min() > s), "points": {}, "snow_level_m": None,
-             "flow": run_flow(g, st.point, s, e, cfg), "modes": run_modes(g, st.point, s, e, cfg)}
+             "flow": run_flow(g, st.point, s, e, cfg), "modes": run_modes(g, st.point, s, e, cfg),
+             "kind": kind_of(model)}
         r["full"] = not r["late"] and bool(r["valid_to"] >= e)
         for p in cfg["points"]:
             gp = g[g["point"] == p]
@@ -352,10 +356,13 @@ def _storm_table(models: list[dict], points: list[str], tail_w: dict[str, int],
                 + "".join(f"  {v:<{tail_w[k]}}" for k, v in tail.items())).rstrip()
 
     out = [" " * 38 + "".join(_short((labels or {}).get(p, p)).rjust(14) for p in points)]
-    for group, names in (([r for r in models if not r["ensemble"]], ("water", "snow")),
-                         ([r for r in models if r["ensemble"]], ("wet/N", "mean"))):
+    # the three kinds never mix (owner, 2026-10-30): models, then guidance (U of U, Alta only), then ensembles
+    for head, group, names in (("model", [r for r in models if r.get("kind", "deterministic") == "deterministic"
+                                          and not r["ensemble"]], ("water", "snow")),
+                               ("guidance", [r for r in models if r.get("kind") == "guidance"], ("water", "snow")),
+                               ("model", [r for r in models if r["ensemble"]], ("wet/N", "mean"))):
         if group:
-            out.append(line("model", "run", "covers", [names] * len(points),
+            out.append(line(head, "run", "covers", [names] * len(points),
                             {k: k for k in tail_w} if not group[0]["ensemble"] else {}))
             out += [line(r["model"], timefmt.cycle(r["init"]),
                          "full storm" if r["full"] else f"from {timefmt.clock(r['valid_from'])}"

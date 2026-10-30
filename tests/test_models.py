@@ -231,3 +231,107 @@ def test_field_searches_that_find_nothing_are_left_out_not_fatal():
         assert field_files(FakeHerbie(), ["sfc", "pl", "cape"]) == [real]
     # ECMWF's grid is named, so a Herbie update can't switch the archive to the 0.1 deg split files
     assert SPECS["IFS"]["herbie"]["resolution"] == SPECS["ENS"]["herbie"]["resolution"] == "0p25"
+
+
+# --- model kinds, retirement, RRFS and the U of U guidance (owner, 2026-10-30) -----------------------------------
+
+UU_HRRR = """BASED ON 00Z 30-OCT-2026 INITIALIZED HRRR
+FHR  VALID MOUNTAIN TIME     AMB       ALT       IFF        AMB  ALT  CLN ATH20 ELBUT WBZ(ftMSL) CLN         CLN           CLN
+  1  07 PM Thu Oct 29 2026   SSE11G27  SSE10G19  SSW13G21   32F  35F  39F  44F  41F    9000FT     6:1/17%    0.00/0.00     0.0/ 0.0
+  2  08 PM Thu Oct 29 2026     S12G28    S10G19  SSW13G21   32F  35F  37F  41F  41F    8900FT     9:1/11%    0.10/0.10     0.9/ 0.9
+  3  09 PM Thu Oct 29 2026   SSE13G28    S09G19  SSW12G21   31F  34F  36F  39F  39F    9100FT    12:1/ 8%    0.20/0.30     2.4/ 3.3
+  4  10 PM Thu Oct 29 2026   SSE13G28    S09G19  SSW12G21   10F  11F  14F  17F  15F     <KSLC    14:1/ 7%    0.04/0.34     0.6/ 3.9
+"""
+UU_GFS = """FHR  VALID MOUNTAIN TIME     COLLINS T  MT BALDY T/RH  MT BALDY WIND       WETBULBZERO   SLR/H2O         1H QPF /  1H SNOW /  ACCUM QPF / ACCUM SNOW
+0    06 PM Thu Oct 29 2026   38F        33F /  41%     SSE   7 G  18 MPH   8300 FT       11:1 /  9%      0.00"  /   0.0"       0.00"    /   0.0"
+1    07 PM Thu Oct 29 2026   36F        32F /  51%     SSE  10 G  20 MPH   8300 FT       11:1 /  9%      0.05"  /   0.6"       0.05"    /   0.6"
+FORECAST HOURS 123-180
+FHR  VALID MOUNTAIN TIME     COLLINS T  MT BALDY T/RH  MT BALDY WIND       WETBULBZERO   SLR/H2O         3H QPF /  3H SNOW /  ACCUM QPF / ACCUM SNOW
+4    10 PM Thu Oct 29 2026   25F        21F /  68%       W  17 G  27 MPH   \u2264 KSLC        15:1 /  7%      0.10"  /   1.5"       0.15"    /   2.1"
+"""
+
+
+def test_every_model_has_a_kind_and_the_reports_build_from_deterministic_rows_only():
+    import pandas as pd
+    from cottonwoods.models import registry as r
+    assert r.kind_of("HRRR") == "deterministic" and r.kind_of("RRFS") == "deterministic" and r.kind_of("GFS raw") == "deterministic"
+    assert r.kind_of("UUHRRR") == "guidance" and r.kind_of("RRFSENS") == "ensemble" and r.kind_of("GEFS") == "ensemble"
+    assert set(r.models_of("guidance")) == {"UUHRRR", "UUGFS"} and r.REGISTRY["UUGFS"].based_on == "GFS"
+    assert {m for ms in r.STREAMS.values() for m in ms} == set(r.REGISTRY)       # every model has a download stream
+    fc = pd.DataFrame({"model": ["HRRR", "UUHRRR", "RRFSENS", "GEFS"], "member": [np.nan, np.nan, 1.0, 2.0]})
+    assert r.deterministic(fc)["model"].tolist() == ["HRRR"]
+
+
+def test_guidance_is_pulled_for_alta_only():
+    cfg = make_cfg()
+    assert list(fa.run_points("UUHRRR", cfg)) == ["alta"] and len(fa.run_points("RRFS", cfg)) == len(cfg["points"])
+
+
+def test_a_retired_model_queues_no_runs_from_its_retirement_on():
+    cfg = make_cfg()
+    cfg["archive"]["retired"] = {"NAM": "2026-11-03T12:00"}
+    before = recent_cycles("NAM", cfg, datetime(2026, 11, 3, 9), 2)
+    assert before == [datetime(2026, 11, 3, 6), datetime(2026, 11, 3, 0)]                  # still running
+    after = recent_cycles("NAM", cfg, datetime(2026, 11, 5, 12), 3)
+    assert after == [datetime(2026, 11, 3, 6), datetime(2026, 11, 3, 0), datetime(2026, 11, 2, 18)]   # its last runs
+    assert cycles_between("NAM", cfg, datetime(2026, 11, 3), datetime(2026, 11, 4))[-1] == datetime(2026, 11, 3, 6)
+    assert recent_cycles("HRRR", cfg, datetime(2026, 11, 5, 12), 1)[0] > datetime(2026, 11, 4)    # others unaffected
+
+
+def test_uu_guidance_text_becomes_model_steps_with_their_own_snow():
+    from cottonwoods.models import uu
+    cfg = make_cfg()
+    h = uu.parse_text("UUHRRR", UU_HRRR, datetime(2026, 10, 30))
+    assert h["lead_hr"].tolist() == [1, 2, 3, 4] and (h["point"] == "alta").all() and np.isnan(h["wbz_msl_m"].iloc[3])
+    assert abs(h["qpf_mm"].sum() - 0.34 * 25.4) < 1e-9 and abs(h["snow_issued_in"].tolist()[2] - 2.4) < 1e-9
+    assert h["slr_issued"].tolist() == [6.0, 9.0, 12.0, 14.0] and abs(h["wbz_msl_m"].iloc[0] - 9000 * 0.3048) < 1e-9
+    g = uu.parse_text("UUGFS", UU_GFS, datetime(2026, 10, 30))
+    assert g["lead_hr"].tolist() == [1, 4] and abs(g["snow_issued_in"].iloc[1] - 1.5) < 1e-9   # hour 0 dropped
+    assert np.isnan(g["wbz_msl_m"].iloc[1])                                     # "<= KSLC": below the valley, no height
+    d = fa.derive_run_fields(g, cfg)
+    assert (d["snow_in"] == d["snow_issued_in"]).all()                          # their snow, their ratio
+
+
+def test_utah_snow_ensemble_page_is_parsed_and_each_run_saved_once():
+    import tempfile
+    from pathlib import Path
+    from cottonwoods.models import uu
+    cfg = make_cfg()
+    html = ("<h2>Utah Snow Ensemble (Experimental) Initialized 1200 UTC 29 Oct 2026 (82 members)<br>Total Snowfall (in) "
+            "Guidance for 40.579 N</h2><table><thead><tr><th>&nbsp;</th><th>12 PM Thu 29 Oct 2026</th>"
+            "<th>06 PM Thu 29 Oct 2026</th></tr></thead><tbody><tr><th>P50</th><td>0.0</td><td>2.5</td></tr>"
+            "<tr><th>P90</th><td>0.1</td><td>\\-0.0</td></tr></tbody></table>")   # the page escapes "-" as "\-"
+    init, df = uu.parse_use(html)
+    assert init == datetime(2026, 10, 29, 12) and set(df["variable"]) == {"snow_total_in"}
+    p50 = df[df["stat"] == "p50"].set_index("time_utc")["value"]
+    assert p50[datetime(2026, 10, 30, 0)] == 2.5                                 # 6 PM MDT = 00z
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        assert uu.archive_use(cfg, root, fetch=lambda: html) == (init, "archived")
+        assert uu.archive_use(cfg, root, fetch=lambda: html)[1] == "exists"
+        assert uu.load_use(root=root)[0] == init
+
+
+def test_ensemble_members_with_temperatures_keep_their_own_precip_modes():
+    import pandas as pd
+    from cottonwoods import modes
+    cfg = make_cfg()["regimes"]
+    t = pd.date_range("2026-11-02", periods=16, freq="3h")                    # 48 h
+    wet = lambda hours: [2.0 if 3 * i in hours else 0.0 for i in range(16)]   # noqa: E731
+    one = lambda m, q: pd.DataFrame({"point": "alta", "member": m, "valid_start": t, "valid_end": t + pd.Timedelta(hours=3),   # noqa: E731
+                                     "qpf_mm": q, "t_700_k": 265.0, "t_500_k": 250.0, "flow_dir700": 250.0})
+    df = pd.concat([one(1.0, wet({0, 3})), one(2.0, wet({30, 33}))], ignore_index=True)   # member 2 a day later
+    out = modes.add_precip_modes(df, cfg)
+    m1 = out[out["member"] == 1.0]
+    assert m1[m1["qpf_mm"] > 0]["precip_mode"].notna().all()
+    # member 1 is dry when member 2 snows: mixed into one run, those hours would sit inside member 2's event
+    assert m1[m1["valid_start"] >= pd.Timestamp("2026-11-03 06:00")]["precip_mode"].isna().all()
+
+
+def test_rrfs_totals_since_init_are_found_at_whole_days_too():
+    import re
+    from cottonwoods.models.rrfs import since_init
+    assert re.search(since_init("APCP", 24), ":APCP:surface:0-1 day acc fcst:")
+    assert re.search(since_init("APCP", 48), ":APCP:surface:0-48 hour acc fcst:")
+    assert re.search(since_init("ASNOW", 13), ":ASNOW:surface:0-13 hour acc fcst:")
+    assert not re.search(since_init("APCP", 24), ":APCP:surface:23-24 hour acc fcst:")   # never the last hour only

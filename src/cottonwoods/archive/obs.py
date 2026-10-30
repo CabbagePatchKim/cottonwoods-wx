@@ -94,6 +94,32 @@ def archive_snotel(cfg: dict, begin: str, end: str, root: Path | None = None, fe
     return merge_into_store(df, cfg, root)
 
 
+def latest_obs(cfg: dict, now, root: Path | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """What the observations step shows (owner, 2026-10-30: tables, not logs). (newest, sites):
+      newest  per store: source, newest (UTC): SNOTEL hour, NOAA ALTA observer day end, RAP hour
+      sites   per SNOTEL site: site, elev_ft, newest (UTC), water_6h_in / water_24h_in (gauge, gauge.py, ending at its
+              newest hour), depth_in, pillow_in, temp_f (newest values)."""
+    from ..gauge import gauge_increments
+    since = pd.Timestamp(now) - pd.Timedelta(days=3)
+    sn, gh, rp = load_snotel(start=since, root=root), load_ghcn(start=since - pd.Timedelta(days=30), root=root), \
+        load_rap(start=since, root=root)
+    newest = pd.DataFrame([{"source": "SNOTEL", "newest": sn["time_utc"].max() if not sn.empty else pd.NaT},
+                           {"source": "NOAA ALTA", "newest": gh["time_utc"].max() if not gh.empty else pd.NaT},
+                           {"source": "RAP (observed flow)", "newest": rp["time_utc"].max() if not rp.empty else pd.NaT}])
+    rows = []
+    for site, v in cfg["snotel"].items():
+        s = sn[sn["site"] == site] if not sn.empty else sn
+        last = lambda el: s[(s["element"] == el) & s["value"].notna()].sort_values("time_utc")  # noqa: E731
+        prec = last("PREC")
+        end = prec["time_utc"].max() if len(prec) else pd.NaT
+        inc = gauge_increments(prec.set_index("time_utc")["value"], cfg["gauge"]) if len(prec) else pd.Series(dtype=float)
+        water = lambda h: float(inc[inc.index > end - pd.Timedelta(hours=h)].sum()) if len(inc) else np.nan  # noqa: E731
+        val = lambda el: float(last(el)["value"].iloc[-1]) if len(last(el)) else np.nan  # noqa: E731
+        rows.append({"site": v.get("name", site), "elev_ft": v.get("elev_ft"), "newest": end, "water_6h_in": water(6),
+                     "water_24h_in": water(24), "depth_in": val("SNWD"), "pillow_in": val("WTEQ"), "temp_f": val("TOBS")})
+    return newest, pd.DataFrame(rows)
+
+
 def catchup_begin(cfg: dict, today, days: int, root: Path | None = None):
     """First day a scheduled obs fetch covers: the trailing `days`, or further back to the newest gauge (PREC) hour
     every SNOTEL site already has, so passes that never fetched (laptop off, network down) are filled in. Reaches back

@@ -44,6 +44,7 @@ import numpy as np
 import pandas as pd
 
 from . import bins, blocks, modes, regimes, timefmt
+from .models.registry import deterministic
 from .windows import window_total, within_lead
 from .archive.io import write_df
 from .gauge import gauge_increments
@@ -121,9 +122,7 @@ def point_steps(obs: pd.DataFrame, cfg: dict) -> dict[str, pd.DataFrame]:
 def model_events(fc: pd.DataFrame, point: str, scfg: dict) -> pd.DataFrame:
     """Events in the newest run of each deterministic model at one point, within scfg max_lead_hours of its init:
     model, init, start, end, total_mm."""
-    fc = fc[fc["point"] == point]
-    if "member" in fc.columns:
-        fc = fc[fc["member"].isna()]
+    fc = deterministic(fc[fc["point"] == point])          # guidance and ensembles never set a storm's window
     rows = []
     for model, g in fc.groupby("model"):
         g = within_lead(g[g["init"] == g["init"].max()], scfg["max_lead_hours"])

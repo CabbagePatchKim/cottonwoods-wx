@@ -116,6 +116,16 @@ jobs:
         id: report
         continue-on-error: true
         run: set -o pipefail; python scripts/model_report.py 2>&1 | tee -a "$LOG"
+      # Verification gets its own step (owner, 2026-10-30: Storms got crowded). Releases from v1.7 write it in the
+      # Storms step (data/reports/verified_latest.txt); older ones still print it there, so only a file written in
+      # this pass (last 90 min) is shown.
+      - name: Verified
+        id: verified
+        continue-on-error: true
+        run: |
+          f=data/reports/verified_latest.txt
+          if [ -n "$(find "$f" -mmin -90 2>/dev/null)" ]; then cat "$f" | tee -a "$LOG"
+          else echo "(this release prints verification in the Storms step)"; fi
       - name: Website feed (approved releases only)
         id: feed
         continue-on-error: true

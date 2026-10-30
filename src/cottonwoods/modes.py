@@ -60,7 +60,9 @@ def add_precip_modes(df, cfg: dict):
     out["front_time"] = pd.NaT
     out["precip_mode"] = None
     wet_mm, gap = cfg["event_wet_mm"], pd.Timedelta(hours=cfg["event_gap_hours"])
-    for point, g in out.groupby("point"):
+    # one run's steps per point, and per member for an ensemble with temperatures (RRFSENS): members never mix
+    keys = ["point"] + (["member"] if "member" in out.columns and out["member"].notna().any() else [])
+    for _, g in out.groupby(keys):
         g = g.sort_values("valid_end")
         # Precip events at this point (wet steps less than `gap` apart, as in the storm tracker). The front is
         # searched for within each event (+-6 h), so an earlier system's front can't label this storm.

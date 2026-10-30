@@ -2,8 +2,9 @@
 members is not yet a tested probability ("40%" means 40% of members, until verified storms show how often it
 happens). Internal only, never in the feed.
 
-  ensembles  GEFS and ECMWF ENS members: the share whose storm water reaches each probs.water_in. Ensembles are
-             archived as water only, so each member's snow comes from its family's deterministic run (probs.families:
+  ensembles  GEFS, ECMWF ENS and RRFS ensemble members: the share whose storm water reaches each probs.water_in.
+             RRFS members carry temperatures, so each has its own snow. GEFS / ENS are archived as water only, so each
+             member's snow comes from its family's deterministic run (probs.families:
              GEFS -> GFS, ENS -> IFS): in every 12 h block, the member's water x that run's snow per inch of water
              there, which hands the members the family's snow ratio and rain/snow split. Then the share of members in
              each of the owner's snow bins (bins.py: the lowest bin containing the amount).
@@ -66,15 +67,18 @@ def ensemble_probs(st, fc: pd.DataFrame, cfg: dict, point: str) -> list[dict]:
     for model, g in runs.items():
         if "member" not in g.columns or not g["member"].notna().any():
             continue
-        fam = runs.get(pc["families"].get(model, ""))
+        own = "snow_in" in g.columns and g["snow_in"].notna().any()      # members with their own snow (RRFS)
+        fam = None if own else runs.get(pc["families"].get(model, ""))
         ratios = family_ratios(fam, blks, _snow_col(fam)) if fam is not None else []
         water, snow = [], []
         for _, m in g.groupby("member"):
             water.append(window_total(m, s, e) / MM_PER_IN)
-            if ratios:
+            if own:
+                snow.append(window_total(m, s, e, _snow_col(m)))
+            elif ratios:
                 snow.append(sum(window_total(m, bs, be) / MM_PER_IN * r for (bs, be, _), r in zip(blks, ratios)))
         out.append({"model": model, "init": g["init"].iloc[0], "members": len(water), "full": _covers(g, s, e),
-                    "water": water_shares(water, pc["water_in"]),
+                    "water": water_shares(water, pc["water_in"]), "own_snow": own,
                     "family": (pc["families"][model], fam["init"].iloc[0]) if fam is not None else None,
                     "snow_bins": bin_shares(snow, cfg["verify"])})
     return out

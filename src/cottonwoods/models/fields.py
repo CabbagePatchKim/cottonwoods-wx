@@ -18,6 +18,9 @@ import numpy as np
 # cfgrib prints an xarray "default value for compat will change" FutureWarning for every multi-field read;
 # it doesn't affect results and buries real messages in the logs.
 warnings.filterwarnings("ignore", category=FutureWarning, module="cfgrib")
+# Herbie warns "This pattern is interpreted as a regular expression, and has match groups" for every field search
+# (our searches are regexes on purpose): ~1,300 lines per pass that buried the real messages (owner, 2026-10-30)
+warnings.filterwarnings("ignore", message="This pattern is interpreted as a regular expression", category=UserWarning)
 
 from .points import nearest_index
 

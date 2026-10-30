@@ -67,13 +67,16 @@ def derive_run_fields(df: pd.DataFrame, cfg: dict, blend: bool = True) -> pd.Dat
       3. add_snowfall              station profile + wet-bulb snow/mix/rain + Kuchera: snow_in, snow_level_m, ...
     Steps 1-3 add columns and leave the pulled ones alone. Ensembles are archived as precip only (no
     temperatures), so they get step 0 (blended precip per member) and nothing else. blend=False skips the blend
-    (the unmodified copy in forecasts_raw, raw_run).
+    (the unmodified copy in forecasts_raw, raw_run). Guidance (U of U, models/uu.py) has no profile: its snow_in is
+    the snow it issued (snow_issued_in), its own snow ratio.
     """
     df = winds.earth_winds(df, cfg)
     if blend:
         df = cellblend.blend_points(df, cfg)
     if _temp_cols(df):
         df = add_snowfall(modes.add_precip_modes(regimes.add_step_regimes(df, cfg["regimes"]), cfg["regimes"]), cfg)
+    elif "snow_issued_in" in df.columns:
+        df = df.assign(snow_in=df["snow_issued_in"])
     return df.assign(derive_version=DERIVE_VERSION)
 
 
@@ -131,7 +134,8 @@ def add_snowfall(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
 def run_points(model: str, cfg: dict) -> dict[str, dict]:
     """Points to extract for this model: the configured points, plus for coarse models the 2x2 block of grid
     points around the Cottonwoods (config model_cells; older configs: gfs_cells for GFS only)."""
-    points = dict(cfg["points"])
+    only = REGISTRY[model].points if model in REGISTRY else None       # guidance issued for one site (UU: Alta)
+    points = {p: v for p, v in cfg["points"].items() if only is None or p in only}
     cells = cellblend.model_cells(model, cfg)
     if cells:
         points.update(cellblend.cell_points(model, cells))

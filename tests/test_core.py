@@ -260,3 +260,26 @@ def test_config_check_names_every_missing_setting():
         raise AssertionError("should have failed")
     except ConfigError as e:
         assert "precip_type.snow_min_slr" in str(e) and "storms:" in str(e)
+
+
+def test_archived_runs_are_scored_against_the_journal_actuals():
+    # owner 2026-10-30: e.g. the U of U guidance (files back to 2026-01) against the Alta stake totals
+    import numpy as np
+    import pandas as pd
+    from cottonwoods import journal
+    from helpers import make_cfg
+    cfg = make_cfg()
+    storms = pd.DataFrame({"storm_id": ["2026-03-05", "no-actual"], "start_date": pd.to_datetime(["2026-03-05"] * 2),
+                           "end_date": pd.to_datetime(["2026-03-06"] * 2), "actual_in": [16.0, np.nan]})
+    s, e = journal.storm_window(storms.iloc[0])
+    assert s == pd.Timestamp("2026-03-05 07:00") and e == pd.Timestamp("2026-03-07 13:00")   # 0000 MST -> 0600 MST + 1 d
+    def run(model, init, hours, snow_per_h):
+        t = pd.date_range(init, periods=hours, freq="h")
+        return pd.DataFrame({"model": model, "init": pd.Timestamp(init), "point": "alta", "valid_start": t,
+                             "valid_end": t + pd.Timedelta(hours=1), "qpf_mm": 1.0, "snow_in": snow_per_h})
+    fc = pd.concat([run("UUGFS", "2026-03-04 18:00", 120, 0.3),            # covers the 54 h window: 16.2"
+                    run("UUHRRR", "2026-03-04 18:00", 48, 0.3),            # ends too soon: left out
+                    run("UUGFS", "2026-03-01 00:00", 180, 0.3)], ignore_index=True)   # issued > 72 h before: left out
+    sc = journal.score_runs(fc, storms, cfg)
+    assert len(sc) == 1 and sc["model"].iloc[0] == "UUGFS" and abs(sc["snow_in"].iloc[0] - 54 * 0.3) < 1e-9
+    assert sc["fc_bin"].iloc[0] == "12-18" and sc["obs_bin"].iloc[0] == "12-18" and sc["points"].iloc[0] == 2

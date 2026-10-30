@@ -213,3 +213,13 @@ def test_v1_publishes_model_run_data_only():
     except ValueError as e:
         assert "storms.storms.[].obs_water_in" in str(e)
 
+
+
+def test_only_the_configured_models_reach_the_feed():
+    # owner 2026-10-30: RRFS, the RRFS ensemble and the U of U guidance stay internal until a release adds them
+    cfg, fc, st = _world()
+    extra = fc[fc["model"] == "HRRR"].assign(model="RRFS")
+    f = feed.build_feed(st, pd.concat([fc, extra], ignore_index=True), cfg, NOW, "v9.9",
+                        ["WARNING RRFS: 2 of its last 8 runs missing", "WARNING HRRR: 1 of its last 8 runs missing"])
+    assert "RRFS" not in json.dumps(f) and "HRRR" in json.dumps(f["daily"])
+    assert f["meta"]["warnings"] == ["WARNING HRRR: 1 of its last 8 runs missing"]

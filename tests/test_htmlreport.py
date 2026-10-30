@@ -110,3 +110,34 @@ def test_the_page_renders_a_storm_with_its_summary_chances_timeline_and_noaa_sec
     assert "Timeline at Alta" in html and "snow via GFS" in html and "Thu 10/29" in html
     assert "spread in WATER only" in html                                    # owner 2026-10-30: say so
     assert "full text &lt;here&gt;" in html                                     # the text report, escaped
+
+
+def test_rrfs_ensemble_members_use_their_own_snow():
+    cfg = make_cfg()
+    st = pd.Series({"fc_start": S, "fc_end": E})
+    ens = pd.concat([_run("RRFSENS", "2026-11-01 12:00", qpf=q).assign(member=float(m))     # snow 0.4 in/mm, its own
+                     for m, q in enumerate([1.0, 3.0])], ignore_index=True)
+    e = probs.ensemble_probs(st, ens, cfg, "alta")[0]
+    assert e["own_snow"] and e["family"] is None
+    assert e["snow_bins"] == {"2-4": 0.5, "6-10": 0.5}                         # 8 steps x 0.4: 3.2" and 9.6"
+
+
+def test_guidance_has_its_own_section_and_never_sets_the_storm_or_the_summary():
+    from cottonwoods import storms
+    from cottonwoods.report import storm_models
+    cfg = make_cfg()
+    hrrr = _run("HRRR", "2026-11-01 12:00", qpf=1.0, step=1, hours=48)
+    uu = _run("UUHRRR", "2026-11-01 12:00", qpf=1.0, step=1, hours=48, snow_per_mm=0.6)
+    uu.loc[uu["valid_start"] >= E, "qpf_mm"] = 1.0                   # guidance keeps snowing a day longer
+    uu["snow_issued_in"] = uu["qpf_mm"] * 0.6
+    fc = pd.concat([hrrr, uu], ignore_index=True)
+    ev = storms.model_events(fc, "alta", cfg["storms"])
+    assert set(ev["model"]) == {"HRRR"}                              # the storm window comes from models only
+    st = pd.Series({"storm_id": "x", "point": "alta", "fc_start": S, "fc_end": E, "defining_model": "HRRR",
+                    "defining_init": pd.Timestamp("2026-11-01 12:00")})
+    models = storm_models(st, fc, cfg)
+    assert {r["model"]: r["kind"] for r in models} == {"HRRR": "deterministic", "UUHRRR": "guidance"}
+    rows = htmlreport.resort_rows(models, {}, cfg)
+    assert rows[0][4] == "1"                                         # Alta's summary counts HRRR only
+    html = htmlreport.guidance_html(st, fc, models, cfg, "alta", "Alta")
+    assert "UUHRRR" in html and "HRRR 11/01 12z" in html and "15:1" in html   # 0.6"/mm = 15.2:1, their ratio

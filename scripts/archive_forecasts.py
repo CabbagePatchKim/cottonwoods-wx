@@ -67,6 +67,13 @@ def archive_here() -> dict:
     if scheduled:   # then put back values recent runs lost to download timeouts (archive/fill.py)
         fills = runner.FailureLog(ARCHIVE_DIR / (f"fills_{args.stream}.csv" if args.stream else "fills.csv"))
         n["fill"] = runner.fill_holes(models, cfg, now, fills, save_dir=save_dir, log=log)
+    if scheduled and "UUHRRR" in models:   # the Utah Snow Ensemble page shows only its newest run: save it each pass
+        from cottonwoods.models import uu
+        try:
+            init, status = uu.archive_use(cfg)
+            log(f"[uu-ens]  Utah Snow Ensemble {init:%Y-%m-%d %H}z: {status}")
+        except Exception as e:  # noqa: BLE001  (an extra; never fails the pass)
+            log(f"[uu-ens]  Utah Snow Ensemble not saved: {e}")
     return n
 
 

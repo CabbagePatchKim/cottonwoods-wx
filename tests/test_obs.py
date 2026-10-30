@@ -153,3 +153,19 @@ def test_obs_fetch_is_retried_and_the_last_failure_is_raised():
         raise AssertionError("should have raised")
     except ZeroDivisionError:
         pass
+
+
+def test_the_observations_step_shows_each_sites_latest_values():
+    # owner 2026-10-30: the step shows tables (newest per source, latest per site), not logs
+    cfg = make_cfg()
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        site, v = next(iter(cfg["snotel"].items()))
+        prec = snotel_frame(v["triplet"], "2026-11-01 00:00", 30, base=5.0, rate=0.02).assign(element="PREC")
+        depth = snotel_frame(v["triplet"], "2026-11-01 00:00", 30, base=10.0, rate=0.0).assign(element="SNWD")
+        oa.archive_snotel(cfg, "2026-11-01", "2026-11-03", root=root, fetcher=lambda *a, **k: pd.concat([prec, depth]))
+        newest, sites = oa.latest_obs(cfg, pd.Timestamp("2026-11-02 12:00"), root=root)
+    assert set(newest["source"]) == {"SNOTEL", "NOAA ALTA", "RAP (observed flow)"}
+    r = sites.set_index("site").loc[v["name"]]
+    assert abs(r["water_24h_in"] - 24 * 0.02) < 1e-6 and abs(r["water_6h_in"] - 6 * 0.02) < 1e-6
+    assert r["depth_in"] == 10.0 and pd.isna(r["pillow_in"])                   # no pillow values: blank, not 0

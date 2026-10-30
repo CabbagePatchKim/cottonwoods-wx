@@ -86,12 +86,21 @@ model_cells:
       - [[40.5796, -111.7317], [40.6050, -111.6220], [40.6302, -111.5123]]
       - [[40.6660, -111.7664], [40.6914, -111.6566], [40.7166, -111.5467]]
 
+# University of Utah (Steenburgh group) guidance at Alta Collins (models/uu.py; owner, 2026-10-30): experimental and
+# unofficial, internal only (never the feed). UUHRRR / UUGFS: one text file per run; the Utah Snow Ensemble page shows
+# only its newest run, so each pass saves it (data/archive/uu_ensemble).
+uu:
+  guidance_url: "https://home.chpc.utah.edu/~steenburgh/ml/"
+  files: {UUHRRR: hrrrlccforecast, UUGFS: gfslccforecast}
+  ensemble_url: "https://weather.utah.edu/text/ensgefsdslccforecast.html"
+  timeout_s: 60
+
 # HTML storm report (owner, 2026-10-29; src/cottonwoods/htmlreport.py, probs.py, trends.py): internal only, never
 # the feed. data/reports/storms_latest.html, rebuilt every pass next to the text report.
 probs:                     # UNCALIBRATED shares of members until verified storms test them
   water_in: [0.25, 0.5, 1.0, 2.0]          # storm water thresholds: share of members reaching each
   families: {GEFS: GFS, ENS: IFS}          # ensemble -> the deterministic run whose snow ratio its members borrow
-  lagged: {models: [HRRR, NAMNEST, NAM, RDPS], runs: 4,   # time-lagged high-res set: each model's last 4 runs
+  lagged: {models: [HRRR, RRFS, NAMNEST, NAM, RDPS], runs: 4,   # time-lagged high-res set: each model's last 4 runs
            block_snow_in: 1.0}             # per 12 h block: share of those runs with at least this much snow
 trends:
   onset_rate_in_hr: 0.1    # snow starts / ends when the rate_hours average reaches this (in/h)
@@ -192,7 +201,7 @@ archive:
   format: parquet          # parquet | csv  (csv only for machines without pyarrow)
   # Every model archived by the scheduled pass (scripts/run_models.bat). Remove one to stop archiving it.
   # IFS = ECMWF HRES; GEFS and ENS (ECMWF ensemble) are archived as precip only, one row per member.
-  models: [HRRR, NAMNEST, NAM, RDPS, GFS, GDPS, IFS, GEFS, ENS]
+  models: [HRRR, NAMNEST, NAM, RDPS, GFS, GDPS, IFS, GEFS, ENS, RRFS, RRFSENS, UUHRRR, UUGFS]
   # Every model, past and present, is archived/pulled ONLY at these init hours, so models are compared run for run.
   # (HRRR's 00/06/12/18z runs are also the only ones that reach 48 h; its other hourly runs stop at 18 h.)
   cycles_utc: [0, 6, 12, 18]
@@ -203,7 +212,11 @@ archive:
   # Canada no faster beyond 8 because decoding, not downloading, is its limit). gdex stays low: a free shared server.
   # ecmwf 12 -> 4 (2026-10-28): ECMWF's S3 bucket answered the cloud pass with 503 Slow Down, and ENS came back with
   # most members missing (624 of 4800 values). Each ENS file is 50 separate member requests.
-  download_workers: {noaa: 12, ecmwf: 4, canada: 8, gdex: 4}
+  download_workers: {noaa: 12, ecmwf: 4, canada: 8, gdex: 4, rrfs: 8, uu: 2}
+  # Models no longer run from this cycle (UTC) on: no new runs are queued or counted as missing; archived runs stay
+  # (and stay scored). NAM and NAM Nest are replaced by RRFS (NWS SCN 26-48, latest revision: 2026-11-03; the date
+  # moved several times: correct it here if it moves again).
+  retired: {NAM: "2026-11-03T12:00", NAMNEST: "2026-11-03T12:00"}
   # A server throttling us (503 Slow Down / 429) gets a real pause: up to `retries` more tries, wait_s x try apart
   # (30, 60, 90 s), on top of the quick retries for dropped connections (models/fields.parallel_hours).
   throttle: {retries: 3, wait_s: 30}
@@ -330,6 +343,9 @@ cloud:
 # null and snow_regime_adjusted false; the regime adjustment stays in the local reports until it is verified.
 feed:
   regime_snow: false
+  # The models the feed publishes (owner, 2026-10-30): exactly the v1.0-v1.6 set. RRFS, the RRFS ensemble and the
+  # U of U guidance are archived and reported internally; adding any of them to the feed needs an approved release.
+  models: [HRRR, NAMNEST, NAM, RDPS, GFS, GDPS, IFS, GEFS, ENS]
 
 # Website feed on GitHub Pages (scripts/publish_feed.py -> src/cottonwoods/github_feed.py). Approved releases only;
 # previews are never pushed. Public URL: https://cabbagepatchkim.github.io/cwx-feed/v1/storms.json (meta, daily too).

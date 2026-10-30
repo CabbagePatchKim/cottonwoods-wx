@@ -106,7 +106,8 @@ def resort_rows(models: list[dict], tr: dict[str, list[dict]], cfg: dict) -> lis
     """The per-resort summary rows (see the module notes); tr = trends.model_trends per point."""
     rows, steady = [], cfg["trends"]["steady_in"]
     for p in cfg["points"]:
-        snow = [_snow(r["points"][p]) for r in models if not r["ensemble"] and r["full"] and r["points"].get(p)]
+        snow = [_snow(r["points"][p]) for r in models
+                if r.get("kind") == "deterministic" and not r["ensemble"] and r["full"] and r["points"].get(p)]
         snow = [x for x in snow if pd.notna(x)]
         ens = [r["points"][p] for r in models if r["ensemble"] and r["points"].get(p)]
         wet = float(np.mean([c["members_wet"] / c["members"] for c in ens])) if ens else np.nan
@@ -148,7 +149,8 @@ def chances_html(st, fc: pd.DataFrame, cfg: dict, point: str, label: str) -> str
     top = lambda shares: " &middot; ".join(f"{b} {v:.0%}" for b, v in sorted(shares.items(), key=lambda kv: -kv[1])[:4])  # noqa: E731
     rows = []
     for e in probs.ensemble_probs(st, fc, cfg, point):
-        fam = f" (snow via {e['family'][0]} {timefmt.cycle(e['family'][1])})" if e["family"] else ""
+        fam = (" (each member's own snow)" if e["own_snow"] else
+               f" (snow via {e['family'][0]} {timefmt.cycle(e['family'][1])})" if e["family"] else "")
         rows.append([f"{e['model']} {timefmt.cycle(e['init'])}" + ("" if e["full"] else " (partial)"), str(e["members"]),
                      *[_pct(e["water"][t]) for t in thr], (top(e["snow_bins"]) or "-") + escape(fam)])
     lg = probs.lagged_probs(st, fc, cfg, point)
@@ -157,10 +159,10 @@ def chances_html(st, fc: pd.DataFrame, cfg: dict, point: str, label: str) -> str
                  top(lg["snow_bins"]) or f"no run covers the whole storm ({lg['short']} too short)"])
     out = [f"<h3>Chances at {escape(label)} <span class='muted'>(share of members; uncalibrated)</span></h3>",
            _table(["set", "members", *[f"water &ge; {t:g}\"" for t in thr], "likeliest snow bins"], rows),
-           "<p class='note'>Ensemble snow bins reflect the spread in WATER only: each member's water is turned into "
+           "<p class='note'>GEFS / ENS snow bins reflect the spread in WATER only: each member's water is turned into "
            "snow with its family's deterministic run (the run named), so every member shares that run's temperatures, "
-           "snow ratio and rain/snow split. In a marginal storm the snow level is the bigger unknown; the high-res "
-           "runs use their own temperatures.</p>"]
+           "snow ratio and rain/snow split. In a marginal storm the snow level is the bigger unknown; the RRFS "
+           "ensemble members and the high-res runs use their own temperatures.</p>"]
     blk = probs.lagged_block_probs(st, fc, cfg, point)
     if any(b["members"] for b in blk):
         snow_in = cfg["probs"]["lagged"]["block_snow_in"]
@@ -171,6 +173,34 @@ def chances_html(st, fc: pd.DataFrame, cfg: dict, point: str, label: str) -> str
                         ["median"] + ["-" if pd.isna(b["median_snow"]) else f"{b['median_snow']:.1f}\"" for b in blk],
                         ["runs"] + [str(b["members"]) for b in blk]])]
     return "".join(out)
+
+
+def guidance_html(st, fc: pd.DataFrame, models: list[dict], cfg: dict, point: str, label: str) -> str:
+    """Post-processed guidance (U of U at Collins, machine-learning snow ratio) next to OUR newest run of the model it
+    comes from, over the storm window; kept out of the summary, medians and bins (owner, 2026-10-30)."""
+    from .models.registry import REGISTRY
+    by = {r["model"]: r for r in models}
+    rows = []
+    for r in [r for r in models if r.get("kind") == "guidance"]:
+        c, base = r["points"].get(point), REGISTRY[r["model"]].based_on
+        b = by.get(base, {}).get("points", {}).get(point) if base in by else None
+        g = fc[(fc["model"] == r["model"]) & (fc["init"] == r["init"]) & (fc["point"] == point)
+               & (fc["valid_end"] > st.fc_start) & (fc["valid_start"] < st.fc_end) & (fc["qpf_mm"] > 0)]
+        slr = (g["snow_issued_in"].sum() / (g["qpf_mm"].sum() / 25.4)) if len(g) and g["qpf_mm"].sum() > 0 else np.nan
+        cover = "" if r["full"] else (" (from " + _when(r["valid_from"]) + ")" if r["late"] else " (to " + _when(r["valid_to"]) + ")")
+        inch = lambda x, spec: "-" if x is None or pd.isna(x) else format(x, spec) + "&quot;"   # noqa: E731
+        rows.append([escape(r["model"]), timefmt.cycle(r["init"]) + cover,
+                     inch(c and c["water_in"], ".2f"), inch(c and c["snow_in"], ".1f"),
+                     "-" if pd.isna(slr) else f"{slr:.0f}:1",
+                     f"{base} {timefmt.cycle(by[base]['init'])}" if base in by else "-",
+                     inch(b and b["water_in"], ".2f"), inch(b and b["snow_in"], ".1f")])
+    if not rows:
+        return ""
+    return (f"<h3>Guidance at {escape(label)} <span class='muted'>(U of U, experimental; not in the summary)</span></h3>"
+            + _table(["guidance", "run", "water", "snow", "their ratio", "our run", "our water", "our snow"], rows)
+            + "<p class='note'>University of Utah (Steenburgh group) Little Cottonwood guidance at Collins: the model "
+              "with their machine-learning snow ratio. Our run = our newest run of the same model with our snow method, "
+              "plain (not regime-adjusted), so the two snow ratios compare directly.</p>")
 
 
 def timeline_html(tr: list[dict], ens: list[dict], cfg: dict, label: str) -> str:
@@ -221,7 +251,8 @@ def storm_html(st, fc: pd.DataFrame, cfg: dict) -> str:
               "storm (snow regime-adjusted where factors exist, like the text report); since last run = median change "
               "of each model's snow vs its previous run.</p>"
             + f"<div class='changes'>{changes_sentence(tr[bp], ens, label, cfg['trends']['steady_in'])}</div>"
-            + chances_html(st, fc, cfg, bp, label) + timeline_html(tr[bp], ens, cfg, label))
+            + guidance_html(st, fc, models, cfg, bp, label) + chances_html(st, fc, cfg, bp, label)
+            + timeline_html(tr[bp], ens, cfg, label))
 
 
 def noaa_html(ghcn: pd.DataFrame | None, storms: pd.DataFrame, cfg: dict, now) -> str:

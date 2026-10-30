@@ -169,7 +169,10 @@ def build_feed(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Timest
                warnings: list[str]) -> dict[str, dict]:
     """{"meta": ..., "storms": ..., "daily": ...}; every file carries schema_version and generated. Storms are the
     ones still ahead or under way only (ended and verified ones are observations' territory), and model_only()
-    checks the rest."""
+    checks the rest. Only the models in config feed.models are published (owner, 2026-10-30: new models, guidance and
+    ensembles reach the feed only through an approved release that adds them), and only their staleness warnings."""
+    fc = fc[fc["model"].isin(cfg["feed"]["models"])]
+    warnings = [w for w in warnings if any(w.startswith(f"WARNING {m}:") for m in cfg["feed"]["models"])]
     recent = fc[fc["init"] >= now - pd.Timedelta(days=2)]
     files = {"meta": build_meta(recent, cfg, now, code_version, warnings),
              "storms": build_storms(storms, fc, cfg, now),

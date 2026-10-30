@@ -389,6 +389,42 @@ route (api.weather.gov lists CLN but serves no observations; never automate the 
   1.5" avg error (3 storms), HRRR 3.8 (4), GDPS 6.1 (6), RDPS 10.4 (7, bias -2.5: big misses both ways). OWNER on
   GDPS (2026-10-29): steadiest in the journal, but its coarse grid makes the freezing level and local influences
   hard to catch in a marginal storm like the 10/30-11/2 one; weigh that when its snow split is compared.)
+- PASS STEP OUTPUT (owner 2026-10-30): OBSERVATIONS step = two tables (archive_obs.py + obs.latest_obs): each source's
+  status / newest (SNOTEL hour, NOAA ALTA observer day, RAP hour, Synoptic skipped) and each SNOTEL site's latest
+  (gauge water 6 h / 24 h via gauge.py, depth, pillow, temp); failures still print in full. Herbie's "pattern is
+  interpreted as a regular expression" UserWarning is silenced in models/fields.py (~1,300 lines per pass). NEW
+  "Verified" STEP after Model report (pass.yml, LIVE from main): storms.py writes verification (newly verified,
+  render_verified, freezing levels) to data/reports/verified_latest.txt instead of printing it; the step cats it if
+  written in the last 90 min, else says the release prints it under Storms (v1.6 does). HTML full text = both.
+- MODEL KINDS + RRFS + U OF U (owner 2026-10-30, in main, not released). THREE KINDS NEVER MIX (owner: "otherwise the
+  report is going to get messy"): registry ModelSpec.kind -> kind_of(model) / models_of / deterministic(fc).
+  deterministic = storm windows (storms.model_events), summary medians/bins, timelines (trends), main tables;
+  guidance = its own table (text storm table group "guidance", HTML "Guidance at Alta": theirs vs OUR newest run of
+  ModelSpec.based_on, plain snow), scored like a model, never in medians or windows; ensemble = chances + one line.
+  model_days (daily table) leaves guidance out. FEED ALLOWLIST config feed.models = the v1.6 nine (feed.build_feed
+  filters runs AND staleness warnings): RRFS / RRFSENS / UU* stay internal until an approved release adds them.
+  RRFS (models/rrfs.py, Herbie model="rrfs", AWS noaa-rrfs-ops-pds; operational 2026-11-03, replacing NAM/NAMNEST):
+  RRFS deterministic 3 km, hourly to 48 h then 3-hourly to 84 h, products 2dfld + prslev; RRFSENS = members m001-m005
+  (2dfldnomads + prslevnomads: no 650/550 mb columns), 3-hourly to 60 h, WITH temperatures, so each member gets its
+  own snow (probs.ensemble_probs own_snow; modes.add_precip_modes now groups by point AND member). APCP and RRFS's
+  own ASNOW read as totals since init and deaccumulated; ASNOW kept as snow_native_in (m -> in) to compare with ours.
+  Stream "rrfs" (download_workers.rrfs 8). Real pull 10/30 00z: 6 hours ~70 s (full run est. 8-12 min).
+  RETIREMENT: config archive.retired {NAM, NAMNEST: 2026-11-03T12:00} (registry.retired_from): recent_cycles /
+  cycles_between stop at that cycle, so no new jobs and no staleness warnings; archived runs stay scored. The SCN
+  date moved several times: correct it in config if it moves again. probs.lagged models now include RRFS.
+  U OF U GUIDANCE (models/uu.py, config uu; experimental/unofficial, credit the Steenburgh group, internal only):
+  UUHRRR (1-48 h hourly) and UUGFS (1-120 h hourly, 123-180 3-hourly) at Collins = point alta only (ModelSpec.points);
+  text files per run back to 2026-01 (~115/month each). Their totals since init deaccumulated; snow kept as
+  snow_issued_in (derive_run_fields sets snow_in from it when a run has no profile), slr_issued, wbz_msl_m (NaN when
+  printed "≤ KSLC" (GFS) or "<KSLC" (HRRR): below the SLC airport). Stream "uu". UTAH SNOW ENSEMBLE (82 members,
+  percentiles min/10/25/50/75/90/max every 6 h to 10 d at the CLN grid point; only the newest run is posted):
+  uu.archive_use saves each new run to data/archive/uu_ensemble/init=*.csv, called by archive_forecasts.py's uu stream
+  each scheduled pass. RRFS SNOW ENSEMBLE page (weather.utah.edu rrfsqsf) is IMAGES ONLY: not archived (link only).
+  JOURNAL SCORING: journal.storm_window (start date 0000 MT -> 0600 MT after end date; journal has dates only) +
+  journal.score_runs + scripts/score_journal_runs.py (laptop) -> data/local/journal_run_scores.csv. Backfilled UU runs
+  around journal storms locally (--journal; 2023-24 storms not on their server). FIRST RESULT, UUGFS last run vs Alta
+  stake: 2/10 12.9" vs 11.5 (+2), 2/16-18 40.6" vs 46 (0, one bin), 3/5 18.9" vs 16 (+2); journal's raw GFS had 30-36"
+  for 2/16-18. UUHRRR (48 h) never covers a whole multi-day journal storm.
 - HTML STORM REPORT (owner 2026-10-29, in main, not released; internal, never the feed): scripts/storms.py writes
   data/reports/storms_latest.html next to the text (htmlreport.render_html: one self-contained file, inline CSS, no
   scripts, light/dark). Per open storm: per-resort summary (owner's bin of the median of full deterministic runs,

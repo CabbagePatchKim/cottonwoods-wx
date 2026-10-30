@@ -13,6 +13,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .models.registry import deterministic
 from .report import _snow_col, model_rank
 from .units import MM_PER_IN
 from .windows import window_total, within_lead
@@ -64,8 +65,7 @@ def model_trends(st, fc: pd.DataFrame, cfg: dict, point: str) -> list[dict]:
     {init, full (covers the whole storm), timeline}; change (newest vs previous, both full): onset_h, peak_h, end_h
     (+ = later), snow_in, water_in; snow_path (full runs' snow, oldest -> newest) and direction."""
     tc, s, e = cfg["trends"], st.fc_start, st.fc_end
-    fp = fc[fc["point"] == point]
-    fp = fp[fp["member"].isna()] if "member" in fp.columns else fp
+    fp = deterministic(fc[fc["point"] == point])
     out = []
     for model, g in sorted(fp.groupby("model"), key=lambda mg: model_rank(mg[0])):
         runs = []

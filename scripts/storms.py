@@ -13,6 +13,8 @@
    undercatch_summary.csv per site and flow.
 4. Prints each upcoming storm with every model's newest total over the storm window, and saves it to
    data/reports/storms_latest.txt, and as a web page: data/reports/storms_latest.html (htmlreport.py).
+5. Verification (verified storms, bin and block scores, freezing levels) goes to data/reports/verified_latest.txt,
+   printed by the pass's own "Verified" step (owner, 2026-10-30), not here.
 """
 from datetime import datetime, timedelta, timezone
 
@@ -51,26 +53,30 @@ text = (f"Storms, {timefmt.now_line(now)}. Times are Mountain (MDT/MST), 24-hour
 scores, totals, readings = storms.load_scores(), load_storm_totals(), load_hand_obs()
 binned = storms.bin_scores(table, scores, totals, readings, cfg)
 storms.save_bin_scores(binned)
+# Verification is its own report (owner, 2026-10-30: the Storms step got crowded): data/reports/verified_latest.txt,
+# printed by the pass's "Verified" step after the model report. This step prints the storms ahead only.
+vtext = f"Verified, {timefmt.now_line(now)}. Times are Mountain (MDT/MST), 24-hour.\n"
+newly = table[(table.status == "verified") & (table.updated_at == now)]
+for _, st in newly.iterrows():
+    vtext += (f"\nVERIFIED storm {st.storm_id}: {timefmt.clock(st.final_start)} - {timefmt.clock(st.final_end)}, "
+              f"observed {st.obs_water_in:.2f}\" water (SNOTEL), observed flow {st.obs_flow}. "
+              f"Scores in data/archive/storm_scores.csv\n")
 verified = render_verified(table, scores, totals, cfg, now, readings=readings, binned=binned,
                            block_scores=storms.load_block_scores())
 if verified:
-    text += "\n" + verified
+    vtext += "\n" + verified
 # Freezing level vs the SLC balloons, every deterministic run (blended and unmodified), kept in a growing table
 fz = verify.freezing_level_scores(pd.concat([fc, fc_raw], ignore_index=True), summarize(snd) if not snd.empty else None,
                                   storms.point_steps(obs, cfg).get(cfg["storms"]["point"]), cfg)
 fz = verify.merge_freezing_scores(fz, PROCESSED_DIR / "freezing_scores.csv")
 freezing = render_freezing(fz, cfg)
 if freezing:
-    text += "\n" + freezing
-newly = table[(table.status == "verified") & (table.updated_at == now)]
-for _, st in newly.iterrows():
-    text += (f"\nVERIFIED storm {st.storm_id}: {timefmt.clock(st.final_start)} - {timefmt.clock(st.final_end)}, "
-             f"observed {st.obs_water_in:.2f}\" water (SNOTEL), observed flow {st.obs_flow}. "
-             f"Scores in data/archive/storm_scores.csv\n")
+    vtext += "\n" + freezing
 print(text)
 out = REPORTS_DIR
 out.mkdir(parents=True, exist_ok=True)
 (out / "storms_latest.txt").write_text(text, encoding="utf-8")
+(out / "verified_latest.txt").write_text(vtext, encoding="utf-8")
 # The same storms as a web page (htmlreport.py: summary, chances, timeline, NOAA ALTA); internal, not the feed
-html = htmlreport.render_html(table, fc, cfg, now, text, load_ghcn(start=now - timedelta(days=40)))
+html = htmlreport.render_html(table, fc, cfg, now, text + "\n" + vtext, load_ghcn(start=now - timedelta(days=40)))
 (out / "storms_latest.html").write_text(html, encoding="utf-8")
