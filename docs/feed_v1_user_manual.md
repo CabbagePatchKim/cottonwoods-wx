@@ -218,6 +218,10 @@ Each published version puts its own copy of this manual here, so this list is cu
   rain/snow split), and water changes only if a precipitation value itself was missing. The new numbers are the
   model's own. No fields were added, removed or renamed. This manual is now published with every version as the
   README of the feed's repository.
+- **v1.6:** RDPS now blends the 4 grid points around each resort, like GFS, ECMWF and GDPS. Before, every resort sat
+  nearest the same single RDPS grid point, so RDPS gave all four resorts identical water. RDPS water now differs a
+  little between resorts, and its snow can shift too. Only RDPS runs made after v1.6 are blended. No fields were
+  added, removed or renamed.
 
 ## 10. Credits and licences
 
