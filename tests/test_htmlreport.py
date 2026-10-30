@@ -108,4 +108,5 @@ def test_the_page_renders_a_storm_with_its_summary_chances_timeline_and_noaa_sec
     assert html.startswith("<!doctype html>") and html.count("<h2>") == 2      # the storm + NOAA ALTA
     assert "Alta" in html and 'class="bin"' in html and "uncalibrated" in html
     assert "Timeline at Alta" in html and "snow via GFS" in html and "Thu 10/29" in html
+    assert "spread in WATER only" in html                                    # owner 2026-10-30: say so
     assert "full text &lt;here&gt;" in html                                     # the text report, escaped

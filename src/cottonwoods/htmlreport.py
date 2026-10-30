@@ -156,7 +156,11 @@ def chances_html(st, fc: pd.DataFrame, cfg: dict, point: str, label: str) -> str
                  *[_pct(lg["water"][t]) for t in thr],
                  top(lg["snow_bins"]) or f"no run covers the whole storm ({lg['short']} too short)"])
     out = [f"<h3>Chances at {escape(label)} <span class='muted'>(share of members; uncalibrated)</span></h3>",
-           _table(["set", "members", *[f"water &ge; {t:g}\"" for t in thr], "likeliest snow bins"], rows)]
+           _table(["set", "members", *[f"water &ge; {t:g}\"" for t in thr], "likeliest snow bins"], rows),
+           "<p class='note'>Ensemble snow bins reflect the spread in WATER only: each member's water is turned into "
+           "snow with its family's deterministic run (the run named), so every member shares that run's temperatures, "
+           "snow ratio and rain/snow split. In a marginal storm the snow level is the bigger unknown; the high-res "
+           "runs use their own temperatures.</p>"]
     blk = probs.lagged_block_probs(st, fc, cfg, point)
     if any(b["members"] for b in blk):
         snow_in = cfg["probs"]["lagged"]["block_snow_in"]

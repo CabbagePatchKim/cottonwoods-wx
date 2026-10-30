@@ -395,7 +395,8 @@ route (api.weather.gov lists CLN but serves no observations; never automate the 
   median, range, median change vs each model's previous run, ensemble wet share, confidence from config
   html.confidence), a "changes since last run" sentence, CHANCES (probs.py, UNCALIBRATED shares of members: GEFS/ENS
   storm water >= probs.water_in, snow bins with members' water x the family deterministic run's snow per inch in each
-  12 h block (probs.families GEFS->GFS, ENS->IFS); the time-lagged high-res set (probs.lagged: HRRR/NAMNEST/NAM/RDPS
+  12 h block (probs.families GEFS->GFS, ENS->IFS; owner 2026-10-30: kept, with a page note that these bins
+  reflect water spread only, every member sharing that run's temperatures); the time-lagged high-res set (probs.lagged: HRRR/NAMNEST/NAM/RDPS
   last 4 runs) for the whole storm AND block by block, since short-range runs rarely cover a long storm), TIMELINE
   (trends.py at block_point: onset / peak / end from 3 h snow rates, config trends; change vs previous run; last 4
   runs' snow + direction; ensembles wet/mean by run); then NOAA ALTA daily PRCP/SNOW/SNWD (observer day ending 6 pm
