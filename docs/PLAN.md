@@ -26,5 +26,14 @@ trends and guidance are all unproven. Until a few storms verify, the work is MEA
        PRISM idea), and the design changes (store raw + derive on read; a `variant` column instead of "GFS raw";
        one scores table; split CLAUDE.md into architecture / decision log / status).
 
+## Small fixes to bundle with the step-3 release (noted 10/30)
+- 12 h block table: "." is explained nowhere and the code calls it "dry"; it means under 0.05" SNOW (dry OR rain:
+  Fri 10/30 NAM / RDPS / IFS had 0.05-0.23" of rain at Alta, wet-bulb > +1 C). Add a legend line; also mark the
+  first / last block when the storm covers only part of it ("Fri day" was 6 h of 12).
+- Freezing levels: every model ran 230-530 ft above the SLC balloon on 10/30 12z (650 mb 1-2 C warmer at Alta).
+  Scoring checked correct (balloon 3,258 m recomputed; our 700 mb heights within 10 m). Model error or Alta vs SLC
+  35 km apart? Idea: store RAP's freezing level at each point (we keep only t_700) as an observed value over
+  Alta's own column. Decide after the storm's wet balloons are in.
+
 ## Not now
 New features, new models, new report sections, unless a verified storm shows a real problem.
