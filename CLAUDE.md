@@ -389,6 +389,12 @@ route (api.weather.gov lists CLN but serves no observations; never automate the 
   1.5" avg error (3 storms), HRRR 3.8 (4), GDPS 6.1 (6), RDPS 10.4 (7, bias -2.5: big misses both ways). OWNER on
   GDPS (2026-10-29): steadiest in the journal, but its coarse grid makes the freezing level and local influences
   hard to catch in a marginal storm like the 10/30-11/2 one; weigh that when its snow split is compared.)
+- REGIME SCORES, LOCAL ONLY (owner 2026-10-29: no release, laptop only): scripts/regime_scores.py, run after
+  `bucket_sync.py pull`: storms.regime_bin_scores rescored every verified storm by the pass's own rules with plain and
+  regime-adjusted snow (regimes.apply_factors, today's regime_factors.csv) -> data/local/regime_bin_scores.csv
+  (data/local: not synced, not in git) + report.regime_score_table (plain vs regime score / snow miss, by lead).
+  Rescore a storm within ~3 weeks of verifying (pull keeps 25 days of runs). First run: only the dry 10/27 storm,
+  plain = regime. The weekend storm (verifies ~11/2) is the first real test: run it by ~11/20.
 - FREEZING-LEVEL SCORES (owner 2026-10-29, in main, not released): verify.freezing_level_scores: every deterministic
   run (blended + "X raw") at storms.point's model column vs each SLC balloon (00z/12z) a step ends on; both = highest
   0 C crossing MSL. wet = >= event_swe_in observed at the point in the 12 h around the balloon (the marginal-storm

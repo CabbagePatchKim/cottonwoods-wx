@@ -539,6 +539,28 @@ def bin_scores(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataFrame,
     return pd.DataFrame(rows)
 
 
+def regime_bin_scores(storms: pd.DataFrame, fc: pd.DataFrame, factors: pd.DataFrame, psteps: dict[str, pd.DataFrame],
+                      totals: pd.DataFrame, readings: pd.DataFrame | None, cfg: dict) -> pd.DataFrame:
+    """LOCAL ONLY (owner 2026-10-29; scripts/regime_scores.py, never the cloud pass): every verified storm whose runs
+    are loaded, scored twice by the pass's own rules (score_storm + bin_scores): plain Kuchera snow and regime-adjusted
+    snow (regimes.apply_factors with `factors`, each step by its regime's factor). bin_scores rows plus snow = "plain"
+    or "regime". Uses today's factors, so refitting them changes these scores (they test the current factors)."""
+    if fc.empty or storms.empty:
+        return pd.DataFrame()
+    v = storms[(storms["status"] == "verified") & (pd.to_datetime(storms["final_start"]) >= fc["init"].min())]
+    if v.empty:
+        return pd.DataFrame()
+    adj = regimes.apply_factors(fc, factors, cfg["regimes"])
+    adj["snow_in"] = adj["snow_in_adj"] if "snow_in_adj" in adj else adj.get("snow_in")
+    out = []
+    for label, f in (("plain", fc), ("regime", adj)):
+        sc = pd.concat([score_storm(st, f, psteps, cfg) for _, st in v.iterrows()], ignore_index=True)
+        b = bin_scores(v, sc, totals, readings, cfg)
+        if not b.empty:
+            out.append(b.assign(snow=label))
+    return pd.concat(out, ignore_index=True) if out else pd.DataFrame()
+
+
 def save_bin_scores(table: pd.DataFrame, root=None) -> None:
     p = (root or PROCESSED_DIR) / "bin_scores.csv"
     p.parent.mkdir(parents=True, exist_ok=True)

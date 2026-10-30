@@ -21,3 +21,4 @@ data/feed_repo/
 data/entries/
 data_dir.txt
 .claude/settings.local.json
+data/local/

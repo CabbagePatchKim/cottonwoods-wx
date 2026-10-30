@@ -540,6 +540,29 @@ def freezing_table(scores: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     return t
 
 
+def regime_score_table(both: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Plain vs regime-adjusted snow per model (storms.regime_bin_scores): every deterministic run within
+    verify.score_runs_hours of the storm at every scored point with an observed snow total: runs, average bin score
+    and average snow miss (in) for each, then the average score by lead range (verify.lead_bands_hours), plain / regime."""
+    if both is None or both.empty:
+        return pd.DataFrame()
+    det = both[both["member"].isna()] if "member" in both else both
+    det = det.assign(miss=det["snow_err_in"].abs())
+    near = det[det["lead_to_start_hr"] <= cfg["verify"]["score_runs_hours"]]
+    t = pd.DataFrame({"model": sorted(det["model"].unique(), key=model_rank)})
+    pick = lambda d, kind, col, fn: d[d["snow"] == kind].groupby("model")[col].agg(fn)   # noqa: E731
+    t["runs"] = t["model"].map(pick(near, "plain", "points", "size")).fillna(0).astype(int)
+    for kind in ("plain", "regime"):
+        t[f"{kind} score"] = t["model"].map(pick(near, kind, "points", "mean")).map(lambda x: f"{x:+.1f}" if pd.notna(x) else "")
+    for kind in ("plain", "regime"):
+        t[f"{kind} miss"] = t["model"].map(pick(near, kind, "miss", "mean")).map(lambda x: f"{x:.1f}\"" if pd.notna(x) else "")
+    for lo, hi in cfg["verify"]["lead_bands_hours"]:
+        band = det[(det["lead_to_start_hr"] > lo) & (det["lead_to_start_hr"] <= hi)]
+        p, r = pick(band, "plain", "points", "mean"), pick(band, "regime", "points", "mean")
+        t[band_name(lo, hi)] = t["model"].map(lambda m: f"{p[m]:+.1f} / {r[m]:+.1f}" if m in p.index and m in r.index else "")
+    return t
+
+
 def render_freezing(scores: pd.DataFrame, cfg: dict) -> str:
     """The freezing-level section of the storm report ('' until a run has met a balloon)."""
     t = freezing_table(scores, cfg)

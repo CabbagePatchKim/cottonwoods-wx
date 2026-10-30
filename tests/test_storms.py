@@ -544,3 +544,40 @@ def test_every_model_is_credited_under_the_storms_forecast_regime_even_when_it_c
                            "model": ["RDPS", "NAMNEST"], "points": [2, 0]})
     t = regime_table(binned, storms_t, cfg).set_index("model")
     assert list(t.columns) == ["W warm"] and t.at["RDPS", "W warm"] == "+2.0 (1)" and t.at["NAMNEST", "W warm"] == "+0.0 (1)"
+
+
+def test_local_regime_scores_rescore_verified_storms_with_regime_adjusted_snow():
+    # owner 2026-10-29: plain vs regime-adjusted snow, scored by the pass's own rules, on the laptop only
+    from cottonwoods import storms
+    from cottonwoods.archive.obs import load_storm_totals
+    from cottonwoods.report import regime_score_table
+    cfg = make_cfg()
+    init = datetime(2026, 11, 1, 12)
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        def pull(i, fxx, points, s=None):                    # 1 mm/h 11/02 00z-12z, cold, south-west wind
+            rows = []
+            for f in fxx:
+                vs = pd.Timestamp(i) + pd.Timedelta(hours=f - 1)
+                for name in points:
+                    rows.append({"model": "HRRR", "init": pd.Timestamp(i), "lead_hr": f, "valid_start": vs,
+                                 "valid_end": vs + pd.Timedelta(hours=1), "point": name, "grid_dist_km": 1.0,
+                                 "qpf_mm": 1.0 if pd.Timestamp("2026-11-02") <= vs < pd.Timestamp("2026-11-02 12:00") else 0.0,
+                                 "u_700_ms": 10.0, "v_700_ms": 10.0, **{f"t_{lev}_k": 262.0 for lev in (700, 600, 500)}})
+            return pd.DataFrame(rows)
+        fa.archive_run("HRRR", init, cfg, root=root, puller=pull)
+        fc = fa.load_forecasts(cfg, root=root)
+        flows = fc.loc[fc["point"] == "alta", "flow"].unique()
+        factors = pd.DataFrame({"point": "alta", "flow": flows, "thermal": "", "band": "", "factor": 1.5, "n_days": 99})
+        obs = snotel_prec("2026-11-01 12:00", [0.0] * 12 + [0.1] * 12 + [0.0] * 14)
+        storms.run(fc, obs, cfg, pd.Timestamp("2026-11-03 06:00"), root=root)
+        table = storms.load_storms(root)
+        p = root / "storm_totals.csv"
+        p.write_text("start,end,site,source,new_snow_in,water_in,notes\n2026-11-01 18:00,2026-11-02 12:00,alta,collins,10,1.2,\n")
+        both = storms.regime_bin_scores(table, fc, factors, storms.point_steps(obs, cfg), load_storm_totals(p), None, cfg)
+    alta = both[both["point"] == "alta"].set_index("snow")
+    assert set(both["snow"]) == {"plain", "regime"} and alta.loc["plain", "fc_snow_in"] > 0
+    assert abs(alta.loc["regime", "fc_snow_in"] - 1.5 * alta.loc["plain", "fc_snow_in"]) < 1e-9
+    assert alta.loc["regime", "obs_snow_in"] == alta.loc["plain", "obs_snow_in"] == 10
+    t = regime_score_table(both, cfg).set_index("model")
+    assert t.loc["HRRR", "runs"] >= 1 and t.loc["HRRR", "plain score"] != "" and t.loc["HRRR", "regime score"] != ""
