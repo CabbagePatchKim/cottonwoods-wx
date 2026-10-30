@@ -41,6 +41,8 @@ SPECS = {   # model -> its Herbie settings per product ("" = the field itself, "
 COLUMNS = {"gh": "z500_m", "absv": "vort500_s", "vo": "vort500_s", "u": "u250_ms", "v": "v250_ms",
            "prmsl": "mslp_hpa", "msl": "mslp_hpa", "t": "t850_k"}
 SCALE = {"mslp_hpa": 0.01}                          # Pa -> hPa
+# The stored fields, for the planned pattern analysis (trough timing, model/run comparisons): kept on purpose
+FIELDS = ["z500_m", "vort500_s", "u250_ms", "v250_ms", "mslp_hpa", "t850_k"]
 
 
 def pattern_dir(root: Path | None = None) -> Path:
@@ -118,7 +120,7 @@ def native_box(ds, icfg: dict) -> dict[str, pd.DataFrame]:
 
 def pull_pattern(model: str, init: datetime, cfg: dict, save_dir: str | None = None, workers: int = 4,
                  throttle: dict | None = None) -> pd.DataFrame:
-    """One run's pattern maps: rows (grid, lead_hr, lat, lon), the fields (COLUMNS' names, + _sd spreads for GEFS) as float32."""
+    """One run's pattern maps: rows (grid, lead_hr, lat, lon), the FIELDS (+ _sd spreads for GEFS) as float32."""
     from herbie import Herbie  # lazy: offline tests don't need herbie
     from .models.fields import open_grib, parallel_hours
 
