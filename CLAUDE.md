@@ -389,6 +389,18 @@ route (api.weather.gov lists CLN but serves no observations; never automate the 
   1.5" avg error (3 storms), HRRR 3.8 (4), GDPS 6.1 (6), RDPS 10.4 (7, bias -2.5: big misses both ways). OWNER on
   GDPS (2026-10-29): steadiest in the journal, but its coarse grid makes the freezing level and local influences
   hard to catch in a marginal storm like the 10/30-11/2 one; weigh that when its snow split is compared.)
+- HTML STORM REPORT (owner 2026-10-29, in main, not released; internal, never the feed): scripts/storms.py writes
+  data/reports/storms_latest.html next to the text (htmlreport.render_html: one self-contained file, inline CSS, no
+  scripts, light/dark). Per open storm: per-resort summary (owner's bin of the median of full deterministic runs,
+  median, range, median change vs each model's previous run, ensemble wet share, confidence from config
+  html.confidence), a "changes since last run" sentence, CHANCES (probs.py, UNCALIBRATED shares of members: GEFS/ENS
+  storm water >= probs.water_in, snow bins with members' water x the family deterministic run's snow per inch in each
+  12 h block (probs.families GEFS->GFS, ENS->IFS); the time-lagged high-res set (probs.lagged: HRRR/NAMNEST/NAM/RDPS
+  last 4 runs) for the whole storm AND block by block, since short-range runs rarely cover a long storm), TIMELINE
+  (trends.py at block_point: onset / peak / end from 3 h snow rates, config trends; change vs previous run; last 4
+  runs' snow + direction; ensembles wet/mean by run); then NOAA ALTA daily PRCP/SNOW/SNWD (observer day ending 6 pm
+  MST) + storm totals (days posted of days needed), and the full text report collapsed. Laptop preview 10/29 data:
+  ENS 88% >= 1" water at Alta, likeliest 4-8 (38%); GFS 7 -> 9 -> 12 -> 15" up. Render ~25 s per pass.
 - REGIME SCORES, LOCAL ONLY (owner 2026-10-29: no release, laptop only): scripts/regime_scores.py, run after
   `bucket_sync.py pull`: storms.regime_bin_scores rescored every verified storm by the pass's own rules with plain and
   regime-adjusted snow (regimes.apply_factors, today's regime_factors.csv) -> data/local/regime_bin_scores.csv

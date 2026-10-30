@@ -86,6 +86,24 @@ model_cells:
       - [[40.5796, -111.7317], [40.6050, -111.6220], [40.6302, -111.5123]]
       - [[40.6660, -111.7664], [40.6914, -111.6566], [40.7166, -111.5467]]
 
+# HTML storm report (owner, 2026-10-29; src/cottonwoods/htmlreport.py, probs.py, trends.py): internal only, never
+# the feed. data/reports/storms_latest.html, rebuilt every pass next to the text report.
+probs:                     # UNCALIBRATED shares of members until verified storms test them
+  water_in: [0.25, 0.5, 1.0, 2.0]          # storm water thresholds: share of members reaching each
+  families: {GEFS: GFS, ENS: IFS}          # ensemble -> the deterministic run whose snow ratio its members borrow
+  lagged: {models: [HRRR, NAMNEST, NAM, RDPS], runs: 4,   # time-lagged high-res set: each model's last 4 runs
+           block_snow_in: 1.0}             # per 12 h block: share of those runs with at least this much snow
+trends:
+  onset_rate_in_hr: 0.1    # snow starts / ends when the rate_hours average reaches this (in/h)
+  rate_hours: 3            # rates averaged over 3 h, so hourly and 3-hourly models compare fairly
+  runs: 4                  # runs per model shown in the trend (newest first) and used for convergence
+  steady_in: 1.0           # run-to-run changes smaller than this count as steady
+html:
+  confidence:              # per resort: deterministic spread (max - min) / median, and ensemble wet share
+    high: {spread: 0.5, wet: 0.8}          # high: spread at most 0.5 AND wet at least 80%
+    low: {spread: 1.0, wet: 0.5}           # low: spread above 1.0 OR wet under 50%; medium between
+  noaa_days: 10            # NOAA ALTA (coop) daily rows shown
+
 # Observed event thresholds
 obs_thresholds:
   snotel_swe_in: 0.10      # "measurable" SWE increase over the window

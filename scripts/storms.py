@@ -12,16 +12,17 @@
    data/processed/gauge_pillow_days.csv (recent days recomputed each pass; the whole archive the first time) and
    undercatch_summary.csv per site and flow.
 4. Prints each upcoming storm with every model's newest total over the storm window, and saves it to
-   data/reports/storms_latest.txt.
+   data/reports/storms_latest.txt, and as a web page: data/reports/storms_latest.html (htmlreport.py).
 """
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
-from cottonwoods import storms, timefmt, verify
+from cottonwoods import htmlreport, storms, timefmt, verify
 from cottonwoods.report import render_freezing, render_storms, render_verified
 from cottonwoods.archive.forecasts import load_forecasts
-from cottonwoods.archive.obs import load_hand_obs, load_rap, load_snotel, load_soundings, load_storm_totals
+from cottonwoods.archive.obs import (load_ghcn, load_hand_obs, load_rap, load_snotel, load_soundings,
+                                    load_storm_totals)
 from cottonwoods.obs.sounding import summarize
 from cottonwoods.config import PROCESSED_DIR, REPORTS_DIR, load_config
 
@@ -70,3 +71,6 @@ print(text)
 out = REPORTS_DIR
 out.mkdir(parents=True, exist_ok=True)
 (out / "storms_latest.txt").write_text(text, encoding="utf-8")
+# The same storms as a web page (htmlreport.py: summary, chances, timeline, NOAA ALTA); internal, not the feed
+html = htmlreport.render_html(table, fc, cfg, now, text, load_ghcn(start=now - timedelta(days=40)))
+(out / "storms_latest.html").write_text(html, encoding="utf-8")
