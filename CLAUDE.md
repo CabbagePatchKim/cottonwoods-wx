@@ -377,10 +377,13 @@ route (api.weather.gov lists CLN but serves no observations; never automate the 
 - (Resolved 2026-10-28: owner set Solitude = top of Apex lift 9,040 ft / 40.61369 -111.60199, Brighton = 9,514 ft /
   40.58766 -111.58009, replacing the ~9,200 / ~9,600 guesses. In main config; cloud needs a release, and archived
   runs keep the old elevation until re-derived - derived fields are computed at archive time, not on read.)
-- Which site were the journal "actual" totals measured at (Alta, Snowbird, Brighton, LCC avg)?
+- (Resolved 2026-10-29: journal actuals are the ALTA STAKE, actual_site alta_stake. Added 2/16-2/18 cycle 46 in, on
+  2026-02-16a, whose forecasts cover the whole cycle; 3/5 16 in. Journal by model, last forecast per storm: ECMWF
+  1.5" avg error (3 storms), HRRR 3.8 (4), GDPS 6.1 (6), RDPS 10.4 (7, bias -2.5: big misses both ways). OWNER on
+  GDPS (2026-10-29): steadiest in the journal, but its coarse grid makes the freezing level and local influences
+  hard to catch in a marginal storm like the 10/30-11/2 one; weigh that when its snow split is compared.)
 - Confirm storm window start/end times in `data/journal/storms.csv` (`window_confirmed=false` rows).
 - (Resolved 2026-10-26: the 11/23, 12/1, 12/8 and 4/15 storms are the 2023-24 season.)
-- Actuals missing: 2/16-2/18/2026 storms and 3/5/2026.
 
 ## Next build steps (agreed order)
 1. DONE 2026-10-27: stale-storm fix + merge/split/periods/parts.
