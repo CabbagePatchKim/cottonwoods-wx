@@ -150,3 +150,35 @@ def test_gauge_pillow_days_are_stored_by_window_and_summarized_by_flow():
     row = s[(s.site == "snowbird") & (s.flow == "all")].iloc[0]
     assert row.n_days == 1 and row.pillow_to_gauge == 1.6 and row.n_flagged == 1
     assert set(s.flow) == {"all", "NW"}
+
+
+def test_freezing_level_is_scored_against_the_balloons_and_kept_as_runs_age_out():
+    # owner 2026-10-29: which models get the freezing level right in a marginal storm, without waiting for snow totals
+    from cottonwoods.report import freezing_table
+    from cottonwoods.verify import freezing_level_scores, merge_freezing_scores
+    from helpers import hourly
+    cfg = make_cfg()
+    pt = cfg["storms"]["point"]
+    i = pd.Timestamp("2026-10-30 00:00")
+    def run(model, fl_m, point=pt):
+        ends = pd.date_range(i + pd.Timedelta(hours=3), periods=16, freq="3h")
+        return pd.DataFrame({"model": model, "init": i, "valid_end": ends, "valid_start": ends - pd.Timedelta(hours=3),
+                             "point": point, "freezing_level_m": fl_m})
+    fc = pd.concat([run("GDPS", 3000.0), run("HRRR", 2800.0), run("HRRR", 9999.0, point="snowbird"),
+                    run("ENS", np.nan).assign(member=1.0)], ignore_index=True)
+    snd = pd.DataFrame({"time_utc": pd.to_datetime(["2026-10-30 12:00", "2026-10-31 00:00", "2026-10-31 12:00"]),
+                        "freezing_level_m": [2900.0, 2800.0, np.nan]})
+    wet = hourly("2026-10-30 18:00", [1.0] * 12)          # 12 mm (~0.47") around the 10/31 00z balloon
+    sc = freezing_level_scores(fc, snd, wet, cfg)
+    assert set(sc["model"]) == {"GDPS", "HRRR"} and len(sc) == 4         # 2 balloons each; no NaN balloon, no ENS
+    g = sc.set_index(["model", "time_utc"])
+    assert abs(g.loc[("GDPS", pd.Timestamp("2026-10-30 12:00")), "err_ft"] - 100 * 3.281) < 1e-6   # 100 m too high
+    assert g.loc[("HRRR", pd.Timestamp("2026-10-31 00:00")), "err_ft"] == 0 and g.loc[("HRRR", pd.Timestamp("2026-10-31 00:00")), "lead_hr"] == 24
+    assert g["wet"].tolist().count(True) == 2 and not g.loc[("GDPS", pd.Timestamp("2026-10-30 12:00")), "wet"]
+    t = freezing_table(sc, cfg).set_index("model")
+    assert t.loc["GDPS", "0-24 h"] == "+492 492 (2)" and t.loc["HRRR", "wet 0-24 h"] == "+0 0 (1)"
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "freezing_scores.csv"
+        merge_freezing_scores(sc, path)
+        later = merge_freezing_scores(sc[sc["model"] == "HRRR"].assign(err_ft=5.0), path)   # GDPS no longer loaded
+        assert len(later) == 4 and (later[later["model"] == "HRRR"]["err_ft"] == 5.0).all()

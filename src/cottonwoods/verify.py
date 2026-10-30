@@ -25,7 +25,8 @@ import pandas as pd
 from . import regimes
 from .archive.obs import drop_unreliable_water
 from .gauge import gauge_increments
-from .units import MM_PER_IN
+from .units import FT_PER_M, MM_PER_IN
+from .windows import window_total
 
 
 # Terms used below:
@@ -282,6 +283,50 @@ def undercatch_summary(days: pd.DataFrame, cfg: dict) -> pd.DataFrame:
                         "pillow_to_gauge": round(_ratio(f["pillow_obs_in"].sum(), f["gauge_obs_in"].sum()), 2),
                         "n_flagged": int(f["undercatch_flag"].sum())})
     return pd.DataFrame(out)
+
+
+FREEZING_KEYS = ["model", "init", "time_utc"]
+
+
+def freezing_level_scores(fc: pd.DataFrame, snd: pd.DataFrame | None, osteps: pd.DataFrame | None,
+                          cfg: dict) -> pd.DataFrame:
+    """Each deterministic run's freezing level at the storm point (storms.point) vs the SLC balloon's, at every balloon
+    time one of its steps ends on (owner, 2026-10-29: which models get the freezing level right in a marginal storm,
+    without waiting for snow totals). Both are the highest height where the air crosses 0 C (MSL; the ground if it is
+    below freezing all the way up). snd: sounding summaries (obs.sounding.summarize); osteps: observed precip steps at
+    the point (storms.point_steps). Columns FREEZING_KEYS + lead_hr, fc_fl_ft, obs_fl_ft, err_ft (forecast minus
+    observed), wet (>= verify.event_swe_in observed in the 12 h centred on the balloon)."""
+    cols = FREEZING_KEYS + ["lead_hr", "fc_fl_ft", "obs_fl_ft", "err_ft", "wet"]
+    if fc.empty or snd is None or snd.empty or "freezing_level_m" not in fc.columns:
+        return pd.DataFrame(columns=cols)
+    det = fc[(fc["point"] == cfg["storms"]["point"]) & fc["freezing_level_m"].notna()]
+    det = det[det["member"].isna()] if "member" in det.columns else det
+    obs = snd[["time_utc", "freezing_level_m"]].dropna().rename(columns={"freezing_level_m": "obs_m"})
+    m = det[["model", "init", "valid_end", "freezing_level_m"]].merge(obs, left_on="valid_end", right_on="time_utc")
+    if m.empty:
+        return pd.DataFrame(columns=cols)
+    half, thr = pd.Timedelta(hours=6), cfg["verify"]["event_swe_in"]
+    wet = {t: osteps is not None and not osteps.empty and window_total(osteps, t - half, t + half) / MM_PER_IN >= thr
+           for t in m["time_utc"].unique()}
+    return pd.DataFrame({"model": m["model"], "init": m["init"], "time_utc": m["time_utc"],
+                         "lead_hr": (m["time_utc"] - m["init"]) / pd.Timedelta(hours=1),
+                         "fc_fl_ft": m["freezing_level_m"] * FT_PER_M, "obs_fl_ft": m["obs_m"] * FT_PER_M,
+                         "err_ft": (m["freezing_level_m"] - m["obs_m"]) * FT_PER_M,
+                         "wet": m["time_utc"].map(wet)})[cols]
+
+
+def merge_freezing_scores(new: pd.DataFrame, path) -> pd.DataFrame:
+    """The stored table (data/processed/freezing_scores.csv) with `new` replacing its rows for the same run and
+    balloon (a run's numbers can change when it's re-derived or filled); saved and returned. A pass only has its
+    recent runs loaded, so older scores are kept from the file."""
+    if path.exists():
+        old = pd.read_csv(path, parse_dates=["init", "time_utc"])
+        keep = ~old.set_index(FREEZING_KEYS).index.isin(new.set_index(FREEZING_KEYS).index) if not new.empty else None
+        new = pd.concat([old[keep], new], ignore_index=True) if keep is not None else old
+    new = new.sort_values(FREEZING_KEYS).reset_index(drop=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    new.to_csv(path, index=False)
+    return new
 
 
 def merge_gauge_pillow_days(new: pd.DataFrame, path) -> pd.DataFrame:

@@ -513,6 +513,32 @@ def bin_totals(binned: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     return t.fillna("")
 
 
+def freezing_table(scores: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Per model and lead range (verify.lead_bands_hours), the freezing level vs the SLC balloons: "+250 400 (12)" =
+    average error in ft (+ = model too high, i.e. too warm), average miss in ft, balloons; for all balloons and for
+    wet ones (precip observed at the storm point around the balloon: the storms where it decides rain or snow)."""
+    if scores is None or scores.empty:
+        return pd.DataFrame()
+    t = pd.DataFrame({"model": sorted(scores["model"].unique(), key=model_rank)})
+    for label, part in (("", scores), ("wet ", scores[scores["wet"].astype(bool)])):
+        for lo, hi in cfg["verify"]["lead_bands_hours"]:
+            band = part[(part["lead_hr"] > lo) & (part["lead_hr"] <= hi)]
+            avg = band.groupby("model")["err_ft"].agg(bias="mean", off=lambda x: x.abs().mean(), n="size")
+            t[label + band_name(lo, hi)] = t["model"].map(
+                lambda m: f"{avg.at[m, 'bias']:+.0f} {avg.at[m, 'off']:.0f} ({avg.at[m, 'n']})" if m in avg.index else "")
+    return t
+
+
+def render_freezing(scores: pd.DataFrame, cfg: dict) -> str:
+    """The freezing-level section of the storm report ('' until a run has met a balloon)."""
+    t = freezing_table(scores, cfg)
+    if t.empty:
+        return ""
+    return ("=== Freezing level vs SLC balloons (00z/12z), at " + cfg["storms"]["point"] + "'s model column: "
+            "average error ft (+ = model too warm) / average miss ft / (balloons), by lead; wet = precip observed\n"
+            + t.to_string(index=False) + "\n")
+
+
 def regime_table(binned: pd.DataFrame, storms: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Season bin score per model by the storm's FORECAST regime (the dominant phase of its defining run: what is known
     ahead), every deterministic run within score_runs_hours at every scored point: "+1.8 (12)" = average score (runs x

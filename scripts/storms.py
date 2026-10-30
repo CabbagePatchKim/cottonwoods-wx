@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 from cottonwoods import storms, timefmt, verify
-from cottonwoods.report import render_storms, render_verified
+from cottonwoods.report import render_freezing, render_storms, render_verified
 from cottonwoods.archive.forecasts import load_forecasts
 from cottonwoods.archive.obs import load_hand_obs, load_rap, load_snotel, load_soundings, load_storm_totals
 from cottonwoods.obs.sounding import summarize
@@ -54,6 +54,13 @@ verified = render_verified(table, scores, totals, cfg, now, readings=readings, b
                            block_scores=storms.load_block_scores())
 if verified:
     text += "\n" + verified
+# Freezing level vs the SLC balloons, every deterministic run (blended and unmodified), kept in a growing table
+fz = verify.freezing_level_scores(pd.concat([fc, fc_raw], ignore_index=True), summarize(snd) if not snd.empty else None,
+                                  storms.point_steps(obs, cfg).get(cfg["storms"]["point"]), cfg)
+fz = verify.merge_freezing_scores(fz, PROCESSED_DIR / "freezing_scores.csv")
+freezing = render_freezing(fz, cfg)
+if freezing:
+    text += "\n" + freezing
 newly = table[(table.status == "verified") & (table.updated_at == now)]
 for _, st in newly.iterrows():
     text += (f"\nVERIFIED storm {st.storm_id}: {timefmt.clock(st.final_start)} - {timefmt.clock(st.final_end)}, "

@@ -382,6 +382,14 @@ route (api.weather.gov lists CLN but serves no observations; never automate the 
   1.5" avg error (3 storms), HRRR 3.8 (4), GDPS 6.1 (6), RDPS 10.4 (7, bias -2.5: big misses both ways). OWNER on
   GDPS (2026-10-29): steadiest in the journal, but its coarse grid makes the freezing level and local influences
   hard to catch in a marginal storm like the 10/30-11/2 one; weigh that when its snow split is compared.)
+- FREEZING-LEVEL SCORES (owner 2026-10-29, in main, not released): verify.freezing_level_scores: every deterministic
+  run (blended + "X raw") at storms.point's model column vs each SLC balloon (00z/12z) a step ends on; both = highest
+  0 C crossing MSL. wet = >= event_swe_in observed at the point in the 12 h around the balloon (the marginal-storm
+  cases). data/processed/freezing_scores.csv (merged each pass, so scores outlive the 20-day run window); storm
+  report section "Freezing level vs SLC balloons" (report.freezing_table: bias ft / miss ft / n by lead band, all
+  and wet). First look (laptop data to 10/29 00z, 8 dry balloons): every model runs warm vs SLC by ~100-340 ft at
+  0-24 h; misses 250-620 ft. Caveat: Alta's column vs a balloon ~35 km away. RAP stores only t_700 (no RAP freezing
+  level yet).
 - Confirm storm window start/end times in `data/journal/storms.csv` (`window_confirmed=false` rows).
 - (Resolved 2026-10-26: the 11/23, 12/1, 12/8 and 4/15 storms are the 2023-24 season.)
 
