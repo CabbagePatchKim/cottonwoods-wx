@@ -581,3 +581,23 @@ def test_local_regime_scores_rescore_verified_storms_with_regime_adjusted_snow()
     assert alta.loc["regime", "obs_snow_in"] == alta.loc["plain", "obs_snow_in"] == 10
     t = regime_score_table(both, cfg).set_index("model")
     assert t.loc["HRRR", "runs"] >= 1 and t.loc["HRRR", "plain score"] != "" and t.loc["HRRR", "regime score"] != ""
+
+
+def test_guidance_is_listed_apart_in_the_storm_and_block_tables_and_never_in_a_median():
+    # dry run 2026-10-30: U of U guidance rows were counted in the 12 h block medians, under a "guidancerun" header
+    from cottonwoods.report import GUIDANCE_CAPTION, storm_block_lines
+    cfg = make_cfg()
+    i = pd.Timestamp("2026-11-01 12:00")
+    s, e = pd.Timestamp("2026-11-02 00:00"), pd.Timestamp("2026-11-03 00:00")
+    def run(model, snow_per_h):
+        vs = pd.date_range(i, "2026-11-03 12:00", freq="h", inclusive="left")
+        wet = (vs >= s) & (vs < e)
+        return pd.DataFrame({"model": model, "init": i, "valid_start": vs, "valid_end": vs + pd.Timedelta(hours=1),
+                             "point": "alta", "qpf_mm": np.where(wet, 1.0, 0.0), "snow_in": np.where(wet, snow_per_h, 0.0)})
+    fc = pd.concat([run("HRRR", 0.1), run("RRFS", 0.3), run("UUHRRR", 5.0)], ignore_index=True)
+    st = pd.Series({"storm_id": "x", "point": "alta", "fc_start": s, "fc_end": e})
+    lines = storm_block_lines(st, fc, cfg)
+    median = next(line for line in lines if line.startswith("median"))
+    assert "2.4" in median and "60" not in median                 # median of 1.2" and 3.6" per 12 h; not U of U's 60"
+    assert lines.index(GUIDANCE_CAPTION) > lines.index(median)    # guidance listed after the median, captioned
+    assert any(line.startswith("UUHRRR") for line in lines) and not any("guidancerun" in line for line in lines)

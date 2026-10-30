@@ -8,7 +8,8 @@ The project has more machinery than evidence: one verified storm (dry), so the b
 trends and guidance are all unproven. Until a few storms verify, the work is MEASURING, not building new features.
 
 ## Steps
-1. [ ] Finish the pre-v1.7 dry run (every pass step on a bucket copy) and release v1.7 (owner approves the tag).
+1. [ ] Finish the pre-v1.7 dry run (DONE 10/30: all 10 steps ok; fixed guidance in block medians) and
+       release v1.7 (owner approves the tag). RRFS / UU runs pre-seeded in the bucket (no first-pass catch-up).
        v1.7 = RRFS in (feed too), NAM / NAM Nest retired 11/3 12z, U of U guidance, HTML report, Verified step.
 2. [ ] Let the weekend storm (Fri 10/30 - Mon 11/2) verify (~11/2-11/3). Enter Collins readings. Read the
        verification closely: which models, kinds (deterministic / guidance / ensemble) and methods did well;

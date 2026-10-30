@@ -18,6 +18,8 @@ from .windows import window_total, within_lead
 from .units import FT_PER_M, MM_PER_IN
 
 # Display order: short-range high-res first, then global, then ensembles
+# The kinds never mix (owner, 2026-10-30): guidance rows get this caption wherever they are listed
+GUIDANCE_CAPTION = "    guidance (U of U at Alta Collins only; not in the medians or the storm windows):"
 MODEL_ORDER = ["HRRR", "RRFS", "NAMNEST", "NAM", "RDPS", "GFS", "GDPS", "IFS", "UUHRRR", "UUGFS", "GEFS", "ENS",
                "RRFSENS"]
 
@@ -241,10 +243,15 @@ def storm_block_lines(st, fc: pd.DataFrame, cfg: dict, now=None, osteps: pd.Data
     wet_mm = cfg["verify"]["event_swe_in"] * MM_PER_IN
     point, labels = bcfg["block_point"], {p: v.get("label", p) for p, v in cfg["points"].items()}
     head = [blocks.label(b[2]) for b in blks]
-    det, ens, full = [], [], {p: [[] for _ in blks] for p in cfg["points"]}
+    det, guid, ens, full = [], [], [], {p: [[] for _ in blks] for p in cfg["points"]}
     for model, g in sorted(storm_runs(fc, cfg, st.fc_start), key=lambda mg: model_rank(mg[0])):
         if "member" in g.columns and g["member"].notna().any():
             ens.append((model, g["init"].iloc[0], blocks.ensemble_blocks(g[g["point"] == point], blks, wet_mm)))
+            continue
+        if kind_of(model) == "guidance":                 # shown apart, never in the medians (owner, 2026-10-30)
+            gp = g[g["point"] == point]
+            if not gp.empty:
+                guid.append((model, g["init"].iloc[0], blocks.run_blocks(gp, blks, snow_col(gp))))
             continue
         for p in cfg["points"]:
             gp = g[g["point"] == p]
@@ -265,6 +272,9 @@ def storm_block_lines(st, fc: pd.DataFrame, cfg: dict, now=None, osteps: pd.Data
            row("model", "run", head) + (f"  {'rest':>6}" if going else "")]
     out += [row(m, timefmt.cycle(i), [_amount(v, c) for v, c in got]) + tail(m) for m, i, got in det]
     out.append(row("median", "", [_amount(*med(full[point][i])) for i in range(len(blks))]))
+    if guid:
+        out.append(GUIDANCE_CAPTION)
+        out += [row(m, timefmt.cycle(i), [_amount(v, c) for v, c in got]) + tail(m) for m, i, got in guid]
     if going and osteps is not None and not osteps.empty:
         out.append(row("observed", "water", _observed_blocks(osteps, blks, now)).rstrip()
                    + "  SNOTEL water (in) so far, not snow")
@@ -357,12 +367,13 @@ def _storm_table(models: list[dict], points: list[str], tail_w: dict[str, int],
 
     out = [" " * 38 + "".join(_short((labels or {}).get(p, p)).rjust(14) for p in points)]
     # the three kinds never mix (owner, 2026-10-30): models, then guidance (U of U, Alta only), then ensembles
-    for head, group, names in (("model", [r for r in models if r.get("kind", "deterministic") == "deterministic"
-                                          and not r["ensemble"]], ("water", "snow")),
-                               ("guidance", [r for r in models if r.get("kind") == "guidance"], ("water", "snow")),
-                               ("model", [r for r in models if r["ensemble"]], ("wet/N", "mean"))):
+    for caption, group, names in (("", [r for r in models if r.get("kind", "deterministic") == "deterministic"
+                                        and not r["ensemble"]], ("water", "snow")),
+                                  (GUIDANCE_CAPTION, [r for r in models if r.get("kind") == "guidance"], ("water", "snow")),
+                                  ("", [r for r in models if r["ensemble"]], ("wet/N", "mean"))):
         if group:
-            out.append(line(head, "run", "covers", [names] * len(points),
+            out += [caption] if caption else []
+            out.append(line("model", "run", "covers", [names] * len(points),
                             {k: k for k in tail_w} if not group[0]["ensemble"] else {}))
             out += [line(r["model"], timefmt.cycle(r["init"]),
                          "full storm" if r["full"] else f"from {timefmt.clock(r['valid_from'])}"
