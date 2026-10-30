@@ -10,11 +10,11 @@
 name: model pass
 
 on:
-  schedule:
-    # 02:45, 05:45, ... 23:45 UTC (GitHub often starts these 5-30 min late). :45, not :30: HRRR/NAM post ~2.5 h
-    # and GFS/GDPS ~5.5 h after init, so a :30 pass landed right on their posting time and often just missed them.
-    - cron: "45 2-23/3 * * *"
-  workflow_dispatch: {}          # "Run workflow" button, for testing
+  # ONLY TRIGGER (owner, 2026-10-29): the Cloudflare Worker (cloud/trigger_worker.js) presses "Run workflow" at
+  # 02:50, 05:50, ... 23:50 UTC. GitHub's own schedule was removed: it dropped about half its slots and ran the rest
+  # 0 min to ~3 h late (10/29), and a late run more than 40 min after the Worker's became a wasted extra pass.
+  # :50: HRRR/NAM post ~2.5 h and GFS/GDPS ~5.5 h after init, so earlier passes often just missed them.
+  workflow_dispatch: {}          # the Worker, and the "Run workflow" button
 
 concurrency:
   group: model-pass
@@ -22,41 +22,9 @@ concurrency:
 
 permissions:
   contents: read
-  actions: read                  # the gate below lists this workflow's recent runs
 
 jobs:
-  # A late SCHEDULED run right after another pass does nothing (owner, 2026-10-29): the Worker pressed "Run workflow"
-  # at 02:50Z 10/29, GitHub's own schedule fired a minute later, and the queue (concurrency above) ran both, back to
-  # back. The Worker already skips when a pass started recently; this covers the other order. A run started from the
-  # "Run workflow" button (or by the Worker) always runs.
-  gate:
-    runs-on: ubuntu-latest
-    outputs:
-      skip: ${{ steps.check.outputs.skip }}
-    steps:
-      - name: Skip a scheduled run created within 40 min after another pass
-        id: check
-        continue-on-error: true    # if GitHub's API fails here, the pass runs (an extra pass beats a missed one)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          skip=false
-          if [ "${{ github.event_name }}" = schedule ]; then
-            api="repos/${{ github.repository }}/actions"
-            me=$(date -d "$(gh api "$api/runs/${{ github.run_id }}" --jq .created_at)" +%s)
-            for other in $(gh api "$api/workflows/pass.yml/runs?per_page=10" \
-                             --jq '.workflow_runs[] | select(.id != ${{ github.run_id }}) | "\(.run_number)@\(.created_at)"'); do
-              ago=$(( me - $(date -d "${other#*@}" +%s) ))
-              if [ "$ago" -ge 0 ] && [ "$ago" -lt 2400 ]; then
-                echo "skip: pass #${other%@*} was created $(( ago / 60 )) min before this scheduled run"; skip=true
-              fi
-            done
-          fi
-          echo "skip=$skip" >> "$GITHUB_OUTPUT"
-
   pass:
-    needs: gate
-    if: needs.gate.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 170
     env:

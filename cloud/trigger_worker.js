@@ -1,8 +1,7 @@
-// Cloudflare Worker that starts the GitHub Actions model pass on time. GitHub's own schedule drops many slots
-// (10/28: 3 of 4 missed), so this presses the workflow's "Run workflow" button 5 minutes after each slot.
-// GitHub's schedule stays on as a backup; if its run already started (queued or running, or started in the last
-// 30 min), this one does nothing, so two passes don't run back to back. The other order (GitHub's schedule firing
-// late, just after this Worker's run) is handled in pass.yml's gate job, which skips that scheduled run.
+// Cloudflare Worker that starts the GitHub Actions model pass on time: the ONLY trigger (owner, 2026-10-29).
+// GitHub's own schedule dropped about half its slots and ran the rest up to ~3 h late, so it was removed from
+// pass.yml. This presses the workflow's "Run workflow" button every 3 hours; if a pass is already queued or
+// running, or started in the last 30 min (e.g. one started by hand), it does nothing.
 //
 // Set up in the Cloudflare dashboard (no build step; paste this file):
 //   Workers & Pages -> Create -> Worker "cwx-pass-trigger" -> Edit code -> paste -> Deploy.
@@ -12,7 +11,7 @@
 //   Settings -> Domains & Routes: the workers.dev URL can be disabled; this Worker only runs on its schedule.
 // Logs: the Worker's "Logs" tab (or Observability) shows one line per trigger.
 
-const CRON = "50 2,5,8,11,14,17,20,23 * * *";   // 5 min after pass.yml's "45 2-23/3 * * *"
+const CRON = "50 2,5,8,11,14,17,20,23 * * *";   // every 3 h at :50 UTC
 const REPO = "CabbagePatchKim/cottonwoods-wx";
 const WORKFLOW = "pass.yml";
 const RECENT_MINUTES = 30;

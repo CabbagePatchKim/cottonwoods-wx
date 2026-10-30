@@ -196,11 +196,20 @@ Running live, TWO places for now (side-by-side check before cutover):
   Runs so far: #1-4 manual (10/27-28), #5 schedule 08:58Z (first v1.1, green), #6 schedule 17:23Z (16:45 slot,
   38 min late, v1.1, green). Both v1.1 runs failed IFS (Herbie 2026.10 bug, fixed in v1.2/v1.3). No pass has run
   v1.2; the next one (20:45Z slot or Worker 20:50Z) runs v1.3 directly.
-- SCHEDULE UNRELIABLE (10/28): GitHub ran only 1 of 4 scheduled slots (08:45Z; 05:45/11:45/14:45Z dropped). Fix
+- WORKER IS THE ONLY TRIGGER (owner 2026-10-29, live from main): pass.yml has no `schedule:` and no gate job any
+  more; the Cloudflare Worker dispatches at :50 after 02/05/.../23Z. Why: over 10/29 GitHub's schedule dropped ~half
+  its slots and ran the rest 0 min to 2 h 48 min late; a late run > 40 min after the Worker's (22:00Z) was a wasted
+  extra pass. The Worker itself is unchanged (its repo copy's comments updated; no redeploy needed). If the Worker
+  fails, no pass runs: check its Logs tab, or press "Run workflow" by hand.
+- (history) SCHEDULE UNRELIABLE (10/28): GitHub ran only 1 of 4 scheduled slots (08:45Z; 05:45/11:45/14:45Z dropped). Fix
   (owner approved 10/28): Cloudflare Worker cloud/trigger_worker.js presses "Run workflow" at :50 after each slot,
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
+- RELEASED v1.6 (owner approved 2026-10-29, tag on 8436a0e, CI green): NOAA coop (ALTA) fetch window, blended +
+  unmodified stores both scored (forecasts_raw), RDPS blended on its own grid. Manual "Changes by version" has v1.6
+  (RDPS blend: feed-visible). CHECK the first v1.6 pass: "Running approved release v1.6", obs:ghcn > 0 rows,
+  data/archive/forecasts_raw/ files for GFS/IFS/ENS/GDPS/RDPS, RDPS main files with rdps_* cells, feed code_version.
 - RELEASED v1.5 (owner 2026-10-29 "make the change then publish 1.5", tag on 7860c9e, pushed ~07:20Z, CI green;
   bucket backup of every forecast run + archive CSVs at backup/pre-v1.5/ (134 objects, outside the synced data/
   prefix). Rollback: delete the v1.5 tag (the next pass runs v1.4) and copy backup/pre-v1.5/data/... back. First
@@ -265,7 +274,7 @@ Running live, TWO places for now (side-by-side check before cutover):
   (a dry run's flow would make a regime look dry). Report: per storm "flow:" line; season tables by the storm's
   FORECAST regime (defining run's dominant phase) and 12 h blocks by OBSERVED block regime (block_scores fc_regime /
   obs_regime). Verified storms get relabeled + fc_flow recomputed once RAP covers them (_backfill_verified).
-  DOUBLE-RUN GATE (owner 2026-10-29): pass.yml job "gate" ends a SCHEDULED run created < 40 min after another pass
+  DOUBLE-RUN GATE (owner 2026-10-29; REMOVED later that day with GitHub's schedule): pass.yml job "gate" ends a SCHEDULED run created < 40 min after another pass
   (GitHub's late schedule after the Worker's dispatch, 02:50/02:51Z 10/29); manual/Worker runs always run; fails open
   (API error -> the pass runs). LIVE NOW: workflow files run from main, independent of the release tag.
   FULL TEST OF EVERYTHING SINCE v1.4 (owner 2026-10-29, at 67e3a75+): 135 offline tests + ruff; then the BUCKET pulled
