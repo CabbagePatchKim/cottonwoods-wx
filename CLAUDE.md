@@ -223,6 +223,13 @@ Running live, TWO places for now (side-by-side check before cutover):
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
+- RELEASED v1.7 (owner approved 2026-10-30, tag on 3c43be7, pushed ~08:13Z, CI green): RRFS + RRFSENS, U of U guidance
+  + Utah Snow Ensemble, model kinds apart, HTML report (chances / timeline / guidance / NOAA ALTA), freezing-level
+  scores, Verified step, obs tables, RRFS in the FEED (manual v1.7), NAM / NAM Nest retire 11/3 12z. Dry run on a
+  bucket copy first: all 10 steps ok. RRFS / RRFSENS / UU runs 10/28 06z-10/30 00z pre-seeded in the bucket (31 files,
+  laptop push --only) so the first pass skips the ~1 h RRFS catch-up. CHECK the first v1.7 pass: "Running approved
+  release v1.7", rrfs + uu streams, [uu-ens] saved, Observations tables, Verified step output, feed code_version v1.7
+  with RRFS in meta.models, README.md on cwx-feed = the v1.7 manual.
 - RELEASED v1.6 (owner approved 2026-10-29, tag on 8436a0e, CI green): NOAA coop (ALTA) fetch window, blended +
   unmodified stores both scored (forecasts_raw), RDPS blended on its own grid. Manual "Changes by version" has v1.6
   (RDPS blend: feed-visible). CHECK the first v1.6 pass: "Running approved release v1.6", obs:ghcn > 0 rows,
