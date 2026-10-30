@@ -343,9 +343,10 @@ cloud:
 # null and snow_regime_adjusted false; the regime adjustment stays in the local reports until it is verified.
 feed:
   regime_snow: false
-  # The models the feed publishes (owner, 2026-10-30): exactly the v1.0-v1.6 set. RRFS, the RRFS ensemble and the
-  # U of U guidance are archived and reported internally; adding any of them to the feed needs an approved release.
-  models: [HRRR, NAMNEST, NAM, RDPS, GFS, GDPS, IFS, GEFS, ENS]
+  # The models the feed publishes (owner, 2026-10-30). RRFS added in v1.7 (NOAA's replacement for NAM / NAM Nest);
+  # NAM / NAM Nest leave the feed at their retirement (archive.retired). The RRFS ensemble and the U of U guidance
+  # stay internal (the guidance is U of U's experimental product, not ours to republish).
+  models: [HRRR, RRFS, NAMNEST, NAM, RDPS, GFS, GDPS, IFS, GEFS, ENS]
 
 # Website feed on GitHub Pages (scripts/publish_feed.py -> src/cottonwoods/github_feed.py). Approved releases only;
 # previews are never pushed. Public URL: https://cabbagepatchkim.github.io/cwx-feed/v1/storms.json (meta, daily too).

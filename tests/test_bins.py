@@ -53,7 +53,8 @@ def test_dry_storm_is_scored_without_hand_entries_and_wet_storm_waits_for_them()
     assert "observed bin: 0-2" in text and "2-4 -1" in text and "0-2 +2" in text
     assert "-1 (0 of 1 right)" in text and "+2 (1 of 1 right)" in text   # NAMNEST: last run -1, 72 h run +2
     later = render_verified(pd.DataFrame([st]), scores, pd.DataFrame(), cfg, pd.Timestamp("2026-11-20"), binned=b)
-    assert "none" in later and "-1 (0 of 1 right)" in later    # weeks later: no recent storm, season totals stay
+    assert "none" in later and "+2 (1 of 1 right)" in later    # weeks later: no recent storm, season totals stay
+    assert "NAMNEST" not in later                              # but retired 11/3 (archive.retired): off the tables
 
 
 def test_season_scores_are_averaged_by_how_far_ahead_each_run_was_issued():

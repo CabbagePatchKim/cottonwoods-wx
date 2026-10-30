@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 from cottonwoods import htmlreport, storms, timefmt, verify
+from cottonwoods.models import uu
 from cottonwoods.report import render_freezing, render_storms, render_verified
 from cottonwoods.archive.forecasts import load_forecasts
 from cottonwoods.archive.obs import (load_ghcn, load_hand_obs, load_rap, load_snotel, load_soundings,
@@ -69,7 +70,7 @@ if verified:
 fz = verify.freezing_level_scores(pd.concat([fc, fc_raw], ignore_index=True), summarize(snd) if not snd.empty else None,
                                   storms.point_steps(obs, cfg).get(cfg["storms"]["point"]), cfg)
 fz = verify.merge_freezing_scores(fz, PROCESSED_DIR / "freezing_scores.csv")
-freezing = render_freezing(fz, cfg)
+freezing = render_freezing(fz, cfg, now)
 if freezing:
     vtext += "\n" + freezing
 print(text)
@@ -78,5 +79,6 @@ out.mkdir(parents=True, exist_ok=True)
 (out / "storms_latest.txt").write_text(text, encoding="utf-8")
 (out / "verified_latest.txt").write_text(vtext, encoding="utf-8")
 # The same storms as a web page (htmlreport.py: summary, chances, timeline, NOAA ALTA); internal, not the feed
-html = htmlreport.render_html(table, fc, cfg, now, text + "\n" + vtext, load_ghcn(start=now - timedelta(days=40)))
+html = htmlreport.render_html(table, fc, cfg, now, text + "\n" + vtext, load_ghcn(start=now - timedelta(days=40)),
+                              uu.load_use())
 (out / "storms_latest.html").write_text(html, encoding="utf-8")

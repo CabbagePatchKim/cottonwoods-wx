@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from .models.registry import deterministic
-from .report import _snow_col, model_rank
+from .report import snow_col, model_rank
 from .units import MM_PER_IN
 from .windows import window_total, within_lead
 
@@ -36,7 +36,7 @@ def timeline(steps: pd.DataFrame, s, e, cfg: dict) -> dict:
     """One run at one point over [s, e): onset, end, peak_start, peak_rate (in/h), snow (in), water (in); times None
     when no window reaches the onset rate."""
     tc = cfg["trends"]
-    col = _snow_col(steps)
+    col = snow_col(steps)
     rate = hourly(steps, col, s, e).rolling(tc["rate_hours"]).mean().shift(-(tc["rate_hours"] - 1)).dropna()
     snowy = rate[rate >= tc["onset_rate_in_hr"]]
     peak = rate.idxmax() if len(rate) and rate.max() > 0 else None
@@ -93,7 +93,8 @@ def model_trends(st, fc: pd.DataFrame, cfg: dict, point: str) -> list[dict]:
 
 
 def ensemble_trends(st, fc: pd.DataFrame, cfg: dict, point: str) -> list[dict]:
-    """Per ensemble model: its last trends.runs runs reaching the storm, newest first: init, wet (share of members with
+    """Per ensemble model: its last trends.runs runs reaching the storm, newest first: init, full (covers the whole
+    storm: a shorter run's wet share and mean understate it, e.g. the RRFS ensemble's 60 h), wet (share of members with
     >= verify.event_swe_in), mean_water_in."""
     tc, s, e = cfg["trends"], st.fc_start, st.fc_end
     thr = cfg["verify"]["event_swe_in"]
@@ -107,7 +108,8 @@ def ensemble_trends(st, fc: pd.DataFrame, cfg: dict, point: str) -> list[dict]:
             if r.empty or r["valid_end"].max() <= s:
                 continue
             per = r.groupby("member").apply(lambda m: window_total(m, s, e), include_groups=False) / MM_PER_IN
-            runs.append({"init": pd.Timestamp(init), "wet": float((per >= thr).mean()), "mean_water_in": float(per.mean())})
+            runs.append({"init": pd.Timestamp(init), "full": r["valid_start"].min() <= s and r["valid_end"].max() >= e,
+                         "wet": float((per >= thr).mean()), "mean_water_in": float(per.mean())})
         if runs:
             out.append({"model": model, "runs": runs})
     return out

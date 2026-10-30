@@ -18,6 +18,8 @@ from datetime import datetime, timedelta
 from functools import partial
 from typing import Callable
 
+import pandas as pd
+
 
 # A dataclass is a class that just holds named fields (Python writes __init__ for you).
 # frozen=True makes instances read-only, so a spec can't be changed by accident.
@@ -43,10 +45,6 @@ def kind_of(model: str) -> str:
     """'deterministic', 'guidance' or 'ensemble' (unknown models, e.g. a scored "GFS raw": by their base model)."""
     base = model.split(" ")[0]
     return REGISTRY[base].model_kind if base in REGISTRY else "deterministic"
-
-
-def models_of(kind: str) -> list[str]:
-    return [m for m, s in REGISTRY.items() if s.model_kind == kind]
 
 
 def deterministic(fc):
@@ -127,8 +125,9 @@ REGISTRY: dict[str, ModelSpec] = {
     # only. Their HRRR / GFS with a machine-learning snow ratio, read from their text products (models/uu.py)
     "UUHRRR": ModelSpec("UUHRRR", lambda i, c: _steps((1, 48, 1)), lag_hours=3.0, kind="guidance", points=("alta",),
                         based_on="HRRR"),
+    # (UUGFS 18z files exist only ~13 days a month, so 00/06/12z only: asking at 18z mostly logged failures)
     "UUGFS": ModelSpec("UUGFS", lambda i, c: _steps((1, 120, 1), (123, 180, 3)), lag_hours=5.5, kind="guidance",
-                       points=("alta",), based_on="GFS"),
+                       points=("alta",), based_on="GFS", only_cycles=(0, 6, 12)),
 }
 
 
@@ -183,9 +182,17 @@ def retired_from(model: str, cfg: dict) -> datetime | None:
     return datetime.fromisoformat(str(when)) if when else None
 
 
+def retired_by(model: str, cfg: dict, when) -> bool:
+    """True once `when` reaches the model's retirement (config archive.retired); a scored copy ("NAMNEST raw") goes
+    with its model. Retired models leave the feed, the high-res set and the season tables; their archive stays
+    (owner, 2026-10-30: "remove on 11/3, keep archives")."""
+    gone = retired_from(model.split(" ")[0], cfg)
+    return gone is not None and pd.Timestamp(when) >= pd.Timestamp(gone)
+
+
 def recent_cycles(model: str, cfg: dict, now_utc: datetime, n: int = 2) -> list[datetime]:
-    """The latest n cycles that should be fully posted by now_utc, newest first (none from a retired model's last
-    run on: config archive.retired)."""
+    """The latest n cycles that should be fully posted by now_utc, newest first. A retired model (config
+    archive.retired) never gets a cycle at or after its retirement: these are then its last n runs."""
     spec = REGISTRY[model]
     hours = cycles(cfg, model)
     gone = retired_from(model, cfg)

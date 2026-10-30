@@ -58,8 +58,9 @@ const [meta, storms, daily] = await Promise.all(
 | `model` | What it is | Runs (UTC) | Reaches |
 |---|---|---|---|
 | `HRRR` | NOAA High-Resolution Rapid Refresh, 3 km | 00, 06, 12, 18z | 48 h |
-| `NAMNEST` | NOAA NAM 3 km nest | 00, 06, 12, 18z | 60 h |
-| `NAM` | NOAA North American Mesoscale, 12 km | 00, 06, 12, 18z | 84 h |
+| `RRFS` | NOAA Rapid Refresh Forecast System, 3 km (replaces NAM and NAM Nest; from v1.7) | 00, 06, 12, 18z | 84 h |
+| `NAMNEST` | NOAA NAM 3 km nest (**retired by NOAA 2026-11-03**; leaves the feed then) | 00, 06, 12, 18z | 60 h |
+| `NAM` | NOAA North American Mesoscale, 12 km (**retired by NOAA 2026-11-03**; leaves the feed then) | 00, 06, 12, 18z | 84 h |
 | `RDPS` | Canadian regional model, 10 km | 00, 06, 12, 18z | 84 h |
 | `GFS` | NOAA Global Forecast System, 0.25° | 00, 06, 12, 18z | shown to 7 days |
 | `GDPS` | Canadian global model, 15 km | 00, 12z | shown to 7 days |
@@ -222,6 +223,11 @@ Each published version puts its own copy of this manual here, so this list is cu
   nearest the same single RDPS grid point, so RDPS gave all four resorts identical water. RDPS water now differs a
   little between resorts, and its snow can shift too. Only RDPS runs made after v1.6 are blended. No fields were
   added, removed or renamed.
+- **v1.7:** new model `RRFS` (NOAA's Rapid Refresh Forecast System, 3 km, to 84 h), in `daily.json`,
+  `storms.json` and `meta.json` like any other deterministic model. NOAA retires `NAM` and `NAM Nest` on
+  2026-11-03 (12z; NOAA may delay it a few days for significant weather): from then they are no longer in the feed.
+  If your site lists models by name, add `RRFS`; don't rely on `NAM` / `NAMNEST` being there. No fields were added,
+  removed or renamed.
 
 ## 10. Credits and licences
 

@@ -141,3 +141,39 @@ def test_guidance_has_its_own_section_and_never_sets_the_storm_or_the_summary():
     assert rows[0][4] == "1"                                         # Alta's summary counts HRRR only
     html = htmlreport.guidance_html(st, fc, models, cfg, "alta", "Alta")
     assert "UUHRRR" in html and "HRRR 11/01 12z" in html and "15:1" in html   # 0.6"/mm = 15.2:1, their ratio
+
+
+def test_an_ensemble_run_shorter_than_the_storm_is_flagged_and_left_out_of_the_wet_share():
+    # review 2026-10-30: the RRFS ensemble stops at 60 h; over a longer storm its wet share and mean understate it
+    from cottonwoods.report import storm_models
+    cfg = make_cfg()
+    st = pd.Series({"storm_id": "x", "point": "alta", "fc_start": S, "fc_end": E, "defining_model": "GFS",
+                    "defining_init": pd.Timestamp("2026-11-01 00:00")})
+    gfs = _run("GFS", "2026-11-01 00:00", qpf=1.0)
+    short = pd.concat([_run("RRFSENS", "2026-11-01 00:00", qpf=0.1, hours=30).assign(member=float(m))
+                       for m in range(2)], ignore_index=True)                        # ends 11/02 06z, storm to 11/03
+    full = pd.concat([_run("GEFS", "2026-11-01 00:00", qpf=q, member=m, step=6) for m, q in enumerate([2.0, 0.0])],
+                     ignore_index=True)
+    fc = pd.concat([gfs, short, full], ignore_index=True)
+    ens = {m["model"]: m for m in trends.ensemble_trends(st, fc, cfg, "alta")}
+    assert not ens["RRFSENS"]["runs"][0]["full"] and ens["GEFS"]["runs"][0]["full"]
+    row = htmlreport.resort_rows(storm_models(st, fc, cfg), {}, cfg)[0]
+    assert row[6] == "50%"                                   # GEFS 1 of 2 wet; the short RRFS run is left out
+    assert "(partial)" in htmlreport.timeline_html([], list(ens.values()), cfg, "Alta")
+    assert "confidence: high = spread" in htmlreport.summary_note(cfg)
+
+
+def test_utah_snow_ensemble_percentiles_over_the_storm_are_shown_as_approximate():
+    from cottonwoods.models import uu
+    cfg = make_cfg()
+    times = pd.date_range(S - pd.Timedelta(hours=12), E, freq="6h")
+    rows = [{"time_utc": t, "variable": v, "stat": stat, "value": (k * f if t > S else 0.0)}
+            for k, t in enumerate(times) for v, f0 in (("water_total_in", 0.1), ("snow_total_in", 1.0))
+            for stat, f in (("p10", f0 * 0.5), ("p50", f0), ("p90", f0 * 2))]
+    df = pd.DataFrame(rows)
+    t = uu.use_over(df, S, E)
+    assert abs(t.at["snow", "p50"] - 6.0) < 1e-9 and abs(t.at["water", "p90"] - 1.2) < 1e-9   # value at E minus at S
+    st = pd.Series({"fc_start": S, "fc_end": E})
+    html = htmlreport.use_html(st, (pd.Timestamp("2026-11-01 12:00"), df), cfg, "Alta")
+    assert "APPROXIMATE" in html and "6.0&quot;" in html and 'class="bin"' in html
+    assert htmlreport.use_html(st, (None, pd.DataFrame()), cfg, "Alta") == ""

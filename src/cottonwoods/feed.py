@@ -36,6 +36,7 @@ import pandas as pd
 
 from . import timefmt
 from .units import FT_PER_M
+from .models.registry import retired_by
 from .report import model_days, recent_changes, regime_adjusted, storm_models, storm_notes
 
 SCHEMA_VERSION = 1
@@ -171,8 +172,9 @@ def build_feed(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Timest
     ones still ahead or under way only (ended and verified ones are observations' territory), and model_only()
     checks the rest. Only the models in config feed.models are published (owner, 2026-10-30: new models, guidance and
     ensembles reach the feed only through an approved release that adds them), and only their staleness warnings."""
-    fc = fc[fc["model"].isin(cfg["feed"]["models"])]
-    warnings = [w for w in warnings if any(w.startswith(f"WARNING {m}:") for m in cfg["feed"]["models"])]
+    models = [m for m in cfg["feed"]["models"] if not retired_by(m, cfg, now)]      # NAM / NAM Nest leave on 11/3
+    fc = fc[fc["model"].isin(models)]
+    warnings = [w for w in warnings if any(w.startswith(f"WARNING {m}:") for m in models)]
     recent = fc[fc["init"] >= now - pd.Timedelta(days=2)]
     files = {"meta": build_meta(recent, cfg, now, code_version, warnings),
              "storms": build_storms(storms, fc, cfg, now),

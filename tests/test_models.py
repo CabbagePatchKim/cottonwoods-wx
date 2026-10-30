@@ -241,6 +241,7 @@ FHR  VALID MOUNTAIN TIME     AMB       ALT       IFF        AMB  ALT  CLN ATH20 
   2  08 PM Thu Oct 29 2026     S12G28    S10G19  SSW13G21   32F  35F  37F  41F  41F    8900FT     9:1/11%    0.10/0.10     0.9/ 0.9
   3  09 PM Thu Oct 29 2026   SSE13G28    S09G19  SSW12G21   31F  34F  36F  39F  39F    9100FT    12:1/ 8%    0.20/0.30     2.4/ 3.3
   4  10 PM Thu Oct 29 2026   SSE13G28    S09G19  SSW12G21   10F  11F  14F  17F  15F     <KSLC    14:1/ 7%    0.04/0.34     0.6/ 3.9
+  5  11 PM Thu Oct 29 2026   SSE13G28    S09G19  SSW12G21   34F  36F  42F  46F  44F   10200FT     0:1/-      0.00/0.34     0.0/ 3.9
 """
 UU_GFS = """FHR  VALID MOUNTAIN TIME     COLLINS T  MT BALDY T/RH  MT BALDY WIND       WETBULBZERO   SLR/H2O         1H QPF /  1H SNOW /  ACCUM QPF / ACCUM SNOW
 0    06 PM Thu Oct 29 2026   38F        33F /  41%     SSE   7 G  18 MPH   8300 FT       11:1 /  9%      0.00"  /   0.0"       0.00"    /   0.0"
@@ -256,7 +257,8 @@ def test_every_model_has_a_kind_and_the_reports_build_from_deterministic_rows_on
     from cottonwoods.models import registry as r
     assert r.kind_of("HRRR") == "deterministic" and r.kind_of("RRFS") == "deterministic" and r.kind_of("GFS raw") == "deterministic"
     assert r.kind_of("UUHRRR") == "guidance" and r.kind_of("RRFSENS") == "ensemble" and r.kind_of("GEFS") == "ensemble"
-    assert set(r.models_of("guidance")) == {"UUHRRR", "UUGFS"} and r.REGISTRY["UUGFS"].based_on == "GFS"
+    assert {m for m in r.REGISTRY if r.kind_of(m) == "guidance"} == {"UUHRRR", "UUGFS"}
+    assert r.REGISTRY["UUGFS"].based_on == "GFS"
     assert {m for ms in r.STREAMS.values() for m in ms} == set(r.REGISTRY)       # every model has a download stream
     fc = pd.DataFrame({"model": ["HRRR", "UUHRRR", "RRFSENS", "GEFS"], "member": [np.nan, np.nan, 1.0, 2.0]})
     assert r.deterministic(fc)["model"].tolist() == ["HRRR"]
@@ -282,9 +284,10 @@ def test_uu_guidance_text_becomes_model_steps_with_their_own_snow():
     from cottonwoods.models import uu
     cfg = make_cfg()
     h = uu.parse_text("UUHRRR", UU_HRRR, datetime(2026, 10, 30))
-    assert h["lead_hr"].tolist() == [1, 2, 3, 4] and (h["point"] == "alta").all() and np.isnan(h["wbz_msl_m"].iloc[3])
+    assert h["lead_hr"].tolist() == [1, 2, 3, 4, 5] and (h["point"] == "alta").all() and np.isnan(h["wbz_msl_m"].iloc[3])
+    assert h["slr_issued"].iloc[4] == 0.0                                        # "0:1/-": ratio 0, no water content
     assert abs(h["qpf_mm"].sum() - 0.34 * 25.4) < 1e-9 and abs(h["snow_issued_in"].tolist()[2] - 2.4) < 1e-9
-    assert h["slr_issued"].tolist() == [6.0, 9.0, 12.0, 14.0] and abs(h["wbz_msl_m"].iloc[0] - 9000 * 0.3048) < 1e-9
+    assert h["slr_issued"].tolist()[:4] == [6.0, 9.0, 12.0, 14.0] and abs(h["wbz_msl_m"].iloc[0] - 9000 * 0.3048) < 1e-9
     g = uu.parse_text("UUGFS", UU_GFS, datetime(2026, 10, 30))
     assert g["lead_hr"].tolist() == [1, 4] and abs(g["snow_issued_in"].iloc[1] - 1.5) < 1e-9   # hour 0 dropped
     assert np.isnan(g["wbz_msl_m"].iloc[1])                                     # "<= KSLC": below the valley, no height
@@ -335,3 +338,24 @@ def test_rrfs_totals_since_init_are_found_at_whole_days_too():
     assert re.search(since_init("APCP", 48), ":APCP:surface:0-48 hour acc fcst:")
     assert re.search(since_init("ASNOW", 13), ":ASNOW:surface:0-13 hour acc fcst:")
     assert not re.search(since_init("APCP", 24), ":APCP:surface:23-24 hour acc fcst:")   # never the last hour only
+
+
+def test_a_retired_model_leaves_the_high_res_set_and_the_season_tables_but_its_scores_stay():
+    import pandas as pd
+    from cottonwoods import probs
+    from cottonwoods.models.registry import retired_by
+    from cottonwoods.report import _active
+    cfg = make_cfg()
+    cfg["archive"]["retired"] = {"NAMNEST": "2026-11-03T12:00"}
+    assert not retired_by("NAMNEST", cfg, "2026-11-03 11:00") and retired_by("NAMNEST", cfg, "2026-11-03 12:00")
+    assert retired_by("NAMNEST raw", cfg, "2026-11-05") and not retired_by("HRRR", cfg, "2026-11-05")
+    assert "NAMNEST" in probs._lagged_models(cfg, pd.Timestamp("2026-11-02"))    # the weekend storm: still counted
+    assert "NAMNEST" not in probs._lagged_models(cfg, pd.Timestamp("2026-11-06"))
+    scores = pd.DataFrame({"model": ["NAMNEST", "RRFS", "HRRR"], "points": [0, 2, 2]})
+    assert _active(scores, cfg, pd.Timestamp("2026-11-05"))["model"].tolist() == ["RRFS", "HRRR"]
+    assert len(_active(scores, cfg, pd.Timestamp("2026-11-02"))) == 3 and len(scores) == 3     # the data is kept
+
+
+def test_uu_gfs_runs_only_at_the_cycles_its_files_exist():
+    cfg = make_cfg()
+    assert [t.hour for t in cycles_between("UUGFS", cfg, datetime(2026, 11, 1), datetime(2026, 11, 1, 23))] == [0, 6, 12]

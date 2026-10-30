@@ -13,7 +13,7 @@ import pandas as pd
 from . import blocks, regimes, timefmt
 from .config import PROCESSED_DIR
 from .storms import bin_scores, hand_obs_totals, manual_totals, run_flow, run_modes
-from .models.registry import kind_of
+from .models.registry import kind_of, retired_by
 from .windows import window_total, within_lead
 from .units import FT_PER_M, MM_PER_IN
 
@@ -189,7 +189,7 @@ def storm_runs(fc: pd.DataFrame, cfg: dict, s):
             yield model, g
 
 
-def _snow_col(g: pd.DataFrame) -> str:
+def snow_col(g: pd.DataFrame) -> str:
     """The storm report's snow: regime-adjusted where there is one, like its totals table."""
     return "snow_in_adj" if "snow_in_adj" in g.columns and g["snow_in_adj"].notna().any() else "snow_in"
 
@@ -209,7 +209,7 @@ def _rest_of_storm(st, fc: pd.DataFrame, cfg: dict, point: str, now) -> dict[str
         if gp.empty or ("member" in gp.columns and gp["member"].notna().any()):
             continue
         a = max(pd.Timestamp(now), gp["valid_start"].min())
-        v = window_total(gp, a, st.fc_end, _snow_col(gp))
+        v = window_total(gp, a, st.fc_end, snow_col(gp))
         rest[model] = f"{v:.1f}" + ("*" if gp["valid_end"].max() < st.fc_end else "")
     return rest
 
@@ -248,7 +248,7 @@ def storm_block_lines(st, fc: pd.DataFrame, cfg: dict, now=None, osteps: pd.Data
             continue
         for p in cfg["points"]:
             gp = g[g["point"] == p]
-            got = blocks.run_blocks(gp, blks, _snow_col(gp)) if not gp.empty else [(np.nan, blocks.NONE)] * len(blks)
+            got = blocks.run_blocks(gp, blks, snow_col(gp)) if not gp.empty else [(np.nan, blocks.NONE)] * len(blks)
             for i, (v, cover) in enumerate(got):
                 if cover == blocks.FULL and not np.isnan(v):
                     full[p][i].append(v)
@@ -570,9 +570,9 @@ def regime_score_table(both: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     return t
 
 
-def render_freezing(scores: pd.DataFrame, cfg: dict) -> str:
-    """The freezing-level section of the storm report ('' until a run has met a balloon)."""
-    t = freezing_table(scores, cfg)
+def render_freezing(scores: pd.DataFrame, cfg: dict, now) -> str:
+    """The freezing-level section of the storm report ('' until a run has met a balloon); retired models left out."""
+    t = freezing_table(_active(scores, cfg, now), cfg)
     if t.empty:
         return ""
     return ("=== Freezing level vs SLC balloons (00z/12z), at " + cfg["storms"]["point"] + "'s model column: "
@@ -647,7 +647,7 @@ def render_verified(storms: pd.DataFrame, scores: pd.DataFrame, totals: pd.DataF
         lines = [f"=== Verified in the last {days} days: none"]
     for _, st in v.sort_values("final_start").iterrows():
         lines += _verified_storm(st, scores, totals, readings, binned, block_scores, cfg, tables)
-    lines += _season_sections(binned, storms, block_scores, cfg, tables)
+    lines += _season_sections(_active(binned, cfg, now), storms, _active(block_scores, cfg, now), cfg, tables)
     rendered = _aligned(tables)
     return "\n".join(rendered[x[1]] if isinstance(x, tuple) else x for x in lines) + "\n"
 
@@ -695,6 +695,13 @@ def _verified_storm(st, scores: pd.DataFrame, totals: pd.DataFrame, readings, bi
         tables.append(every)
         lines.append(("TABLE", len(tables) - 1))
     return lines
+
+
+def _active(scores, cfg: dict, now):
+    """Score rows of models not yet retired at `now` (season tables drop NAM / NAM Nest from 11/3; files keep them)."""
+    if scores is None or scores.empty or "model" not in scores:
+        return scores
+    return scores[[not retired_by(m, cfg, now) for m in scores["model"]]]
 
 
 def _season_sections(binned: pd.DataFrame, storms: pd.DataFrame, block_scores, cfg: dict, tables: list) -> list:

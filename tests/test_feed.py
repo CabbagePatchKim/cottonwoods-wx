@@ -215,11 +215,17 @@ def test_v1_publishes_model_run_data_only():
 
 
 
-def test_only_the_configured_models_reach_the_feed():
-    # owner 2026-10-30: RRFS, the RRFS ensemble and the U of U guidance stay internal until a release adds them
+def test_only_the_configured_models_reach_the_feed_and_retired_ones_leave():
+    # owner 2026-10-30: RRFS joins the feed (v1.7); the RRFS ensemble and the U of U guidance stay internal;
+    # NAM / NAM Nest leave the feed at their retirement (config archive.retired), their archive stays
     cfg, fc, st = _world()
-    extra = fc[fc["model"] == "HRRR"].assign(model="RRFS")
-    f = feed.build_feed(st, pd.concat([fc, extra], ignore_index=True), cfg, NOW, "v9.9",
-                        ["WARNING RRFS: 2 of its last 8 runs missing", "WARNING HRRR: 1 of its last 8 runs missing"])
-    assert "RRFS" not in json.dumps(f) and "HRRR" in json.dumps(f["daily"])
+    hrrr = fc[fc["model"] == "HRRR"]
+    more = pd.concat([hrrr.assign(model="RRFS"), hrrr.assign(model="UUHRRR"), hrrr.assign(model="NAMNEST")])
+    warn = ["WARNING UUHRRR: 2 of its last 8 runs missing", "WARNING HRRR: 1 of its last 8 runs missing"]
+    f = feed.build_feed(st, pd.concat([fc, more], ignore_index=True), cfg, NOW, "v9.9", warn)
+    text = json.dumps(f)
+    assert '"RRFS"' in text and "UUHRRR" not in text and "NAMNEST" in text
     assert f["meta"]["warnings"] == ["WARNING HRRR: 1 of its last 8 runs missing"]
+    cfg["archive"]["retired"] = {"NAMNEST": "2026-11-01T12:00"}             # retired before NOW (11/01 18z)
+    f = feed.build_feed(st, pd.concat([fc, more], ignore_index=True), cfg, NOW, "v9.9", warn)
+    assert "NAMNEST" not in json.dumps(f) and '"RRFS"' in json.dumps(f)

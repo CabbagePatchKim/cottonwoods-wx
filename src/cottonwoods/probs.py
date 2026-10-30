@@ -18,7 +18,8 @@ import numpy as np
 import pandas as pd
 
 from . import bins, blocks
-from .report import _snow_col, storm_runs
+from .models.registry import retired_by
+from .report import snow_col, storm_runs
 from .units import MM_PER_IN
 from .windows import window_total, within_lead
 
@@ -43,12 +44,12 @@ def _covers(g: pd.DataFrame, s, e) -> bool:
     return not g.empty and g["valid_start"].min() <= s and g["valid_end"].max() >= e
 
 
-def family_ratios(det: pd.DataFrame, blks, snow_col: str) -> list[float]:
-    """A deterministic run's snow per inch of water in each block; where it has under 0.01" water in a block (no ratio
-    to read) or doesn't reach it, its ratio over the whole stretch it covers; NaN if it has no water at all."""
+def family_ratios(det: pd.DataFrame, blks, col: str) -> list[float]:
+    """A deterministic run's snow (column `col`) per inch of water in each block; where it has under 0.01" water in a
+    block (no ratio to read) or doesn't reach it, its ratio over the whole stretch it covers; NaN if it has no water."""
     def ratio(s, e):
         w = window_total(det, s, e) / MM_PER_IN
-        return window_total(det, s, e, snow_col) / w if w >= 0.01 else np.nan
+        return window_total(det, s, e, col) / w if w >= 0.01 else np.nan
     whole = ratio(max(det["valid_start"].min(), blks[0][0]), min(det["valid_end"].max(), blks[-1][1])) if len(det) else np.nan
     out = []
     for bs, be, _ in blks:
@@ -69,12 +70,12 @@ def ensemble_probs(st, fc: pd.DataFrame, cfg: dict, point: str) -> list[dict]:
             continue
         own = "snow_in" in g.columns and g["snow_in"].notna().any()      # members with their own snow (RRFS)
         fam = None if own else runs.get(pc["families"].get(model, ""))
-        ratios = family_ratios(fam, blks, _snow_col(fam)) if fam is not None else []
+        ratios = family_ratios(fam, blks, snow_col(fam)) if fam is not None else []
         water, snow = [], []
         for _, m in g.groupby("member"):
             water.append(window_total(m, s, e) / MM_PER_IN)
             if own:
-                snow.append(window_total(m, s, e, _snow_col(m)))
+                snow.append(window_total(m, s, e, snow_col(m)))
             elif ratios:
                 snow.append(sum(window_total(m, bs, be) / MM_PER_IN * r for (bs, be, _), r in zip(blks, ratios)))
         out.append({"model": model, "init": g["init"].iloc[0], "members": len(water), "full": _covers(g, s, e),
@@ -84,12 +85,17 @@ def ensemble_probs(st, fc: pd.DataFrame, cfg: dict, point: str) -> list[dict]:
     return out
 
 
+def _lagged_models(cfg: dict, storm_start) -> list[str]:
+    """probs.lagged models, without any retired before the storm starts (their old runs can't cover it)."""
+    return [m for m in cfg["probs"]["lagged"]["models"] if not retired_by(m, cfg, storm_start)]
+
+
 def lagged_probs(st, fc: pd.DataFrame, cfg: dict, point: str) -> dict:
     """The time-lagged high-resolution set: members = each probs.lagged model's last `runs` runs (within
     storms.max_lead_hours) that cover the whole storm. members, runs [(model, init)], short (runs that don't reach the
     whole storm, left out), water {threshold: share}, snow_bins {bin: share}."""
     lc, s, e = cfg["probs"]["lagged"], st.fc_start, st.fc_end
-    fp = fc[(fc["point"] == point) & fc["model"].isin(lc["models"])]
+    fp = fc[(fc["point"] == point) & fc["model"].isin(_lagged_models(cfg, s))]
     used, water, snow, short = [], [], [], 0
     for model, g in fp.groupby("model"):
         for init in sorted(g["init"].unique(), reverse=True)[:lc["runs"]]:
@@ -99,7 +105,7 @@ def lagged_probs(st, fc: pd.DataFrame, cfg: dict, point: str) -> dict:
                 continue
             used.append((model, pd.Timestamp(init)))
             water.append(window_total(r, s, e) / MM_PER_IN)
-            snow.append(window_total(r, s, e, _snow_col(r)))
+            snow.append(window_total(r, s, e, snow_col(r)))
     return {"members": len(used), "runs": used, "short": short,
             "water": water_shares(water, cfg["probs"]["water_in"]), "snow_bins": bin_shares(snow, cfg["verify"])}
 
@@ -110,12 +116,12 @@ def lagged_block_probs(st, fc: pd.DataFrame, cfg: dict, point: str) -> list[dict
     (share with at least probs.lagged.block_snow_in snow), median_snow}."""
     lc, s, e = cfg["probs"]["lagged"], st.fc_start, st.fc_end
     blks = blocks.storm_blocks(s, e, cfg["storms"]["block_hours"], cfg["storms"]["block_end_utc_hour"])
-    fp = fc[(fc["point"] == point) & fc["model"].isin(lc["models"])]
+    fp = fc[(fc["point"] == point) & fc["model"].isin(_lagged_models(cfg, s))]
     runs = [within_lead(g[g["init"] == init], cfg["storms"]["max_lead_hours"])
             for _, g in fp.groupby("model") for init in sorted(g["init"].unique(), reverse=True)[:lc["runs"]]]
     out = []
     for bs, be, lab in blks:
-        snow = [window_total(r, bs, be, _snow_col(r)) for r in runs if _covers(r, bs, be) and r["init"].iloc[0] <= bs]
+        snow = [window_total(r, bs, be, snow_col(r)) for r in runs if _covers(r, bs, be) and r["init"].iloc[0] <= bs]
         out.append({"start": bs, "end": be, "label": blocks.label(lab), "members": len(snow),
                     "snow_share": float(np.mean([x >= lc["block_snow_in"] for x in snow])) if snow else np.nan,
                     "median_snow": float(np.median(snow)) if snow else np.nan})

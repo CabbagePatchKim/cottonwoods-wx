@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from . import bins, probs, timefmt, trends
+from .models.registry import REGISTRY
 from .report import regime_adjusted, storm_models, storm_notes
 
 CSS = """
@@ -109,7 +110,7 @@ def resort_rows(models: list[dict], tr: dict[str, list[dict]], cfg: dict) -> lis
         snow = [_snow(r["points"][p]) for r in models
                 if r.get("kind") == "deterministic" and not r["ensemble"] and r["full"] and r["points"].get(p)]
         snow = [x for x in snow if pd.notna(x)]
-        ens = [r["points"][p] for r in models if r["ensemble"] and r["points"].get(p)]
+        ens = [r["points"][p] for r in models if r["ensemble"] and r["full"] and r["points"].get(p)]   # whole storm only
         wet = float(np.mean([c["members_wet"] / c["members"] for c in ens])) if ens else np.nan
         changes = [m["change"]["snow_in"] for m in tr.get(p, []) if m["change"]]
         if snow:
@@ -125,6 +126,18 @@ def resort_rows(models: list[dict], tr: dict[str, list[dict]], cfg: dict) -> lis
     return rows
 
 
+def summary_note(cfg: dict) -> str:
+    """What every summary column means, with the thresholds from config (so the page never says more than it knows)."""
+    hi, lo = cfg["html"]["confidence"]["high"], cfg["html"]["confidence"]["low"]
+    return (f"bin = your snow bin holding the median (the lowest bin that contains it) of the deterministic models whose "
+            f"newest run covers the whole storm; models = how many; snow regime-adjusted where factors exist, like the "
+            f"text report. since last run = median change of each model's snow vs its previous run. ensembles wet = "
+            f"share of ensemble members with at least {cfg['verify']['event_swe_in']:.2f}\" water over the storm "
+            f"(ensembles covering the whole storm). confidence: high = spread (max - min) / median at most "
+            f"{hi['spread']:g} and at least {hi['wet']:.0%} of members wet; low = spread over {lo['spread']:g} or under "
+            f"{lo['wet']:.0%} wet; medium otherwise.")
+
+
 def changes_sentence(tr: list[dict], ens: list[dict], label: str, steady: float) -> str:
     """What moved since each model's previous run at the block point, in one sentence."""
     ch = [m["change"] for m in tr if m["change"]]
@@ -137,10 +150,29 @@ def changes_sentence(tr: list[dict], ens: list[dict], label: str, steady: float)
             f"{len(ch) - up - down} of {len(ch)} models (median change {np.median([c['snow_in'] for c in ch]):+.1f}\")")
     if on:
         text += f"; snow starts earlier in {sum(h < 0 for h in on)}, later in {sum(h > 0 for h in on)}"
-    for m in ens:
-        if len(m["runs"]) >= 2:
-            text += f"; {m['model']} wet {m['runs'][1]['wet']:.0%} &rarr; {m['runs'][0]['wet']:.0%}"
+    for m in ens:                                   # only runs covering the whole storm compare fairly
+        full = [r for r in m["runs"] if r["full"]]
+        if len(full) >= 2 and full[0] is m["runs"][0]:
+            text += f"; {m['model']} wet {full[1]['wet']:.0%} &rarr; {full[0]['wet']:.0%}"
     return text + "."
+
+
+def use_html(st, use, cfg: dict, label: str) -> str:
+    """The Utah Snow Ensemble's percentiles over the storm (U of U, 82 members; uu.use_over: APPROXIMATE), with the
+    bin of its median snow. use = (init, long table) from uu.load_use, or None."""
+    from .models.uu import use_over
+    if not use or use[0] is None or use[1].empty:
+        return ""
+    t = use_over(use[1], st.fc_start, st.fc_end)
+    if t.empty:
+        return ""
+    fmt = {"water": ".2f", "snow": ".1f"}
+    rows = [[k] + [format(t.at[k, c], fmt[k]) + "&quot;" if pd.notna(t.at[k, c]) else "-" for c in t.columns]
+            + ([_bin(t.at[k, "p50"], cfg["verify"])] if k == "snow" else [""]) for k in t.index]
+    return (f"<p class='note'>Utah Snow Ensemble (U of U, 82 members, experimental) run {timefmt.cycle(use[0])} at "
+            f"{escape(label)}'s Collins grid point: percentiles over the storm, APPROXIMATE (each percentile's total "
+            f"since init at the storm's end minus at its start, not the members' own storm totals).</p>"
+            + _table(["", "min", "10%", "25%", "50%", "75%", "90%", "max", "bin of 50%"], rows))
 
 
 def chances_html(st, fc: pd.DataFrame, cfg: dict, point: str, label: str) -> str:
@@ -158,7 +190,7 @@ def chances_html(st, fc: pd.DataFrame, cfg: dict, point: str, label: str) -> str
                  *[_pct(lg["water"][t]) for t in thr],
                  top(lg["snow_bins"]) or f"no run covers the whole storm ({lg['short']} too short)"])
     out = [f"<h3>Chances at {escape(label)} <span class='muted'>(share of members; uncalibrated)</span></h3>",
-           _table(["set", "members", *[f"water &ge; {t:g}\"" for t in thr], "likeliest snow bins"], rows),
+           _table(["set", "members / runs", *[f"water &ge; {t:g}\"" for t in thr], "likeliest snow bins"], rows),
            "<p class='note'>GEFS / ENS snow bins reflect the spread in WATER only: each member's water is turned into "
            "snow with its family's deterministic run (the run named), so every member shares that run's temperatures, "
            "snow ratio and rain/snow split. In a marginal storm the snow level is the bigger unknown; the RRFS "
@@ -178,7 +210,6 @@ def chances_html(st, fc: pd.DataFrame, cfg: dict, point: str, label: str) -> str
 def guidance_html(st, fc: pd.DataFrame, models: list[dict], cfg: dict, point: str, label: str) -> str:
     """Post-processed guidance (U of U at Collins, machine-learning snow ratio) next to OUR newest run of the model it
     comes from, over the storm window; kept out of the summary, medians and bins (owner, 2026-10-30)."""
-    from .models.registry import REGISTRY
     by = {r["model"]: r for r in models}
     rows = []
     for r in [r for r in models if r.get("kind") == "guidance"]:
@@ -226,12 +257,12 @@ def timeline_html(tr: list[dict], ens: list[dict], cfg: dict, label: str) -> str
     if ens:
         out.append(_table(["ensemble", *[f"run {i + 1}" for i in range(tc["runs"])]],
                           [[m["model"]] + [f"{timefmt.cycle(r['init'])}: {r['wet']:.0%} wet, {r['mean_water_in']:.2f}\""
-                                           for r in m["runs"]] for m in ens]))
+                                           + ("" if r["full"] else " (partial)") for r in m["runs"]] for m in ens]))
     return "".join(out)
 
 
-def storm_html(st, fc: pd.DataFrame, cfg: dict) -> str:
-    """One storm's section."""
+def storm_html(st, fc: pd.DataFrame, cfg: dict, use=None) -> str:
+    """One storm's section (use: the newest Utah Snow Ensemble run, uu.load_use, or None)."""
     models = storm_models(st, fc, cfg)
     s, e = st.fc_start, st.fc_end
     bp = cfg["storms"]["block_point"]
@@ -247,12 +278,10 @@ def storm_html(st, fc: pd.DataFrame, cfg: dict) -> str:
     summary = _table(["", "bin", "median", "range", "models", "since last run", "ensembles wet", "confidence"],
                      resort_rows(models, tr, cfg))
     return (head + summary
-            + "<p class='note'>bin = the owner's bin holding the median of the deterministic runs covering the whole "
-              "storm (snow regime-adjusted where factors exist, like the text report); since last run = median change "
-              "of each model's snow vs its previous run.</p>"
+            + "<p class='note'>" + summary_note(cfg) + "</p>"
             + f"<div class='changes'>{changes_sentence(tr[bp], ens, label, cfg['trends']['steady_in'])}</div>"
             + guidance_html(st, fc, models, cfg, bp, label) + chances_html(st, fc, cfg, bp, label)
-            + timeline_html(tr[bp], ens, cfg, label))
+            + use_html(st, use, cfg, label) + timeline_html(tr[bp], ens, cfg, label))
 
 
 def noaa_html(ghcn: pd.DataFrame | None, storms: pd.DataFrame, cfg: dict, now) -> str:
@@ -289,16 +318,20 @@ def noaa_html(ghcn: pd.DataFrame | None, storms: pd.DataFrame, cfg: dict, now) -
                       "-" if pd.isna(tot("SNOW")) else f"{tot('SNOW'):.1f}\"",
                       f"{len(have)} of {len(need)}" if need else "not started"])
     if srows:
-        out += ["<h3>Storm totals</h3>", _table(["storm", "water", "new snow", "days posted"], srows)]
+        out += ["<h3>Storm totals</h3>",
+                "<p class='note'>Whole observer days (6 pm to 6 pm MST) overlapping the storm, so a total can include "
+                "precip from just before or after it.</p>",
+                _table(["storm", "water", "new snow", "days posted"], srows)]
     return "".join(out)
 
 
 def render_html(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now, text: str = "",
-                ghcn: pd.DataFrame | None = None) -> str:
-    """The whole page: every storm still ahead or under way, NOAA ALTA, and the full text report."""
+                ghcn: pd.DataFrame | None = None, use=None) -> str:
+    """The whole page: every storm still ahead or under way, NOAA ALTA, and the full text report (use: the newest
+    Utah Snow Ensemble run, uu.load_use)."""
     fc, adjusted = regime_adjusted(fc, cfg)
     open_ = storms[(storms["status"] == "forecast") & (pd.to_datetime(storms["fc_end"]) > pd.Timestamp(now))]
-    body = [storm_html(st, fc, cfg) for _, st in open_.sort_values("fc_start").iterrows()] or \
+    body = [storm_html(st, fc, cfg, use) for _, st in open_.sort_values("fc_start").iterrows()] or \
            ["<p>No storms in the newest model runs.</p>"]
     full = f"<details><summary>Full text report</summary><pre>{escape(text)}</pre></details>" if text else ""
     return (f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' "

@@ -32,9 +32,10 @@ ROW = re.compile(r"^\s*(\d+)\s+\d\d (AM|PM) \w{3} \w{3} \d\d \d{4}\s")
 # zero at or below the Salt Lake airport is printed "≤ KSLC" (GFS) or "<KSLC" (HRRR), common in cold storms: kept as
 # NaN (an upper bound only)
 _WBZ = r"(?:(\d+) ?FT|[≤<] ?KSLC)"
+_H2O = r"(?:\d+%|-)"     # snow water content; "-" when their snow ratio is 0 ("0:1/-")
 TAILS = {
-    "UUHRRR": re.compile(_WBZ + r"\s+(\d+):1/\s*\d+%\s+[\d.]+/([\d.]+)\s+[\d.]+/\s*([\d.]+)\s*$"),
-    "UUGFS": re.compile(_WBZ + r"\s+(\d+):1 /\s*\d+%\s+[\d.]+\"\s*/\s*[\d.]+\"\s+([\d.]+)\"\s*/\s*([\d.]+)\"\s*$"),
+    "UUHRRR": re.compile(_WBZ + r"\s+(\d+):1/\s*" + _H2O + r"\s+[\d.]+/([\d.]+)\s+[\d.]+/\s*([\d.]+)\s*$"),
+    "UUGFS": re.compile(_WBZ + r"\s+(\d+):1 /\s*" + _H2O + r"\s+[\d.]+\"\s*/\s*[\d.]+\"\s+([\d.]+)\"\s*/\s*([\d.]+)\"\s*$"),
 }
 
 
@@ -160,6 +161,23 @@ def archive_use(cfg: dict, root: Path | None = None, fetch=None) -> tuple[pd.Tim
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False)
     return init, "archived"
+
+
+def use_over(df: pd.DataFrame, s, e) -> pd.DataFrame:
+    """APPROXIMATE storm-window percentiles from a run's totals since init: each statistic's total at the last 6 h time
+    at or before e minus at the last one at or before s (rows water / snow, columns min .. max). A percentile of a
+    difference isn't the difference of percentiles, so this is a guide, not the members' storm totals; NaN columns
+    where the run doesn't reach the storm."""
+    out = {}
+    for var, name in (("water_total_in", "water"), ("snow_total_in", "snow")):
+        d = df[df["variable"] == var].pivot_table(index="time_utc", columns="stat", values="value")
+        a, b = d.index[d.index <= s], d.index[d.index <= e]
+        if len(b) == 0 or b.max() < e - pd.Timedelta(hours=6):
+            continue                                     # the run ends well before the storm does
+        start = d.loc[a.max()] if len(a) else d.iloc[0] * 0
+        out[name] = (d.loc[b.max()] - start).clip(lower=0)
+    stats = [c for c in ("min", "p10", "p25", "p50", "p75", "p90", "max")]
+    return pd.DataFrame(out).T.reindex(columns=stats) if out else pd.DataFrame()
 
 
 def load_use(init=None, root: Path | None = None) -> tuple[pd.Timestamp | None, pd.DataFrame]:

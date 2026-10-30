@@ -177,6 +177,16 @@ FIELDS was removed, then restored). Treat these vulture hits as expected. Split 
 _observed_blocks); freezing "wet" window moved from code to config verify.freezing_wet_hours. Golden IDENTICAL.
 Still just over 60 (cohesive): profile.station_profile 68, gfs._pull_run_aws 68, ghcn.fetch 62, regimes.phases 62,
 herbie_generic.pull_ensemble 60.
+Seventh (2026-10-30, pre-v1.7 review, owner: "very thorough: spaghetti code, accuracy errors, misleading lines"):
+FIXED: ensemble runs shorter than the storm (RRFSENS 60 h) were counted in the summary's "ensembles wet" and the
+ensemble trend/changes sentence unflagged -> now left out of the wet share, flagged "(partial)", compared only
+full-to-full (trends.ensemble_trends full); summary note now defines bin / models / since last run / ensembles wet /
+confidence with config thresholds (htmlreport.summary_note); NOAA storm totals say they are whole observer days;
+lagged header "members / runs"; "owner's bin" -> "your snow bin" on the page; report._snow_col (used by 4 modules)
+-> public report.snow_col; probs.family_ratios param no longer shadows it; registry.models_of (test-only) removed;
+the Utah Snow Ensemble was archived but NOT SHOWN -> htmlreport.use_html + uu.use_over (storm-window percentiles,
+labelled APPROXIMATE: difference of since-init percentiles). Vulture hits now expected: era5, patterns FIELDS /
+load_pattern (planned), uu._Tables.handle_* (HTMLParser callbacks), uu.load_use (scripts/storms.py).
 OBSERVED WATER STANDARD, every site (owner, 2026-10-28): the precip GAUGE is primary (SNOTEL + Synoptic PREC via
 gauge.py, NOAA PRCP); a SNOTEL snow PILLOW (WTEQ) is the fallback (gauge missing AND >= min_snowpack_in on the pillow)
 and the cross-check. verify.observed_water is the one place for this rule; pairs carry gauge_obs_in, pillow_obs_in,
@@ -401,8 +411,16 @@ route (api.weather.gov lists CLN but serves no observations; never automate the 
   deterministic = storm windows (storms.model_events), summary medians/bins, timelines (trends), main tables;
   guidance = its own table (text storm table group "guidance", HTML "Guidance at Alta": theirs vs OUR newest run of
   ModelSpec.based_on, plain snow), scored like a model, never in medians or windows; ensemble = chances + one line.
-  model_days (daily table) leaves guidance out. FEED ALLOWLIST config feed.models = the v1.6 nine (feed.build_feed
-  filters runs AND staleness warnings): RRFS / RRFSENS / UU* stay internal until an approved release adds them.
+  model_days (daily table) leaves guidance out. FEED ALLOWLIST config feed.models (feed.build_feed filters runs AND
+  staleness warnings): owner 2026-10-30 ADDED RRFS for v1.7 (manual entry v1.7 + model table); RRFSENS stays internal
+  (5 members, 60 h); UU guidance NEVER (U of U's experimental product, not ours to republish).
+  NAM / NAM Nest "remove on 11/3, keep archives" (owner): registry.retired_by(model, cfg, when) drops them at
+  archive.retired from the feed (at the pass time), the high-res lagged set (storms starting after it,
+  probs._lagged_models) and the season verification tables + freezing table (report._active); per-storm verified
+  sections still show them for storms they forecast (the weekend storm: the one NAM Nest vs RRFS comparison).
+  SCN 26-47 Updated (Oct 2): termination Nov 3 12z, slips to the next weekday if a Critical Weather Day (owner had
+  seen an older 10/14 date). UUGFS only_cycles 00/06/12 (their 18z file exists ~13 days/month); UU parsers accept
+  "0:1/-" (ratio 0). FIRST v1.7 PASS: the rrfs stream catches up 8 cycles x ~7 min (~1 h); later passes ~7 min.
   RRFS (models/rrfs.py, Herbie model="rrfs", AWS noaa-rrfs-ops-pds; operational 2026-11-03, replacing NAM/NAMNEST):
   RRFS deterministic 3 km, hourly to 48 h then 3-hourly to 84 h, products 2dfld + prslev; RRFSENS = members m001-m005
   (2dfldnomads + prslevnomads: no 650/550 mb columns), 3-hourly to 60 h, WITH temperatures, so each member gets its
