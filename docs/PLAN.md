@@ -5,8 +5,8 @@ steps finish; keep it short.
 
 ## Collins Worker (done 2026-11-03)
 Locked (X-CWX-Key; 403 without it, checked), deployed, GitHub secrets CWX_COLLINS_URL / CWX_COLLINS_KEY set,
-pushed to main. The key's only copy is ~/.cwx_collins_key (laptop, never in git). Left: dry run on a bucket copy,
-then the v1.8 diff for approval.
+pushed to main, released as v1.8 (owner approved 11/03). The key's only copy is ~/.cwx_collins_key (laptop, never
+in git). Open: should a Collins storm total cover Collins's own precip start rather than the SNOTEL window + 12 h?
 
 ## Why: slow down and measure
 The project has more machinery than evidence: one verified storm (dry), so the blends, regime factors, chances,

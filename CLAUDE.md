@@ -239,6 +239,11 @@ Running live, TWO places for now (side-by-side check before cutover):
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
+- RELEASED v1.8 (owner approved 2026-11-03, CI green): Collins Worker feed (obs/collins.py, record never publish;
+  Worker locked, secrets set), hand + Worker readings merged, collins_due reminder fixes. No feed change. Dry run on a
+  bucket copy: obs / storms / report / feed preview ok, Worker 69 h, no Collins in the feed. CHECK the first v1.8 pass:
+  "Running approved release v1.8", obs table row "Collins (Worker) ok". OPEN QUESTION for the owner: Collins storm
+  totals use the SNOTEL window padded 12 h, so 11/01 counted 13" / 1.92" of the 16" / 2.35" (Collins began Sun 0200).
 - RELEASED v1.7 (owner approved 2026-10-30, tag on 3c43be7, pushed ~08:13Z, CI green): RRFS + RRFSENS, U of U guidance
   + Utah Snow Ensemble, model kinds apart, HTML report (chances / timeline / guidance / NOAA ALTA), freezing-level
   scores, Verified step, obs tables, RRFS in the FEED (manual v1.7), NAM / NAM Nest retire 11/3 12z. Dry run on a

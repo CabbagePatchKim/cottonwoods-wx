@@ -228,6 +228,8 @@ Each published version puts its own copy of this manual here, so this list is cu
   2026-11-03 (12z; NOAA may delay it a few days for significant weather): from then they are no longer in the feed.
   If your site lists models by name, add `RRFS`; don't rely on `NAM` / `NAMNEST` being there. No fields were added,
   removed or renamed.
+- **v1.8:** no changes to the feed. This version only changes how storms are verified behind the
+  scenes; every field and value in the feed is made the same way as in v1.7.
 
 ## 10. Credits and licences
 
