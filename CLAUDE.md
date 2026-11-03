@@ -124,8 +124,24 @@ days" (report.render_verified) shows SNOTEL + hand totals vs each model's last r
 Collins reminder: SessionStart hook (.claude/settings.local.json, not in git) runs scripts/collins_due.py: storms
 verified in the last report_verified_days with no Collins entries -> prompt the owner at the start of the session
 (storm list from the bucket if reachable, else local). Offer to type the readings into data/entries for them.
-Collins automation: NOT possible without a Synoptic token (api.weather.gov lists CLN but serves no observations;
-the NWS page uses an NWS Synoptic key - never automate it, rendered or not). Laptop bucket access: boto3 in
+WHERE YOU LEFT OFF (owner 2026-11-01: the NWS page only goes back ~2 days): collins_due.collins_progress also fires
+while a storm's window reaches into the last storms.collins_page_hours (48): newest Collins entry time, the page's
+cutoff, and a warning if entries stop before it. Same day FIXED: the hook had NEVER used the bucket (botocore can't
+set a client's config afterwards -> always "laptop"; and the download was named storms, not storms.csv);
+bucket.client(config=) now takes the Config.
+Collins automation: no Synoptic token (API is paid; api.weather.gov lists CLN but serves no observations).
+OWNER DECISION 2026-11-01 (replaces "never automate the NWS page"): the owner's own Cloudflare Worker (cln-scraper,
+separate folder, not in git) renders the CLN page every 6 h (cron 0 */6; the page holds ~48 h); since 11/03 it
+answers only requests with header X-CWX-Key = Worker secret CWX_KEY = GitHub CWX_COLLINS_KEY (key file
+~/.cwx_collins_key on the laptop, never in git); the owner accepted the Synoptic-terms gray area after it was explained, with the rule RECORD, NEVER
+PUBLISH. obs/collins.py (parse: page headers, local times with no year, DST by order; readings: new snow = rise of
+the Snow Interval board, a drop = cleared; 24 h board and 3/6 h depth-sensor columns not used) ->
+archive.obs.archive_collins -> data/archive/obs/collins (private bucket, not git). load_collins_readings = Worker
+hours + hand entries (per value, hand wins); used by scripts/storms.py, regime_scores.py, collins_due.py. Address
+and key = GitHub secrets CWX_COLLINS_URL / CWX_COLLINS_KEY (config collins_source names them); the obs step prints
+counts/times only; the Verified step (public Actions log) now writes only to the bucket log. NEVER add Collins
+values to the feed, the public log, or git. Real check 11/01: 70 h, 0.30" + 2" lead-in, 0.05 / 0.01 Sat = the
+owner's reading of the page. Laptop bucket access: boto3 in
 ~/.cwx_pylib (PYTHONPATH), not the main environment.
 
 Observation clients (`obs/`): `snotel.py` (AWDB), `synoptic.py` (CLN, needs token), `ghcn.py` (NOAA coop),

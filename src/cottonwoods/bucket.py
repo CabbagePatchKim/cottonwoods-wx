@@ -49,11 +49,13 @@ def load_env_file(path: Path) -> None:
             os.environ.setdefault(k.strip(), v.strip())
 
 
-def client():
+def client(config=None):
+    """S3 client for the bucket; `config` = an optional botocore Config (timeouts, retries), which has to be given
+    here: botocore can't change a client's config afterwards."""
     import boto3   # only needed when syncing; the rest of the project doesn't depend on it
     return boto3.client("s3", endpoint_url=os.environ["CWX_S3_ENDPOINT"].strip(), region_name="auto",
                         aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"].strip(),
-                        aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"].strip())
+                        aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"].strip(), config=config)
 
 
 def md5(path: Path) -> str:

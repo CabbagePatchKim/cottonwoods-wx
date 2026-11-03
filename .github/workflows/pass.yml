@@ -103,6 +103,11 @@ jobs:
       - name: Observations (SNOTEL, NOAA)
         id: obs
         continue-on-error: true
+        # Alta Collins from the owner's Worker (owner 2026-11-01): RECORD, NEVER PUBLISH. The address and key are
+        # secrets (masked); the step prints counts and times only.
+        env:
+          CWX_COLLINS_URL: ${{ secrets.CWX_COLLINS_URL }}
+          CWX_COLLINS_KEY: ${{ secrets.CWX_COLLINS_KEY }}
         run: set -o pipefail; python scripts/archive_obs.py --days 3 2>&1 | tee -a "$LOG"
       - name: Soundings (SLC balloons)
         id: soundings
@@ -124,7 +129,10 @@ jobs:
         continue-on-error: true
         run: |
           f=data/reports/verified_latest.txt
-          if [ -n "$(find "$f" -mmin -90 2>/dev/null)" ]; then cat "$f" | tee -a "$LOG"
+          # PRIVATE (owner 2026-11-01): verification holds Alta Collins totals and this repo's Actions log is
+          # public, so the text goes only to the bucket's log (data/logs/cloud) and data/reports/verified_latest.txt.
+          if [ -n "$(find "$f" -mmin -90 2>/dev/null)" ]; then cat "$f" >> "$LOG"
+            echo "Verification written to the bucket log and data/reports/verified_latest.txt (kept private)."
           else echo "(this release prints verification in the Storms step)"; fi
       - name: Website feed (approved releases only)
         id: feed

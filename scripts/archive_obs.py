@@ -20,9 +20,9 @@ from datetime import datetime, timedelta, timezone
 
 
 from cottonwoods import timefmt
-from cottonwoods.archive.obs import (archive_ghcn, archive_rap, archive_snotel, archive_synoptic, catchup_begin, ghcn_begin,
-                                     latest_obs, with_retries)
-from cottonwoods.obs import synoptic
+from cottonwoods.archive.obs import (archive_collins, archive_ghcn, archive_rap, archive_snotel, archive_synoptic, catchup_begin, ghcn_begin,
+                                     latest_obs, load_collins, with_retries)
+from cottonwoods.obs import collins, synoptic
 from cottonwoods.config import ensure_dirs, load_config
 
 ap = argparse.ArgumentParser()
@@ -67,6 +67,12 @@ if cfg.get("synoptic") and not synoptic.token():
     status["obs:synoptic"] = "skipped (no SYNOPTIC_TOKEN)"
 elif cfg.get("synoptic"):
     sources.append(("obs:synoptic", archive_synoptic, spans))
+# Alta Collins from the owner's Worker (obs/collins.py): RECORD, NEVER PUBLISH. Only counts and times are printed
+# (the Actions log is public); without the address in the environment it's skipped, like Synoptic without a token.
+if cfg.get("collins_source") and not collins.source(cfg)[0]:
+    status["obs:collins"] = f"skipped (no {cfg['collins_source']['url_env']})"
+elif cfg.get("collins_source"):
+    sources.append(("obs:collins", archive_collins, [("", "")]))
 # NOAA GHCN-Daily (ALTA). Daily values, so even a 20-year span is only ~7,000 rows per element.
 if cfg.get("ghcn"):
     sources.append(("obs:ghcn", archive_ghcn, ghcn_spans or spans))
@@ -77,8 +83,8 @@ failed = False
 for tag, archive, source_spans in sources:
     for begin, end in source_spans:
         try:
-            with_retries(lambda: archive(cfg, begin, end), cfg, f"{tag} {begin}..{end}")
-            status.setdefault(tag, f"ok ({begin}..{end})")
+            n = with_retries(lambda: archive(cfg, begin, end), cfg, f"{tag} {begin}..{end}")
+            status.setdefault(tag, f"ok ({n} hours received)" if tag == "obs:collins" else f"ok ({begin}..{end})")
         except Exception as e:  # noqa: BLE001  (failures print in full; the tables follow)
             print(f"[{tag}] {begin}..{end} FAILED after {cfg['obs_fetch']['retries']} tries: {e}")
             status[tag] = "FAILED (see above)"
@@ -93,6 +99,9 @@ print(f"Observations, {timefmt.now_line(now)}. Times Mountain.")
 rows = [(r.source, status.get(names[r.source], "not fetched"),
          f"{timefmt.local(r.newest):%a %m/%d} (observer day)" if r.source == "NOAA ALTA" and r.newest == r.newest
          else when(r.newest)) for r in newest.itertuples()]
+if "obs:collins" in status:      # newest hour only, never values
+    stored = load_collins(start=now - timedelta(days=3))
+    rows.append(("Collins (Worker)", status["obs:collins"], when(stored["time_utc"].max()) if not stored.empty else "-"))
 rows += [("Synoptic (Collins)", status["obs:synoptic"], "-")] if "obs:synoptic" in status and "skipped" in status["obs:synoptic"] else []
 print(f"{'source':<22}{'status':<30}newest")
 print("\n".join(f"{a:<22}{b:<30}{c}" for a, b, c in rows))

@@ -14,7 +14,7 @@ import pandas as pd
 
 from cottonwoods import regimes, storms
 from cottonwoods.archive.forecasts import load_forecasts
-from cottonwoods.archive.obs import load_hand_obs, load_snotel, load_storm_totals
+from cottonwoods.archive.obs import load_collins_readings, load_snotel, load_storm_totals
 from cottonwoods.config import DATA_DIR, PROCESSED_DIR, load_config
 from cottonwoods.report import regime_score_table
 
@@ -30,7 +30,7 @@ first = pd.to_datetime(verified["final_start"]).min()
 fc = load_forecasts(cfg, start=first - timedelta(hours=cfg["storms"]["max_lead_hours"]))
 obs = load_snotel(start=first - timedelta(days=2))
 both = storms.regime_bin_scores(table, fc, factors, storms.point_steps(obs, cfg), load_storm_totals(),
-                                load_hand_obs(), cfg)
+                                load_collins_readings(), cfg)
 if both.empty:
     raise SystemExit("No verified storm has both its runs here and an observed snow total yet.")
 out = DATA_DIR / "local" / "regime_bin_scores.csv"

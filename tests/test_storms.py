@@ -289,6 +289,33 @@ def test_session_reminder_lists_only_recent_verified_storms_without_collins_entr
     assert need["storm_id"].tolist() == ["b"]          # a has entries, c isn't over, d is too old
 
 
+def test_session_reminder_says_where_collins_readings_stop_while_a_storm_is_on_the_nws_page():
+    # owner 2026-11-01: the Collins page only goes back ~2 days, so a reading not entered in time is lost
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("collins_due", Path(__file__).resolve().parents[1] / "scripts" / "collins_due.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    cfg = make_cfg()
+    cfg["storms"]["collins_page_hours"] = 48
+    t = pd.DataFrame({"storm_id": ["live", "old", "future", "gone"], "point": "alta",
+                      "status": ["forecast", "verified", "forecast", "merged"],
+                      "fc_start": pd.to_datetime(["2026-10-31 18:00", "2026-10-20 00:00", "2026-11-04 00:00",
+                                                  "2026-10-31 00:00"]),
+                      "fc_end": pd.to_datetime(["2026-11-02 18:00", "2026-10-21 00:00", "2026-11-05 00:00",
+                                                "2026-11-02 00:00"]),
+                      "final_start": pd.NaT, "final_end": pd.NaT})
+    readings = pd.DataFrame({"end_utc": [pd.Timestamp("2026-11-01 04:00")]})
+    now = pd.Timestamp("2026-11-01 07:00")
+    msg = mod.collins_progress(t, cfg, now, readings)
+    assert "live" in msg and "old" not in msg and "future" not in msg and "gone" not in msg
+    assert "recorded through Sat 10/31 2200 MDT" in msg and "already be off" not in msg
+    # two days later with nothing new entered: the gap is flagged
+    msg = mod.collins_progress(t, cfg, pd.Timestamp("2026-11-03 12:00"), readings)
+    assert "already be off the page" in msg
+    assert mod.collins_progress(t, cfg, pd.Timestamp("2026-11-08"), readings) == ""   # no storm on the page
+    assert "none recorded yet" in mod.collins_progress(t, cfg, now, pd.DataFrame())
+
+
 # --- lead limits: storms and deterministic days to 168 h, ensembles to 240 h (owner, 2026-10-27) ----------------
 
 def test_storms_ignore_events_past_the_lead_limit_and_totals_stop_there():

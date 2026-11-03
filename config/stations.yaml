@@ -19,6 +19,15 @@ synoptic:
   alta_collins:   {name: "Alta Collins",   stid: "CLN", verified: false,
                    url: "https://www.weather.gov/wrh/timeseries?site=CLN"}
 
+# Alta Collins hourly readings from the owner's Cloudflare Worker (obs/collins.py; owner 2026-11-01). RECORD, NEVER
+# PUBLISH: values go only to data/archive/obs/collins (private bucket) and the private reports; the pass prints
+# counts and times only. The address and key are GitHub secrets / environment variables, never written here.
+collins_source:
+  url_env: CWX_COLLINS_URL     # the Worker's address
+  key_env: CWX_COLLINS_KEY     # optional shared key, sent in key_header; the Worker answers only requests with it
+  key_header: X-CWX-Key
+  timeout_s: 90                # the Worker may start a browser when asked to refresh
+
 # NOAA GHCN-Daily cooperative observer stations (free, no token). One reading per day, a 24 h total ending at
 # the observer's time (obs_hour_local, local standard time). Verified on daily PRCP; SNOW gives observed snowfall.
 # ALTA is at the Atwater SNOTEL spot (8,710 ft), lower than Alta's Collins plot: its seasonal snow runs about
@@ -282,6 +291,8 @@ storms:
   block_point: alta        # the point whose snow is shown model by model (every point gets the median row)
   manual_match_hours: 12   # hand-entered storm totals (data/manual/storm_totals.csv) match a storm within this slack
   report_verified_days: 10 # the storm report lists storms verified in the last this-many days
+  collins_page_hours: 48   # the NWS Collins page (CLN timeseries) shows only this far back; the session reminder
+                           # (scripts/collins_due.py) says where the owner's entries stop while a storm is recent
   max_lead_hours: 168      # storms are detected and totalled only from steps within this lead of each run's init
                            # (owner, 2026-10-27: totals past day 7 aren't trusted). Runs are still ARCHIVED to
                            # 240 h+ and verification scores every archived run, at any lead.

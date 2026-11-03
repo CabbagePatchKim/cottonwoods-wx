@@ -169,3 +169,90 @@ def test_the_observations_step_shows_each_sites_latest_values():
     r = sites.set_index("site").loc[v["name"]]
     assert abs(r["water_24h_in"] - 24 * 0.02) < 1e-6 and abs(r["water_6h_in"] - 6 * 0.02) < 1e-6
     assert r["depth_in"] == 10.0 and pd.isna(r["pillow_in"])                   # no pillow values: blank, not 0
+
+
+# --- Alta Collins from the owner's Worker (owner 2026-11-01: record, never publish) ------------------------------
+
+def _collins_row(label, water="0.00", interval="0.0", depth="5.0"):
+    return {"Date/Time (L)": label, "Temp. (°F)": "34", "Relative Humidity (%)": "90", "1 Hour Precip (in)": water,
+            "Snow Depth (in)": depth, "Snowfall 3 hour (in)": "", "Snowfall 6 Hour (in)": "",
+            "Snowfall 24 Hour (in)": "", "Snow Interval (in)": interval}
+
+
+def test_collins_rows_parse_to_utc_across_the_dst_change_and_a_new_year():
+    from cottonwoods.obs import collins
+    # newest first, like the page; 1:00 am happens twice on 11/1 (MDT, then MST)
+    rows = [_collins_row(x) for x in ("Nov 1, 2:00 am", "Nov 1, 1:00 am", "Nov 1, 1:00 am", "Nov 1, 12:00 am",
+                                      "Oct 31, 11:00 pm")]
+    df = collins.parse({"scraped": "2026-11-01T09:30:00.000Z", "rows": rows})
+    assert df["time_utc"].tolist() == [pd.Timestamp(f"2026-11-01 {h:02d}:00") for h in (5, 6, 7, 8, 9)]
+    # a December row read on Jan 1 belongs to the year before
+    df = collins.parse({"scraped": "2027-01-01T12:00:00Z", "rows": [_collins_row("Jan 1, 4:00 am"),
+                                                                     _collins_row("Dec 31, 11:00 pm")]})
+    assert df["time_utc"].tolist() == [pd.Timestamp("2027-01-01 06:00"), pd.Timestamp("2027-01-01 11:00")]
+
+
+def test_collins_fails_loudly_when_a_page_column_disappears():
+    from cottonwoods.obs import collins
+    row = _collins_row("Oct 31, 4:00 pm")
+    del row["Snow Interval (in)"]
+    try:
+        collins.parse({"scraped": "2026-11-01T00:00:00Z", "rows": [row]})
+    except ValueError as e:
+        assert "Snow Interval" in str(e)
+    else:
+        raise AssertionError("a missing column must fail")
+
+
+def test_collins_new_snow_is_the_interval_boards_rise_and_a_clearing_starts_over():
+    from cottonwoods.obs import collins
+    t = pd.date_range("2026-10-31 00:00", periods=6, freq="h")
+    stored = pd.DataFrame({"time_utc": t, "water_in": [0.1, 0.1, 0.05, 0.0, 0.02, 0.0],
+                           "snow_interval_in": [0.0, 1.0, 2.0, 0.0, 0.5, None], "depth_in": 5.0, "temp_f": 30.0,
+                           "rh_pct": 90.0, "fetched_at": t[-1]})
+    r = collins.readings(stored)
+    snow = r["new_snow_in"].tolist()
+    assert snow[0] != snow[0]                                    # first hour: no earlier board value -> NaN
+    assert snow[1:5] == [1.0, 1.0, 0.0, 0.5]                     # rises; cleared (2 -> 0) adds 0; then 0.5 since
+    assert snow[5] != snow[5]                                    # blank board -> NaN, not 0
+    assert (r["period_h"] == 1).all() and (r["start_utc"] == r["end_utc"] - pd.Timedelta(hours=1)).all()
+
+
+def test_collins_worker_hours_are_stored_and_hand_entries_win_value_by_value():
+    from cottonwoods.obs import collins
+    cfg = make_cfg()
+    rows = [_collins_row("Oct 31, 4:00 pm", water="0.05", interval="1.0"),
+            _collins_row("Oct 31, 3:00 pm", water="0.00", interval="0.0")]
+    with tempfile.TemporaryDirectory() as d:
+        root, entries = Path(d) / "archive", Path(d) / "entries"
+        entries.mkdir()
+        n = oa.archive_collins(cfg, root=root, fetcher=lambda c: {"scraped": "2026-11-01T00:00:00Z", "rows": rows})
+        assert n == 2 and len(oa.load_collins(root=root)) == 2
+        # the hand entry for 4 pm has water only: its water wins, the Worker's snow stays
+        (entries / "collins_obs.csv").write_text("year,month,day,hour,period_h,new_snow_in,water_in,depth_in,temp_f,"
+                                                 "rh_pct\n2026,10,31,16,1,,0.07,,,\n")
+        r = oa.load_collins_readings(root=root, entries=entries)
+        four = r[r["end_utc"] == pd.Timestamp("2026-10-31 22:00")].iloc[0]
+        assert abs(four["water_in"] - 0.07) < 1e-9 and abs(four["new_snow_in"] - 1.0) < 1e-9
+        assert len(r) == 2
+    assert collins.readings(pd.DataFrame()).empty
+
+
+def test_collins_errors_never_show_the_secret_address():
+    import os
+    from cottonwoods.obs import collins
+    cfg = make_cfg()
+    secret = "https://secret-worker.invalid/"
+    old = os.environ.get(cfg["collins_source"]["url_env"])
+    os.environ[cfg["collins_source"]["url_env"]] = secret
+    try:
+        collins.fetch(cfg)
+    except RuntimeError as e:
+        assert "secret-worker" not in str(e) and "unreachable" in str(e)
+    else:
+        raise AssertionError("an unreachable address must fail")
+    finally:
+        if old is None:
+            os.environ.pop(cfg["collins_source"]["url_env"])
+        else:
+            os.environ[cfg["collins_source"]["url_env"]] = old

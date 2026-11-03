@@ -5,6 +5,8 @@
     data/archive/obs/ghcn/ym=2026-11.parquet       daily NOAA coop stations (e.g. ALTA); time_utc = end of the obs day
     data/archive/obs/sounding/ym=2026-11.parquet   weather-balloon soundings (KSLC), every reported level
     data/archive/obs/rap/ym=2026-11.parquet        hourly RAP analyses: 700 mb wind + temperature at each point
+    data/archive/obs/collins/ym=2026-11.parquet    hourly Alta Collins readings from the owner's Worker (obs/collins.py):
+                                                    PRIVATE (record, never publish; owner 2026-11-01)
     data/manual/new_snow.csv                        hand-entered ski-area / UAC snowfall
 
 SNOTEL values can be revised after the fact, so each run re-fetches a trailing window and later fetches
@@ -22,7 +24,7 @@ import pandas as pd
 
 from ..config import ARCHIVE_DIR, ENTRIES_DIR, MANUAL_DIR, RAW_DIR
 from ..timefmt import LOCAL_TZ
-from ..obs import ghcn, rap, snotel, sounding, synoptic
+from ..obs import collins, ghcn, rap, snotel, sounding, synoptic
 from .io import read_df, suffix_for, write_df
 
 KEY = ["station", "element", "time_utc"]  # these three together identify one observation
@@ -46,6 +48,10 @@ def sounding_dir(root: Path | None = None) -> Path:
 
 def rap_dir(root: Path | None = None) -> Path:
     return (root or ARCHIVE_DIR) / "obs" / "rap"
+
+
+def collins_dir(root: Path | None = None) -> Path:
+    return (root or ARCHIVE_DIR) / "obs" / "collins"
 
 
 def to_utc(df: pd.DataFrame, tz_offset_hours: float) -> pd.DataFrame:
@@ -227,6 +233,22 @@ def archive_rap(cfg: dict, begin: str, end: str, root: Path | None = None, fetch
     return merge_into_store(df, cfg, store=rap_dir(root), key=["point", "time_utc"])
 
 
+def archive_collins(cfg: dict, begin: str = "", end: str = "", root: Path | None = None, fetcher=None) -> int:
+    """Alta Collins hours from the owner's Worker (obs/collins.py) merged into data/archive/obs/collins; a later
+    copy of an hour replaces an earlier one. begin/end are ignored: the Worker serves what the page shows (~48 h).
+    Returns the number of hours received (a count only: values are never printed)."""
+    df = collins.parse((fetcher or collins.fetch)(cfg))
+    if df.empty:
+        return 0
+    merge_into_store(df, cfg, store=collins_dir(root), key=["time_utc"])
+    return len(df)
+
+
+def load_collins(start=None, end=None, root: Path | None = None) -> pd.DataFrame:
+    """Stored Collins hours (time_utc, water_in, snow_interval_in, depth_in, temp_f, rh_pct, fetched_at)."""
+    return _load_store(collins_dir(root), start, end)
+
+
 def load_rap(start=None, end=None, root: Path | None = None) -> pd.DataFrame:
     """Archived hourly RAP 700 mb analyses (time_utc, point, u_700_ms, v_700_ms, t_700_k)."""
     return _load_store(rap_dir(root), start, end)
@@ -347,6 +369,19 @@ def load_hand_obs(folder: Path | None = None, name: str = "collins_obs") -> pd.D
     df["start_utc"] = df["end_utc"] - pd.to_timedelta(df["period_h"], unit="h")
     return df.drop_duplicates(subset=["end_utc", "period_h"], keep="last").sort_values(["end_utc", "period_h"]) \
         .reset_index(drop=True)
+
+
+def load_collins_readings(root: Path | None = None, entries: Path | None = None) -> pd.DataFrame:
+    """Every Alta Collins reading: the Worker's hours (load_collins -> collins.readings) and the owner's hand entries
+    (load_hand_obs). Same end time and period: per value, the hand entry wins and the Worker fills what it left blank
+    (e.g. a hand hour with water only keeps the Worker's snow for that hour). Columns as load_hand_obs."""
+    auto, hand = collins.readings(load_collins(root=root)), load_hand_obs(entries)
+    both = pd.concat([f for f in (auto, hand) if not f.empty], ignore_index=True)
+    if both.empty:
+        return hand
+    both = both.groupby(["end_utc", "period_h"], as_index=False, sort=True).last()   # last non-blank: hand over Worker
+    both["start_utc"] = both["end_utc"] - pd.to_timedelta(both["period_h"], unit="h")
+    return both.reset_index(drop=True)
 
 
 def load_manual(path: Path | None = None) -> pd.DataFrame:

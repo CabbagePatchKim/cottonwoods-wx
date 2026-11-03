@@ -3,6 +3,11 @@
 Shown at the start of every Claude Code session by the SessionStart hook (scripts/collins_due.py). Update it as
 steps finish; keep it short.
 
+## Collins Worker (done 2026-11-03)
+Locked (X-CWX-Key; 403 without it, checked), deployed, GitHub secrets CWX_COLLINS_URL / CWX_COLLINS_KEY set,
+pushed to main. The key's only copy is ~/.cwx_collins_key (laptop, never in git). Left: dry run on a bucket copy,
+then the v1.8 diff for approval.
+
 ## Why: slow down and measure
 The project has more machinery than evidence: one verified storm (dry), so the blends, regime factors, chances,
 trends and guidance are all unproven. Until a few storms verify, the work is MEASURING, not building new features.
