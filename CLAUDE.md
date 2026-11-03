@@ -239,7 +239,7 @@ Running live, TWO places for now (side-by-side check before cutover):
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
-- IN MAIN, NOT RELEASED (owner chose "option B" 2026-11-03): a verified window also covers Collins's own STEADY precip
+- RELEASED v1.10 (owner approved 2026-11-03, CI green; owner chose "option B"): a verified window also covers Collins's own STEADY precip
   (storms.collins_span: events by the 12 h gap rule, then from the first wet hour whose next 3 h hold >= 0.10" to the
   last whose previous 3 h do; config storms.collins_wet_in / collins_onset_*). widen_with_collins at verification and
   on any later pass the readings arrive (re-scores storm + block scores). Hourly Collins readings count only inside

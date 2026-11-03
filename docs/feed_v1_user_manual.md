@@ -233,6 +233,8 @@ Each published version puts its own copy of this manual here, so this list is cu
 - **v1.9:** a storm's start and end times no longer come from `NAM` / `NAM Nest`. After their retirement their
   last runs stayed in the archive and could still set a storm's window, e.g. Wed 11/04 was 18 h from NAM Nest's last
   run; it is now 12 h from RDPS. No fields were added, removed or renamed.
+- **v1.10:** no changes to the feed. This version only changes how finished storms are verified behind the
+  scenes.
 
 ## 10. Credits and licences
 

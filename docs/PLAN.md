@@ -7,7 +7,7 @@ steps finish; keep it short.
 Locked (X-CWX-Key; 403 without it, checked), deployed, GitHub secrets CWX_COLLINS_URL / CWX_COLLINS_KEY set,
 pushed to main, released as v1.8 (owner approved 11/03). The key's only copy is ~/.cwx_collins_key (laptop, never
 in git). v1.9 released 11/03 (below-ground levels, retired models). Collins storm window "option B" (owner 11/03):
-built in main, not released; release alone or with step 3.
+released as v1.10 (11/03). Next: step 3 (PNSSLC).
 
 ## Why: slow down and measure
 The project has more machinery than evidence: one verified storm (dry), so the blends, regime factors, chances,
