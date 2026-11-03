@@ -239,6 +239,14 @@ Running live, TWO places for now (side-by-side check before cutover):
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
+- v1.9 (owner asked 2026-11-03; tag only on approval): (1) BELOW-GROUND LEVELS: a freezing / snow level whose
+  profile never crossed is stored as the model's ground (2 m point); profile.below_ground spots it on read (no new
+  column, no re-derive). Storm table shows "<9.3k"; freezing scores keep the pair with err_ft NaN when the balloon is
+  below it too (merge replaces old rows; freezing_table n = scored). Effect on stored scores: HRRR warm bias +461 ->
+  +198 ft, RRFS +676 -> +324, NAM Nest +570 -> +336, RDPS +471 -> +370. FEED snow_level_ft still sends the ground value
+  (owner to decide). (2) RETIRED MODELS: their frozen last run no longer sets storm windows (storms.update_forecast_
+  storms, at now), storm tables (report.storm_runs, at the storm's start) or the daily table (model_days). Per-storm
+  verified sections keep them. Seen in v1.8 output: "RDPS raw +5329 (1)" / "GFS raw +2563" at 3-7 d: unexplained.
 - RELEASED v1.8 (owner approved 2026-11-03, CI green): Collins Worker feed (obs/collins.py, record never publish;
   Worker locked, secrets set), hand + Worker readings merged, collins_due reminder fixes. No feed change. Dry run on a
   bucket copy: obs / storms / report / feed preview ok, Worker 69 h, no Collins in the feed. CHECK the first v1.8 pass:

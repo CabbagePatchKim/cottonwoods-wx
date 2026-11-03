@@ -44,7 +44,7 @@ import numpy as np
 import pandas as pd
 
 from . import bins, blocks, modes, regimes, timefmt
-from .models.registry import deterministic
+from .models.registry import deterministic, retired_by
 from .windows import window_total, within_lead
 from .archive.io import write_df
 from .gauge import gauge_increments
@@ -272,7 +272,9 @@ def update_forecast_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, no
     # event must not hide that a second event also overlaps it (that's a split, not a new unrelated storm).
     before = storms[["fc_start", "fc_end"]].copy()
 
-    windows = [w for w in storm_windows(model_events(fc, point, scfg)) if w["fc_end"] >= now - pd.Timedelta(days=3)]
+    # A retired model's last run (NAM / NAM Nest after 11/3 12z) stays "its newest" for days: it never sets a window.
+    live = fc[~fc["model"].map(lambda m: retired_by(m, cfg, now))]
+    windows = [w for w in storm_windows(model_events(live, point, scfg)) if w["fc_end"] >= now - pd.Timedelta(days=3)]
     for w in sorted(windows, key=lambda x: x["fc_start"]):
         g = fc[(fc["model"] == w["defining_model"]) & (fc["init"] == w["defining_init"])]
         w["fc_flow"] = run_flow(g, point, w["fc_start"], w["fc_end"], cfg)

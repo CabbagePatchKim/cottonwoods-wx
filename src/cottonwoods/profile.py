@@ -22,6 +22,7 @@ height; may be given only at 500 mb, the rest is then filled in with the hypsome
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 RD_G = 287.05 / 9.80665          # gas constant / gravity: metres of thickness per kelvin per unit ln(p)
 LAPSE = 0.0065                   # K per m, to reach a station BELOW the model's ground
@@ -71,6 +72,17 @@ def level_heights(levels: list[int], temps_k: dict, z_given: dict) -> dict:
             if b in z and a not in z and np.isfinite(temps_k.get(a, np.nan)) and np.isfinite(temps_k.get(b, np.nan)):
                 z[a] = z[b] + RD_G * (temps_k[a] + temps_k[b]) / 2 * np.log(b / a)
     return z
+
+
+def below_ground(level_m, z_ground_m):
+    """True where a stored freezing or snow level is just the model's ground (its 2 m point): the profile never
+    crossed, so the real level is somewhere BELOW the model's terrain and unknown (station_profile's "all the way to
+    the model's ground" case). HRRR / RRFS / NAM Nest sit at ~9,300-9,500 ft at Alta, so in a cold storm their level
+    is stored as ~9.3k (11/03: the storm table showed "9.3k" and balloon scores counted it 1,000-1,600 ft too warm).
+    Works on numbers or Series; NaN -> False."""
+    lv, zg = np.asarray(level_m, float), np.asarray(z_ground_m, float)
+    out = np.isfinite(lv) & np.isfinite(zg) & (lv <= zg + 2.5)
+    return pd.Series(out, index=level_m.index) if isinstance(level_m, pd.Series) else bool(out) if out.ndim == 0 else out
 
 
 def _crossing(zs, vals, value):

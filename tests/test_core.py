@@ -283,3 +283,11 @@ def test_archived_runs_are_scored_against_the_journal_actuals():
     sc = journal.score_runs(fc, storms, cfg)
     assert len(sc) == 1 and sc["model"].iloc[0] == "UUGFS" and abs(sc["snow_in"].iloc[0] - 54 * 0.3) < 1e-9
     assert sc["fc_bin"].iloc[0] == "12-18" and sc["obs_bin"].iloc[0] == "12-18" and sc["points"].iloc[0] == 2
+
+
+def test_a_level_stored_at_the_model_ground_reads_as_below_ground():
+    # 11/03: HRRR's snow level at Alta was its ground (9,282 ft) every wet hour: the real level is below, unknown
+    from cottonwoods.profile import below_ground
+    assert below_ground(2831.0, 2829.0) and not below_ground(2900.0, 2829.0) and not below_ground(np.nan, 2829.0)
+    s = below_ground(pd.Series([2831.0, 3100.0, np.nan], index=[5, 6, 7]), pd.Series([2829.0, 2829.0, 2829.0], index=[5, 6, 7]))
+    assert s.tolist() == [True, False, False] and list(s.index) == [5, 6, 7]

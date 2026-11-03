@@ -628,3 +628,26 @@ def test_guidance_is_listed_apart_in_the_storm_and_block_tables_and_never_in_a_m
     assert "2.4" in median and "60" not in median                 # median of 1.2" and 3.6" per 12 h; not U of U's 60"
     assert lines.index(GUIDANCE_CAPTION) > lines.index(median)    # guidance listed after the median, captioned
     assert any(line.startswith("UUHRRR") for line in lines) and not any("guidancerun" in line for line in lines)
+
+
+def test_a_retired_models_last_run_sets_no_storm_window_and_leaves_the_storm_table():
+    # 11/03: NAM Nest's frozen 06z run (retired 12z, config archive.retired) set Wednesday's storm window
+    from cottonwoods.report import storm_runs
+    cfg = load_config()
+    fc = pd.concat([run_steps("NAMNEST", "2026-11-03 06:00", [(20, 40)], hours=60),
+                    run_steps("HRRR", "2026-11-03 12:00", [(18, 26)], hours=48)], ignore_index=True)
+    st = tracked(fc, "2026-11-03 15:00")
+    live = st[st["status"] == "forecast"]
+    assert len(live) == 1 and live["defining_model"].iloc[0] == "HRRR"
+    assert live["fc_start"].iloc[0] == pd.Timestamp("2026-11-04 06:00")
+    assert [m for m, _ in storm_runs(fc, cfg, pd.Timestamp("2026-11-04 06:00"))] == ["HRRR"]
+    assert sorted(m for m, _ in storm_runs(fc, cfg, pd.Timestamp("2026-11-03 09:00"))) == ["HRRR", "NAMNEST"]  # began before
+    from cottonwoods.report import model_days                              # and the daily model table
+    assert [r["model"] for r in model_days(fc, cfg, "alta", start=pd.Timestamp("2026-11-03 15:00"))] == ["HRRR"]
+
+
+def test_a_snow_level_at_the_model_ground_shows_as_below_it():
+    from cottonwoods.report import _storm_tail
+    r = {"snow_level_m": (2829.0, 2400.0), "snow_level_below": (True, False), "flow": "", "modes": ""}
+    assert _storm_tail(r)["snow level"] == "<9.3k->7.9k ft"
+    assert _storm_tail({**r, "snow_level_below": None})["snow level"] == "9.3k->7.9k ft"   # runs without a ground

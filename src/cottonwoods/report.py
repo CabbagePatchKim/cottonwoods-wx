@@ -14,6 +14,7 @@ from . import blocks, regimes, timefmt
 from .config import PROCESSED_DIR
 from .storms import bin_scores, hand_obs_totals, manual_totals, run_flow, run_modes
 from .models.registry import kind_of, retired_by
+from .profile import below_ground
 from .windows import window_total, within_lead
 from .units import FT_PER_M, MM_PER_IN
 
@@ -60,9 +61,10 @@ def model_days(fc: pd.DataFrame, cfg: dict, point: str, days: int | None = None,
     or None where the run doesn't cover the whole day, or the day ends past the run's shown lead (config report:
     deterministic 168 h, ensembles 240 h for the 8-10 day tail). Used by the text report and the website feed."""
     rcfg = cfg["report"]
-    fc = fc[fc["model"].map(kind_of) != "guidance"]      # guidance has its own table in the storm reports
-    fc = latest_runs(fc[fc["point"] == point])
     start = start or pd.Timestamp.now(tz="UTC").tz_localize(None)
+    fc = fc[fc["model"].map(kind_of) != "guidance"]      # guidance has its own table in the storm reports
+    fc = fc[~fc["model"].map(lambda m: retired_by(m, cfg, start))]   # a retired model's frozen last run (NAM, 11/3)
+    fc = latest_runs(fc[fc["point"] == point])
     wins = day_windows(start, days or rcfg["days"], cfg["verify"]["window_end_utc_hour"])
     thr_mm = cfg["verify"]["event_swe_in"] * MM_PER_IN
     out = []
@@ -184,8 +186,11 @@ def regime_adjusted(fc: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, bool]:
 
 
 def storm_runs(fc: pd.DataFrame, cfg: dict, s):
-    """(model, steps) of every model's newest run that reaches a storm starting at s, within storms.max_lead_hours."""
+    """(model, steps) of every model's newest run that reaches a storm starting at s, within storms.max_lead_hours.
+    Models retired before s are left out (their last run is frozen; probs._lagged_models does the same)."""
     for model, g in fc.groupby("model"):
+        if retired_by(model, cfg, s):
+            continue
         g = within_lead(g[g["init"] == g["init"].max()], cfg["storms"]["max_lead_hours"])
         if g["valid_end"].max() > s:
             yield model, g
@@ -323,6 +328,9 @@ def storm_models(st, fc: pd.DataFrame, cfg: dict) -> list[dict]:
             wet = gp[(gp["qpf_mm"] >= cfg["storms"]["wet_in"] * MM_PER_IN) & gp["snow_level_m"].notna()].sort_values("valid_end")
             if len(wet):
                 r["snow_level_m"] = (float(wet["snow_level_m"].iloc[0]), float(wet["snow_level_m"].iloc[-1]))
+                if "z_ground_m" in wet.columns:   # stored at the model's ground = somewhere below it (profile.below_ground)
+                    below = below_ground(wet["snow_level_m"], wet["z_ground_m"])
+                    r["snow_level_below"] = (bool(below.iloc[0]), bool(below.iloc[-1]))
         out.append(r)
     return _by_model_order(out)
 
@@ -345,8 +353,9 @@ def _storm_tail(r: dict) -> dict[str, str]:
     """A deterministic run's text columns after the amounts: snow level, flow and modes over the storm."""
     level = ""
     if r["snow_level_m"]:
-        a, b = (m * FT_PER_M / 1000 for m in r["snow_level_m"])
-        level = f"{a:.1f}k->{b:.1f}k ft"
+        below = r.get("snow_level_below") or (False, False)
+        a, b = (f"{'<' if low else ''}{m * FT_PER_M / 1000:.1f}k" for m, low in zip(r["snow_level_m"], below))
+        level = f"{a}->{b} ft"
     return {"snow level": level, "flow": r["flow"] or "", "modes": r["modes"] or ""}
 
 
@@ -399,7 +408,8 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Tim
              if adjusted else "Snow is NOT regime-adjusted (run scripts/regime_factors.py).",
              "  water snow   deterministic models: water, and snow at the point's elevation, inches",
              f"  wet/N mean   ensembles: members with >= {cfg['verify']['event_swe_in']:.2f}\" water out of N, "
-             "and their mean water", "  run = model cycle (UTC); SNTL = internal SNOTEL-site point.", ""]
+             "and their mean water", "  run = model cycle (UTC); SNTL = internal SNOTEL-site point.",
+             "  snow level <9.3k = at or below that model's ground there (its real level is lower, not known)", ""]
     open_ = storms[storms["status"] == "forecast"].sort_values("fc_start")
     ended = open_[open_["fc_end"] <= now]
     live = [(st, storm_models(st, fc, cfg)) for _, st in open_[open_["fc_end"] > now].iterrows()]
@@ -552,9 +562,11 @@ def freezing_table(scores: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     for label, part in (("", scores), ("wet ", scores[scores["wet"].astype(bool)])):
         for lo, hi in cfg["verify"]["lead_bands_hours"]:
             band = part[(part["lead_hr"] > lo) & (part["lead_hr"] <= hi)]
-            avg = band.groupby("model")["err_ft"].agg(bias="mean", off=lambda x: x.abs().mean(), n="size")
+            # n counts scored balloons only: err_ft is NaN where both levels were below the model's ground
+            avg = band.groupby("model")["err_ft"].agg(bias="mean", off=lambda x: x.abs().mean(), n="count")
             t[label + band_name(lo, hi)] = t["model"].map(
-                lambda m: f"{avg.at[m, 'bias']:+.0f} {avg.at[m, 'off']:.0f} ({avg.at[m, 'n']})" if m in avg.index else "")
+                lambda m: f"{avg.at[m, 'bias']:+.0f} {avg.at[m, 'off']:.0f} ({avg.at[m, 'n']})"
+                if m in avg.index and avg.at[m, "n"] else "")
     return t
 
 

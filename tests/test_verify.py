@@ -182,3 +182,30 @@ def test_freezing_level_is_scored_against_the_balloons_and_kept_as_runs_age_out(
         merge_freezing_scores(sc, path)
         later = merge_freezing_scores(sc[sc["model"] == "HRRR"].assign(err_ft=5.0), path)   # GDPS no longer loaded
         assert len(later) == 4 and (later[later["model"] == "HRRR"]["err_ft"] == 5.0).all()
+
+
+def test_a_freezing_level_below_the_model_ground_is_not_scored_when_the_balloon_is_below_it_too():
+    # 11/03: balloons at ~7.7k, HRRR's ground ~9.3k: its "9.3k" (= ground) counted ~1,600 ft too warm
+    from cottonwoods.report import freezing_table
+    from cottonwoods.verify import freezing_level_scores, merge_freezing_scores
+    cfg = make_cfg()
+    i = pd.Timestamp("2026-11-02 00:00")
+    ends = pd.date_range(i + pd.Timedelta(hours=3), periods=16, freq="3h")
+    def run(model, fl_m, ground_m):
+        return pd.DataFrame({"model": model, "init": i, "valid_end": ends, "valid_start": ends - pd.Timedelta(hours=3),
+                             "point": cfg["storms"]["point"], "freezing_level_m": fl_m, "z_ground_m": ground_m})
+    fc = pd.concat([run("HRRR", 2831.0, 2829.0), run("GFS", 2400.0, 2080.0)], ignore_index=True)
+    snd = pd.DataFrame({"time_utc": pd.to_datetime(["2026-11-02 12:00", "2026-11-03 00:00"]),
+                        "freezing_level_m": [2350.0, 2900.0]})          # 12z below HRRR's ground, 00z above it
+    sc = freezing_level_scores(fc, snd, None, cfg).set_index(["model", "time_utc"])
+    assert len(sc) == 4                                                   # the unknown pair is kept, unscored
+    assert np.isnan(sc.loc[("HRRR", pd.Timestamp("2026-11-02 12:00")), "err_ft"])
+    assert sc.loc[("HRRR", pd.Timestamp("2026-11-03 00:00")), "err_ft"] < 0          # balloon above: too cold, scored
+    assert abs(sc.loc[("GFS", pd.Timestamp("2026-11-02 12:00")), "err_ft"] - 50 * 3.28084) < 0.1   # a real crossing
+    t = freezing_table(sc.reset_index(), cfg).set_index("model")
+    assert t.loc["HRRR", "0-24 h"].endswith("(1)")                       # counts only the scored balloon
+    with tempfile.TemporaryDirectory() as d:                             # an old too-warm row is replaced, not kept
+        path = Path(d) / "freezing_scores.csv"
+        merge_freezing_scores(sc.reset_index().assign(err_ft=1600.0), path)
+        new = merge_freezing_scores(sc.reset_index(), path)
+        assert new["err_ft"].isna().sum() == 1

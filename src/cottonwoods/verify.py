@@ -25,6 +25,7 @@ import pandas as pd
 from . import regimes
 from .archive.obs import drop_unreliable_water
 from .gauge import gauge_increments
+from .profile import below_ground
 from .units import FT_PER_M, MM_PER_IN
 from .windows import window_total
 
@@ -302,7 +303,14 @@ def freezing_level_scores(fc: pd.DataFrame, snd: pd.DataFrame | None, osteps: pd
     det = fc[(fc["point"] == cfg["storms"]["point"]) & fc["freezing_level_m"].notna()]
     det = det[det["member"].isna()] if "member" in det.columns else det
     obs = snd[["time_utc", "freezing_level_m"]].dropna().rename(columns={"freezing_level_m": "obs_m"})
-    m = det[["model", "init", "valid_end", "freezing_level_m"]].merge(obs, left_on="valid_end", right_on="time_utc")
+    keep = ["model", "init", "valid_end", "freezing_level_m"] + (["z_ground_m"] if "z_ground_m" in det.columns else [])
+    m = det[keep].merge(obs, left_on="valid_end", right_on="time_utc")
+    # A forecast level stored at the model's ground means "somewhere below it" (profile.below_ground). When the
+    # balloon is below that too, the model was right but its error is unknown: err_ft NaN, not scored (11/03: these
+    # counted HRRR / RRFS / NAM Nest 1,000-1,600 ft too warm). The row is kept so it replaces an older stored score
+    # (merge_freezing_scores). A balloon ABOVE the ground still scores: the model was too cold by at least that much.
+    unknown = (below_ground(m["freezing_level_m"], m["z_ground_m"]) & (m["obs_m"] < m["freezing_level_m"])
+               if "z_ground_m" in m.columns else pd.Series(False, index=m.index))
     if m.empty:
         return pd.DataFrame(columns=cols)
     half, thr = pd.Timedelta(hours=cfg["verify"]["freezing_wet_hours"] / 2), cfg["verify"]["event_swe_in"]
@@ -311,7 +319,7 @@ def freezing_level_scores(fc: pd.DataFrame, snd: pd.DataFrame | None, osteps: pd
     return pd.DataFrame({"model": m["model"], "init": m["init"], "time_utc": m["time_utc"],
                          "lead_hr": (m["time_utc"] - m["init"]) / pd.Timedelta(hours=1),
                          "fc_fl_ft": m["freezing_level_m"] * FT_PER_M, "obs_fl_ft": m["obs_m"] * FT_PER_M,
-                         "err_ft": (m["freezing_level_m"] - m["obs_m"]) * FT_PER_M,
+                         "err_ft": ((m["freezing_level_m"] - m["obs_m"]) * FT_PER_M).mask(unknown),
                          "wet": m["time_utc"].map(wet)})[cols]
 
 
