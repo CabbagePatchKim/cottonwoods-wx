@@ -39,8 +39,9 @@ if fc.empty:
     raise SystemExit("No archived model runs in the last 20 days.")
 
 snd = load_soundings(start=now - timedelta(days=25))
+readings = load_collins_readings()
 table = storms.run(fc, obs, cfg, now, soundings=summarize(snd) if not snd.empty else None,
-                   rap=load_rap(start=now - timedelta(days=25)), fc_raw=fc_raw)
+                   rap=load_rap(start=now - timedelta(days=25)), fc_raw=fc_raw, readings=readings)
 
 days_path = PROCESSED_DIR / "gauge_pillow_days.csv"
 first = not days_path.exists()        # the first time: the whole archive; balloons only from the first SNOTEL day
@@ -51,7 +52,7 @@ days = verify.merge_gauge_pillow_days(days, days_path)
 verify.undercatch_summary(days, cfg).to_csv(PROCESSED_DIR / "undercatch_summary.csv", index=False)
 text = (f"Storms, {timefmt.now_line(now)}. Times are Mountain (MDT/MST), 24-hour.\n\n"
         + render_storms(table, fc, cfg, now, storms.point_steps(obs, cfg)))
-scores, totals, readings = storms.load_scores(), load_storm_totals(), load_collins_readings()
+scores, totals = storms.load_scores(), load_storm_totals()
 binned = storms.bin_scores(table, scores, totals, readings, cfg)
 storms.save_bin_scores(binned)
 # Verification is its own report (owner, 2026-10-30: the Storms step got crowded): data/reports/verified_latest.txt,

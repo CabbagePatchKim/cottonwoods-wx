@@ -239,7 +239,14 @@ Running live, TWO places for now (side-by-side check before cutover):
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
-- v1.9 (owner asked 2026-11-03; tag only on approval): (1) BELOW-GROUND LEVELS: a freezing / snow level whose
+- IN MAIN, NOT RELEASED (owner chose "option B" 2026-11-03): a verified window also covers Collins's own STEADY precip
+  (storms.collins_span: events by the 12 h gap rule, then from the first wet hour whose next 3 h hold >= 0.10" to the
+  last whose previous 3 h do; config storms.collins_wet_in / collins_onset_*). widen_with_collins at verification and
+  on any later pass the readings arrive (re-scores storm + block scores). Hourly Collins readings count only inside
+  the window; boards keep manual_match_hours. Weekend storm: Sun 0100 MST - Mon 1400 MST, Collins 16" / 2.35",
+  SNOTEL 2.60" (SNOTEL wasn't low: its 0.1"/h event threshold started it 16 h late). Last runs (06z 11/01): NAM Nest
+  20" +2, GDPS 17" +2, UUGFS +2, NAM / GFS +0, HRRR 12" / RRFS 10" / IFS 11" / RDPS 23" -1, UUHRRR -2.
+- v1.9 RELEASED (owner approved 2026-11-03, tag on 76651c2, CI green): (1) BELOW-GROUND LEVELS: a freezing / snow level whose
   profile never crossed is stored as the model's ground (2 m point); profile.below_ground spots it on read (no new
   column, no re-derive). Storm table shows "<9.3k"; freezing scores keep the pair with err_ft NaN when the balloon is
   below it too (merge replaces old rows; freezing_table n = scored). Effect on stored scores: HRRR warm bias +461 ->

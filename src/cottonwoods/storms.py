@@ -337,6 +337,56 @@ def ready_to_verify(storm: pd.Series, osteps: pd.DataFrame, cfg: dict, now: pd.T
     return {"obs_start": ev["start"].min(), "obs_end": obs_end}
 
 
+def collins_span(storm: pd.Series, readings: pd.DataFrame | None, cfg: dict) -> tuple:
+    """(start, end) of Alta Collins's own STEADY precip in this storm, or (NaT, NaT). Owner 2026-11-03 ("option B"):
+    the weekend storm began at Collins 15 h before Alta SNOTEL's 0.1"-step gauge showed it, so the window starts at
+    whichever saw it first. Collins's hourly water forms events (>= storms.collins_wet_in per hour, storms.gap_hours
+    dry between storms: the SNOTEL rule) overlapping the storm's final window; inside them the span runs from the
+    first hour whose next collins_onset_hours total >= collins_onset_in to the last hour whose previous ones do, so a
+    lone light shower ahead of the storm (Sat 10/31 0.05", then 0.01") doesn't stretch it by a day."""
+    none = (pd.NaT, pd.NaT)
+    if readings is None or readings.empty or pd.isna(storm.final_start):
+        return none
+    h = readings[(readings["period_h"] == 1) & readings["water_in"].notna()]
+    reach = pd.Timedelta(hours=4 * cfg["storms"]["gap_hours"])
+    h = h[(h["end_utc"] > storm.final_start - reach) & (h["start_utc"] < storm.final_end + reach)]
+    if h.empty:
+        return none
+    steps = pd.DataFrame({"valid_start": h["start_utc"], "valid_end": h["end_utc"],
+                          "qpf_mm": h["water_in"] * MM_PER_IN}).sort_values("valid_end")
+    ev = detect_events(steps, cfg["storms"]["collins_wet_in"] * MM_PER_IN, cfg["storms"]["gap_hours"], 0.0)
+    ev = ev[(ev["start"] < storm.final_end) & (ev["end"] > storm.final_start)]
+    if ev.empty:
+        return none
+    scfg = cfg["storms"]
+    n, need = pd.Timedelta(hours=scfg["collins_onset_hours"]), scfg["collins_onset_in"] * MM_PER_IN - 1e-6
+    w = steps[(steps["valid_start"] >= ev["start"].min()) & (steps["valid_end"] <= ev["end"].max())]
+    wet = (w["qpf_mm"] >= scfg["collins_wet_in"] * MM_PER_IN - 1e-6).tolist()   # the onset / end hour itself is wet
+    ahead = [ok and w.loc[(w["valid_start"] >= t) & (w["valid_start"] < t + n), "qpf_mm"].sum() >= need
+             for ok, t in zip(wet, w["valid_start"])]
+    behind = [ok and w.loc[(w["valid_end"] <= t) & (w["valid_end"] > t - n), "qpf_mm"].sum() >= need
+              for ok, t in zip(wet, w["valid_end"])]
+    if not any(ahead):
+        return none                                       # never steady: showers only, leave the window alone
+    return w["valid_start"][ahead].min(), w["valid_end"][behind].max()
+
+
+def widen_with_collins(storms: pd.DataFrame, i, readings: pd.DataFrame | None, osteps: pd.DataFrame,
+                       cfg: dict) -> bool:
+    """Stretch a verified storm's final window to cover Collins's own precip (collins_span); its SNOTEL water is
+    re-totalled over the new window. True if the window changed (the storm then needs re-scoring)."""
+    st = storms.loc[i]
+    cs, ce = collins_span(st, readings, cfg)
+    if pd.isna(cs):
+        return False
+    s, e = min(st.final_start, cs), max(st.final_end, ce)
+    if s == st.final_start and e == st.final_end:
+        return False
+    storms.at[i, "final_start"], storms.at[i, "final_end"] = s, e
+    storms.at[i, "obs_water_in"] = window_total(osteps, s, e) / MM_PER_IN
+    return True
+
+
 def score_storm(storm: pd.Series, fc_all: pd.DataFrame, psteps: dict[str, pd.DataFrame], cfg: dict) -> pd.DataFrame:
     """Every archived run that started before the storm ended, totalled over the final window, vs observed, at every
     point in psteps (point_steps)."""
@@ -455,8 +505,8 @@ def manual_totals(storm: pd.Series, totals: pd.DataFrame, cfg: dict, point: str 
 
 
 def hand_obs_totals(storm: pd.Series, readings: pd.DataFrame, cfg: dict, source: str = "collins") -> dict | None:
-    """Storm totals from hand-copied readings (archive.obs.load_hand_obs) inside the storm's window, give or take
-    storms.manual_match_hours. Per variable, nothing is counted twice:
+    """Storm totals from Collins readings (archive.obs.load_collins_readings) inside the storm's window: hourly ones
+    strictly inside, boards give or take storms.manual_match_hours. Per variable, nothing is counted twice:
       - boards (12 h or longer) come first; where boards overlap (a 24 h board and the two 12 h boards inside it)
         the shorter ones are kept and the overlapping longer one is skipped;
       - a board missing that variable is filled from the hourly readings inside its period;
@@ -467,7 +517,12 @@ def hand_obs_totals(storm: pd.Series, readings: pd.DataFrame, cfg: dict, source:
         return None
     s, e = storm_span(storm)
     slack = pd.Timedelta(hours=cfg["storms"]["manual_match_hours"])
-    r = readings[(readings["start_utc"] >= s - slack) & (readings["end_utc"] <= e + slack)]
+    # Hourly readings have exact times, and the window already covers Collins's own precip (collins_span, owner
+    # 2026-11-03 "option B"), so they count only inside it; boards (12 h+) may reach past the window by the slack.
+    board = readings["period_h"] >= 12
+    inside = (readings["start_utc"] >= s) & (readings["end_utc"] <= e)
+    near = (readings["start_utc"] >= s - slack) & (readings["end_utc"] <= e + slack)
+    r = readings[(board & near) | (~board & inside)]
     if r.empty:
         return None
 
@@ -623,13 +678,14 @@ def _backfill_verified(storms: pd.DataFrame, fc: pd.DataFrame, psteps: dict, ost
 
 def run(fc: pd.DataFrame, obs: pd.DataFrame, cfg: dict, now: pd.Timestamp, root=None,
         soundings: pd.DataFrame | None = None, rap: pd.DataFrame | None = None,
-        fc_raw: pd.DataFrame | None = None) -> pd.DataFrame:
+        fc_raw: pd.DataFrame | None = None, readings: pd.DataFrame | None = None) -> pd.DataFrame:
     """One pass: update forecast storms from the newest runs, verify any that are over. Returns the table.
 
     soundings: balloon summaries (cottonwoods.obs.sounding.summarize); rap: hourly RAP analyses
     (archive.obs.load_rap). Together they give the observed regime phases (regimes.observed_regime).
     fc_raw: blended models' unmodified runs (load_forecasts raw=True, "GFS raw"): scored next to fc, never used to
-    find or time storms.
+    find or time storms. readings: Alta Collins (archive.obs.load_collins_readings): a verified window also covers
+    Collins's own precip (widen_with_collins), at verification and on any later pass its readings arrive.
     """
     storms = update_forecast_storms(load_storms(root), fc, cfg, now)
     fc = pd.concat([fc, fc_raw], ignore_index=True) if fc_raw is not None and not fc_raw.empty else fc
@@ -643,11 +699,19 @@ def run(fc: pd.DataFrame, obs: pd.DataFrame, cfg: dict, now: pd.Timestamp, root=
         storms.at[i, "final_start"] = min(st.fc_start, done["obs_start"]) if pd.notna(done["obs_start"]) else st.fc_start
         storms.at[i, "final_end"] = max(st.fc_end, done["obs_end"]) if pd.notna(done["obs_end"]) else st.fc_end
         storms.at[i, "obs_water_in"] = window_total(osteps, storms.at[i, "final_start"], storms.at[i, "final_end"]) / MM_PER_IN
+        widen_with_collins(storms, i, readings, osteps, cfg)
         _set_observed_flow(storms, i, osteps, rap, soundings, cfg)
         storms.at[i, "status"] = "verified"
         storms.at[i, "updated_at"] = now
         append_scores(score_storm(storms.loc[i], fc, psteps, cfg), root)
         append_block_scores(score_blocks(storms.loc[i], fc, psteps, cfg, rap, soundings), root)
+    for i, st in storms[storms["status"] == "verified"].iterrows():   # Collins readings that arrived later
+        loaded = pd.notna(st.final_start) and st.final_start >= fc["init"].min()
+        if loaded and widen_with_collins(storms, i, readings, osteps, cfg):
+            _set_observed_flow(storms, i, osteps, rap, soundings, cfg)
+            storms.at[i, "updated_at"] = now
+            append_scores(score_storm(storms.loc[i], fc, psteps, cfg), root)
+            append_block_scores(score_blocks(storms.loc[i], fc, psteps, cfg, rap, soundings), root)
     _backfill_verified(storms, fc, psteps, osteps, rap, soundings, cfg, root)
     write_df(storms[COLS], storms_path(root))
     return storms

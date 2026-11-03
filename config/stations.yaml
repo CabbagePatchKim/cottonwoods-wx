@@ -282,6 +282,10 @@ storms:
   gap_hours: 12
   wet_in: 0.01             # measurable precip per model step
   obs_wet_in: 0.1          # measurable per hour for SNOTEL: its gauge reports in 0.1" steps
+  collins_wet_in: 0.01     # measurable per hour at Alta Collins (0.01" gauge). A verified window also covers Collins's
+                           # own precip (storms.collins_span, owner 2026-11-03): whichever of SNOTEL / Collins saw it first
+  collins_onset_hours: 3   # ...counted from STEADY precip: the first hour whose next 3 h hold >= collins_onset_in,
+  collins_onset_in: 0.10   # to the last hour whose previous 3 h do (a lone 0.05" shower ahead doesn't count)
   min_total_in: 0.10       # an "event" smaller than this isn't a storm
   subperiod_gap_hours: 6   # inside a storm, a dry gap this long splits it into reported parts (e.g. 2/16 a/b)
   # The storm report's 12 h blocks (blocks.py, owner 2026-10-29): fixed edges at 00z/12z (~6 pm / 6 am Mountain),

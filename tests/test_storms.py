@@ -651,3 +651,77 @@ def test_a_snow_level_at_the_model_ground_shows_as_below_it():
     r = {"snow_level_m": (2829.0, 2400.0), "snow_level_below": (True, False), "flow": "", "modes": ""}
     assert _storm_tail(r)["snow level"] == "<9.3k->7.9k ft"
     assert _storm_tail({**r, "snow_level_below": None})["snow level"] == "9.3k->7.9k ft"   # runs without a ground
+
+
+def _collins_hours(start_utc, hours, water=0.05, snow=0.5):
+    """Hourly Collins readings (load_collins_readings columns) starting at start_utc."""
+    s = pd.date_range(start_utc, periods=hours, freq="h")
+    return pd.DataFrame({"start_utc": s, "end_utc": s + pd.Timedelta(hours=1), "period_h": 1.0,
+                         "new_snow_in": snow, "water_in": water, "depth_in": np.nan})
+
+
+def test_a_verified_window_starts_when_collins_saw_precip_even_if_snotel_saw_it_later():
+    # owner 2026-11-03, option B: the weekend storm began at Collins 15 h before Alta SNOTEL's 0.1" gauge showed it
+    from cottonwoods import storms
+    from cottonwoods.storms import hand_obs_totals
+    cfg = make_cfg()
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        def pull(i, fxx, points, s=None):
+            rows = []
+            for f in fxx:
+                vs = pd.Timestamp(i) + pd.Timedelta(hours=f - 1)
+                for name in points:
+                    rows.append({"model": "HRRR", "init": pd.Timestamp(i), "lead_hr": f, "valid_start": vs,
+                                 "valid_end": vs + pd.Timedelta(hours=1), "point": name, "grid_dist_km": 1.0,
+                                 "qpf_mm": 1.0 if pd.Timestamp("2026-11-01 20:00") <= vs < pd.Timestamp("2026-11-02 12:00") else 0.0,
+                                 **{f"t_{lev}_k": 265.0 for lev in (700, 600, 500)}})
+            return pd.DataFrame(rows)
+        fa.archive_run("HRRR", datetime(2026, 11, 1, 12), cfg, root=root, puller=pull)
+        fc = fa.load_forecasts(cfg, root=root)
+        obs = snotel_prec("2026-11-01 12:00", [0.0] * 14 + [0.1] * 14 + [0.0] * 13)   # SNOTEL wet 11/02 02z-16z
+        collins = pd.concat([_collins_hours("2026-10-31 00:00", 3),                    # an earlier, separate storm
+                             _collins_hours("2026-11-01 18:00", 22)], ignore_index=True)   # 18z -> 16z
+        # verified without Collins first: the window starts at the forecast's 20z
+        t = storms.run(fc, obs, cfg, pd.Timestamp("2026-11-03 06:00"), root=root)
+        assert t.iloc[0].final_start == pd.Timestamp("2026-11-01 20:00")
+        before = pd.read_csv(root / "storm_scores.csv")
+        # the readings arrive a pass later: the window widens to Collins's 18z start and the storm is re-scored
+        t = storms.run(fc, obs, cfg, pd.Timestamp("2026-11-03 09:00"), root=root, readings=collins)
+        st = t.iloc[0]
+        assert st.final_start == pd.Timestamp("2026-11-01 18:00") and st.final_end == pd.Timestamp("2026-11-02 16:00")
+        assert st.updated_at == pd.Timestamp("2026-11-03 09:00") and abs(st.obs_water_in - 1.4) < 1e-9
+        after = pd.read_csv(root / "storm_scores.csv")
+        assert len(after) == len(before)                                  # replaced, not added
+        tot = hand_obs_totals(st, collins, cfg)                           # the separate 10/31 hours are left out
+        assert abs(tot["water_in"] - 1.10) < 1e-9 and abs(tot["new_snow_in"] - 11.0) < 1e-9
+        again = storms.run(fc, obs, cfg, pd.Timestamp("2026-11-03 12:00"), root=root, readings=collins)
+        assert again.iloc[0].updated_at == pd.Timestamp("2026-11-03 09:00")   # nothing new: not touched again
+
+
+def test_hourly_collins_readings_count_only_inside_the_window_but_boards_keep_the_slack():
+    from cottonwoods.storms import hand_obs_totals
+    cfg = make_cfg()
+    st = pd.Series({"point": "alta", "fc_start": pd.Timestamp("2026-11-02 00:00"), "fc_end": pd.Timestamp("2026-11-02 12:00"),
+                    "final_start": pd.Timestamp("2026-11-02 00:00"), "final_end": pd.Timestamp("2026-11-02 12:00")})
+    hours = _collins_hours("2026-11-01 20:00", 4, water=0.1, snow=1.0)            # all before the window
+    assert hand_obs_totals(st, hours, cfg) is None                              # was counted with the 12 h slack
+    board = pd.DataFrame({"start_utc": [pd.Timestamp("2026-11-01 18:00")], "end_utc": [pd.Timestamp("2026-11-02 06:00")],
+                          "period_h": [12.0], "new_snow_in": [6.0], "water_in": [0.5], "depth_in": [np.nan]})
+    assert hand_obs_totals(st, board, cfg)["new_snow_in"] == 6.0                # a board reaching past the start still counts
+
+
+def test_a_lone_light_shower_ahead_of_the_storm_does_not_stretch_the_collins_start():
+    # the weekend storm: Sat 1500 MDT 0.05", Sat 2100 0.01", then steady from Sun 0100 MST; the span starts Sunday
+    from cottonwoods.storms import collins_span
+    cfg = make_cfg()
+    st = pd.Series({"final_start": pd.Timestamp("2026-11-02 00:00"), "final_end": pd.Timestamp("2026-11-02 21:00")})
+    r = pd.concat([_collins_hours("2026-10-31 21:00", 1, water=0.05), _collins_hours("2026-11-01 03:00", 1, water=0.01),
+                   _collins_hours("2026-11-01 08:00", 24, water=0.06), _collins_hours("2026-11-02 08:00", 1, water=0.01)],
+                  ignore_index=True)
+    r = pd.concat([_collins_hours("2026-11-01 07:00", 1, water=0.0), r], ignore_index=True)   # a dry hour just before
+    # starts at the first wet steady hour (not the dry one before it); a light hour right after steady precip counts
+    assert collins_span(st, r, cfg) == (pd.Timestamp("2026-11-01 08:00"), pd.Timestamp("2026-11-02 09:00"))
+    showers = pd.concat([_collins_hours("2026-11-01 20:00", 1, water=0.02), _collins_hours("2026-11-02 02:00", 1, water=0.02)],
+                        ignore_index=True)
+    assert pd.isna(collins_span(st, showers, cfg)[0])                # never steady: the window is left alone
