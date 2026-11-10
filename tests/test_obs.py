@@ -256,3 +256,156 @@ def test_collins_errors_never_show_the_secret_address():
             os.environ.pop(cfg["collins_source"]["url_env"])
         else:
             os.environ[cfg["collins_source"]["url_env"]] = old
+
+
+# --- NWS Salt Lake storm statements (obs/pns.py, owner 2026-11-10) ----------------------------------------------
+# Real statements, cut down: 2/19/2026 (snow + precip columns; the owner's stake read 46") and 11/01/2026 (precip only).
+PNS_FEB = """\x01
+842
+NOUS45 KSLC 191451
+PNSSLC
+
+Public Information Statement...UPDATED
+National Weather Service Salt Lake City UT
+751 AM MST Thu Feb 19 2026
+
+...Preliminary Storm Information...
+Below are the latest precipitation and wind totals from 8am Monday
+through 7am Thursday.
+
+***** Precip Reports *****                Time        Snow     Precip
+
+...Wasatch Mountains South of I-80...
+Alta - Collins - 9662 ft                 4 AM Thu     47.0      4.72
+Alta Udot - 8799 ft                      4 AM Thu     38.0      3.74
+Lower Cedar Mtn - 4495 ft                7 AM Thu               2.87
+
+***** Wind Reports *****                   Time     Windspeed
+
+Alta - Collins - 9662 ft                 3 AM Thu      61
+\x03"""
+PNS_NOV = """\x01
+453
+NOUS45 KSLC 011341
+PNSSLC
+
+Public Information Statement
+National Weather Service Salt Lake City UT
+641 AM MST Sun Nov 01 2026
+
+...Preliminary Storm Information...
+
+Storm total precipitation starting 6 PM October 31, 2026.
+
+***** Precip Reports *****                 Time      Precip
+
+...Wasatch Mountains South of I-80...
+Alta - Collins - 9662 ft                 6 AM Sun     0.65
+\x03
+\x01
+100
+NOUS45 KSLC 011500
+PNSSLC
+
+Public Information Statement
+National Weather Service Salt Lake City UT
+800 AM MST Sun Nov 01 2026
+
+Not a storm statement: the parser skips it.
+Alta - Collins - 9662 ft                 6 AM Sun     9.99
+\x03"""
+
+
+def test_nws_statement_columns_follow_each_statements_own_header():
+    from cottonwoods.obs import pns
+    sites = make_cfg()["pns"]["sites"]
+    feb = pns.parse(PNS_FEB, sites)
+    assert len(feb) == 1                                                      # Collins only; wind table ignored
+    r = feb.iloc[0]
+    assert r.snow_in == 47.0 and r.water_in == 4.72 and r.site == "alta"
+    assert r.reading_utc == pd.Timestamp("2026-02-19 11:00")                 # 4 AM MST Thu
+    assert r.issued_utc == pd.Timestamp("2026-02-19 14:51")
+    assert r.start_local == pd.Timestamp("2026-02-16 08:00") and r.start_note.startswith("from 8am Monday")
+    nov = pns.parse(PNS_NOV, sites)                                           # precip-only table: water, no snow
+    assert len(nov) == 1 and pd.isna(nov.snow_in.iloc[0]) and nov.water_in.iloc[0] == 0.65
+    assert nov.start_local.iloc[0] == pd.Timestamp("2026-10-31 18:00")
+    assert nov.reading_utc.iloc[0] == pd.Timestamp("2026-11-01 13:00")      # 6 AM MST, the day DST ended
+
+
+def test_nws_statement_start_reads_the_many_ways_it_is_written():
+    from cottonwoods.obs.pns import start_of
+    issued = pd.Timestamp("2023-02-28 07:31")                                 # a Tuesday
+    cases = {"beginning Sunday morning, and ending Tuesday at 7 AM": "2023-02-26 06:00",
+             "from noon Thursday (01/09/2020) to 5 AM Friday": "2023-02-23 12:00",
+             "since midnight Tuesday February 21st": "2023-02-21 00:00",
+             "beginning 6 AM MST ending 745 PM MST Feb 23, 2023": "2023-02-27 06:00",   # no start date: weekday-less
+             "from 12AM Tuesday Feb 21": "2023-02-21 00:00",
+             "Storm totals beginning Monday morning.": "2023-02-27 06:00"}
+    for prose, want in cases.items():
+        note, got = start_of(prose, issued)
+        if "Feb 23" in prose:                    # only an hour and no day before "ending": no start can be read
+            assert got is None, (prose, got)
+            continue
+        assert got == pd.Timestamp(want), (prose, got)
+    assert start_of("from the past 24 hours", issued)[1] is None
+    assert start_of("Below are the latest totals.", issued) == ("", None)
+    # a December start in a January statement belongs to the year before
+    assert start_of("beginning December 30th", pd.Timestamp("2027-01-02 08:00"))[1] == pd.Timestamp("2026-12-30")
+
+
+def test_nws_statements_are_stored_once_each_and_read_back_as_storm_totals():
+    cfg = make_cfg()
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        assert oa.archive_pns(cfg, "2026-02-15", "2026-02-22", root=root, fetcher=lambda *a: PNS_FEB) == 1
+        oa.archive_pns(cfg, "2026-02-15", "2026-02-22", root=root, fetcher=lambda *a: PNS_FEB)   # fetched again
+        oa.archive_pns(cfg, "2026-10-30", "2026-11-02", root=root, fetcher=lambda *a: PNS_NOV)
+        assert len(oa.load_pns(root=root)) == 2
+        t = oa.load_totals(path=root / "none.csv", root=root)
+    t = t.sort_values("end_utc")
+    assert (t["source"] == "nws statement").all()
+    assert t["start_utc"].iloc[0] == pd.Timestamp("2026-02-16 15:00")      # 8 AM MST
+    assert t["end_utc"].iloc[1] == pd.Timestamp("2026-11-01 13:00") and t["water_in"].iloc[1] == 0.65
+
+
+PNS_DEC2023 = """\x01
+NOUS45 KSLC 091637
+PNSSLC
+
+Public Information Statement
+National Weather Service Salt Lake City UT
+915 AM MST Sat Dec 9 2023
+
+Storm totals beginning December 7, 2023. Especially for the mountain sites,
+this will be a combination of the weak storm on Thursday, followed by the
+stronger storm on Friday.
+
+...HIGHEST WIND REPORTS...
+
+Alta - Top of Collins        50 MPH    0300 AM 12/02   40.57N/111.63W/10442
+
+...SNOWFALL REPORTS...
+
+Location                     Amount    Time/Date       Lat/Lon/Elev (ft.)
+
+...Wasatch Mountains South of I-80...
+Snowbird                     33.0 in   0548 AM 12/09   40.57N/111.65W
+Alta - Collins               28.0 in   0436 AM 12/09   40.58N/111.64W
+
+...PRECIPITATION REPORTS...
+
+Location                     Amount    Time/Date       Lat/Lon/Elev (ft.)
+
+...Wasatch Mountains South of I-80...
+Alta - Collins               1.80 in   0436 AM 12/09   40.58N/111.64W
+\x03"""
+
+
+def test_nws_statements_in_the_2023_24_sections_layout_join_snow_and_water():
+    from cottonwoods.obs import pns
+    df = pns.parse(PNS_DEC2023, make_cfg()["pns"]["sites"])
+    assert len(df) == 1                                    # "Top of Collins" (a wind site) is not Collins
+    r = df.iloc[0]
+    assert r.snow_in == 28.0 and r.water_in == 1.80        # the owner's stake: 28"
+    assert r.reading_utc == pd.Timestamp("2023-12-09 11:36")                 # 0436 AM MST
+    assert r.start_local == pd.Timestamp("2023-12-07") and r.start_note.startswith("beginning December 7")

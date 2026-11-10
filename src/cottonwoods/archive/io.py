@@ -7,7 +7,7 @@ import pandas as pd
 
 # CSV stores everything as text, so these columns must be turned back into timestamps when read.
 # (Parquet keeps column types on its own, which is one reason it's the default.)
-TIME_COLS = ("init", "valid_start", "valid_end", "time_utc", "fetched_at")
+TIME_COLS = ("init", "valid_start", "valid_end", "time_utc", "fetched_at", "issued_utc", "reading_utc")
 
 
 def suffix_for(fmt: str) -> str:

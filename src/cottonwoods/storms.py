@@ -13,7 +13,10 @@ Rules (owner's, config `storms:`):
     observed event if it started earlier or ended later than forecast.
 
 Flow regimes change through a storm, so they're kept as PHASES (cottonwoods.regimes.phases), e.g.
-"SW warm 65% -> NW cold 35%": fc_flow from the run that defines the window; once verified, obs_flow from hourly RAP
+"SW warm 65% -> NW cold 35%": fc_flow (and fc_modes, fc_subperiods) from the REGIME RUN (regime_model /
+regime_init): the run that defines the window until the storm starts, then FROZEN (owner 2026-11-10: the weekend
+storm's label came from a run made in its last hours, which saw only the tail). The window itself keeps updating.
+Storms verified before this existed are re-labelled once from the newest runs issued before their start; once verified, obs_flow from hourly RAP
 analyses weighted by observed precip (obs_flow_source "rap"; the SLC balloons when RAP is missing), with the
 balloons' own phases kept as the cross-check (obs_flow_balloon); every scored run's own phases in storm_scores.
 Resort snow in the report is scaled
@@ -50,13 +53,15 @@ from .archive.io import write_df
 from .gauge import gauge_increments
 from .config import ARCHIVE_DIR, PROCESSED_DIR
 from .units import MM_PER_IN
+from .obs.pns import SOURCE as PNS_SOURCE
+from .archive.forecasts import RAW_LABEL
 
 COLS = ["storm_id", "point", "status", "fc_start", "fc_end", "defining_model", "defining_init", "outside_note",
-        "fc_flow", "fc_modes", "fc_periods", "fc_subperiods", "obs_start", "obs_end", "final_start", "final_end",
+        "regime_model", "regime_init", "fc_flow", "fc_modes", "fc_periods", "fc_subperiods", "obs_start", "obs_end", "final_start", "final_end",
         "obs_water_in", "obs_flow", "obs_flow_source", "obs_flow_balloon", "note", "updated_at"]
-TEXT_COLS = ("storm_id", "point", "status", "defining_model", "outside_note", "fc_flow", "fc_modes", "fc_periods",
+TEXT_COLS = ("storm_id", "point", "status", "defining_model", "regime_model", "outside_note", "fc_flow", "fc_modes", "fc_periods",
              "fc_subperiods", "obs_flow", "obs_flow_source", "obs_flow_balloon", "note")
-TIME_COLS = ("fc_start", "fc_end", "defining_init", "obs_start", "obs_end", "final_start", "final_end", "updated_at")
+TIME_COLS = ("fc_start", "fc_end", "defining_init", "regime_init", "obs_start", "obs_end", "final_start", "final_end", "updated_at")
 
 
 # --- detection -------------------------------------------------------------------------------
@@ -261,6 +266,43 @@ def _drop_stale(storms: pd.DataFrame, point: str, now, touched: set, horizon) ->
     storms.loc[stale, "updated_at"] = now
 
 
+REGIME_FIELDS = ("regime_model", "regime_init", "fc_flow", "fc_modes", "fc_subperiods")
+
+
+def _regime_fields(fc: pd.DataFrame, w: dict, point: str, cfg: dict) -> dict:
+    """A window's regime run (its defining run) and that run's flow / modes / parts over the window."""
+    g = fc[(fc["model"] == w["defining_model"]) & (fc["init"] == w["defining_init"])]
+    return {"regime_model": w["defining_model"], "regime_init": w["defining_init"],
+            "fc_flow": run_flow(g, point, w["fc_start"], w["fc_end"], cfg),
+            "fc_modes": run_modes(g, point, w["fc_start"], w["fc_end"], cfg),
+            "fc_subperiods": run_subperiods(g, point, w["fc_start"], w["fc_end"], cfg)}
+
+
+def regime_run(storm: pd.Series) -> tuple:
+    """(model, init) of the run that describes the storm's forecast regime: regime_model / regime_init, or the
+    defining run for a storm saved before those existed."""
+    if isinstance(storm.get("regime_model"), str) and pd.notna(storm.get("regime_init")):
+        return storm["regime_model"], storm["regime_init"]
+    return storm.get("defining_model"), storm.get("defining_init")
+
+
+def regime_before_start(storm: pd.Series, fc: pd.DataFrame, cfg: dict) -> dict | None:
+    """The regime fields the storm would have had when it began: the storm windows of each model's newest run
+    issued before its start (models live then), the window overlapping the storm most, and that window's defining
+    run. None when no such run is loaded."""
+    s, e = storm_span(storm)
+    before = fc[(fc["init"] < s) & ~fc["model"].astype(str).str.endswith(RAW_LABEL)      # unblended copies never
+                & ~fc["model"].map(lambda m: retired_by(m, cfg, s))]                     # set a window
+    if before.empty:
+        return None
+    wins = [w for w in storm_windows(model_events(before, storm.point, cfg["storms"]))
+            if w["fc_start"] <= e and w["fc_end"] >= s]
+    if not wins:
+        return None
+    w = max(wins, key=lambda w: min(w["fc_end"], e) - max(w["fc_start"], s))
+    return _regime_fields(fc, w, storm.point, cfg)
+
+
 def update_forecast_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Timestamp) -> pd.DataFrame:
     """Refresh tracked storms from the newest runs: update, add, split, merge, revive and drop (see the module
     docstring)."""
@@ -276,10 +318,7 @@ def update_forecast_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, no
     live = fc[~fc["model"].map(lambda m: retired_by(m, cfg, now))]
     windows = [w for w in storm_windows(model_events(live, point, scfg)) if w["fc_end"] >= now - pd.Timedelta(days=3)]
     for w in sorted(windows, key=lambda x: x["fc_start"]):
-        g = fc[(fc["model"] == w["defining_model"]) & (fc["init"] == w["defining_init"])]
-        w["fc_flow"] = run_flow(g, point, w["fc_start"], w["fc_end"], cfg)
-        w["fc_modes"] = run_modes(g, point, w["fc_start"], w["fc_end"], cfg)
-        w["fc_subperiods"] = run_subperiods(g, point, w["fc_start"], w["fc_end"], cfg)
+        w.update(_regime_fields(fc, w, point, cfg))
         here = storms["point"] == point
         is_open = here & (storms["status"] == "forecast") & storms.index.isin(before.index)
         span = before.reindex(storms.index)
@@ -307,6 +346,8 @@ def update_forecast_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, no
             storms = _new_storm(storms, w, point, now, note=f"split from {storms.at[keep, 'storm_id']}")
             touched.add(storms.index[-1])
             continue
+        if before.at[keep, "fc_start"] <= now and pd.notna(storms.at[keep, "regime_init"]):
+            w = {k: v for k, v in w.items() if k not in REGIME_FIELDS}   # under way: the regime stays as forecast
         _apply_window(storms, keep, w, now)
         touched.add(keep)
         for other in hits.index[1:]:
@@ -418,10 +459,10 @@ def _score_point(storm: pd.Series, point: str, fc_all: pd.DataFrame, osteps: pd.
 
 
 def _block_regimes(storm: pd.Series, blks, fc_all: pd.DataFrame, psteps: dict, rap, soundings, cfg: dict) -> list:
-    """[(forecast regime, observed regime)] per block, the same for every model and point: the storm's defining run
-    (its own flow, weighted by its precip) and the observed flow (regimes.observed_regime); '' where unknown."""
-    g = fc_all[(fc_all["model"] == storm.get("defining_model")) & (fc_all["init"] == storm.get("defining_init"))
-               & (fc_all["point"] == storm.point)]
+    """[(forecast regime, observed regime)] per block, the same for every model and point: the storm's regime run
+    (regime_run: its own flow, weighted by its precip) and the observed flow (regimes.observed_regime); '' where unknown."""
+    model, init = regime_run(storm)
+    g = fc_all[(fc_all["model"] == model) & (fc_all["init"] == init) & (fc_all["point"] == storm.point)]
     g = regimes.with_bands(g, cfg["regimes"]) if len(g) else g
     out = []
     for bs, be, _ in blks:
@@ -493,6 +534,9 @@ def manual_totals(storm: pd.Series, totals: pd.DataFrame, cfg: dict, point: str 
     summed. {"new_snow_in", "water_in", "sources"}, or None if nothing was entered."""
     if totals is None or totals.empty:
         return None
+    totals = totals[totals["source"] != PNS_SOURCE]          # running totals, never summed: pns_totals
+    if totals.empty:
+        return None
     s, e = storm_span(storm)
     slack = pd.Timedelta(hours=cfg["storms"]["manual_match_hours"])
     m = totals[(totals["site"] == (point or storm.point)) & (totals["start_utc"] < e + slack)
@@ -554,17 +598,37 @@ def hand_obs_totals(storm: pd.Series, readings: pd.DataFrame, cfg: dict, source:
             "sources": f"{source} ({', '.join(kinds)})" if kinds else source}
 
 
+def pns_totals(storm: pd.Series, totals: pd.DataFrame, cfg: dict, point: str | None = None) -> dict | None:
+    """The NWS statement total (obs/pns.py rows in `totals`, source PNS_SOURCE) for this storm at `point`: the latest
+    reading at or after the storm's start and up to pns.match_after_hours after its end (latest issued on a tie). A
+    statement whose stated start is more than pns.start_match_hours from the storm's covers another span: skipped.
+    {"new_snow_in", "water_in", "sources", "note"} or None. A statement may give water only (snow NaN)."""
+    c = cfg.get("pns")
+    if not c or totals is None or totals.empty:
+        return None
+    s, e = storm_span(storm)
+    t = totals[(totals["source"] == PNS_SOURCE) & (totals["site"] == (point or storm.point))
+               & (totals["end_utc"] >= s) & (totals["end_utc"] <= e + pd.Timedelta(hours=c["match_after_hours"]))]
+    off = (t["start_utc"] - s).abs() > pd.Timedelta(hours=c["start_match_hours"])
+    t = t[~(t["start_utc"].notna() & off)]
+    if t.empty:
+        return None
+    r = t.sort_values(["end_utc", "issued_utc"]).iloc[-1]
+    return {"new_snow_in": r.new_snow_in, "water_in": r.water_in, "note": r.notes if pd.notna(r.notes) else "",
+            "sources": f"{PNS_SOURCE} {timefmt.clock(r.issued_utc, weekday=True)}"}
+
+
 def observed_snow(storm: pd.Series, totals: pd.DataFrame, readings: pd.DataFrame | None, cfg: dict,
                   point: str | None = None, obs_water_in: float | None = None) -> tuple[float, str]:
-    """A verified storm's observed new snow at `point` (default: the storm's point) and where it came from: the owner's
-    hand-entered storm total, else (the storm's point only: Alta) the hand-copied Collins readings, else 0 when that
+    """A verified storm's observed new snow at `point` (default: the storm's point) and where it came from, in the
+    owner's order (2026-11-10): (the storm's point only: Alta) the Collins readings (the Worker's hours, plus any
+    hand-entered ones), else the NWS statement total (pns_totals), else a hand-entered storm total, else 0 when that
     point's SNOTEL gauge saw no measurable water (obs_water_in; default the storm's). SNOTEL depth is too noisy for new
-    snow, so a wet storm without hand entries has no observed snow yet: (nan, "")."""
+    snow, so a wet storm with none of these has no observed snow yet: (nan, "")."""
     point = point or storm.point
     water = storm.get("obs_water_in") if obs_water_in is None else obs_water_in
-    hand = [manual_totals(storm, totals, cfg, point)]
-    if point == storm.point:
-        hand.append(hand_obs_totals(storm, readings, cfg))
+    hand = [hand_obs_totals(storm, readings, cfg)] if point == storm.point else []
+    hand += [pns_totals(storm, totals, cfg, point), manual_totals(storm, totals, cfg, point)]
     for found in hand:
         if found and pd.notna(found["new_snow_in"]):
             return float(found["new_snow_in"]), found["sources"]
@@ -665,14 +729,21 @@ def _backfill_verified(storms: pd.DataFrame, fc: pd.DataFrame, psteps: dict, ost
         relabel = st.get("obs_flow_source") != "rap"
         if relabel:
             _set_observed_flow(storms, i, osteps, rap, soundings, cfg)
-            run = fc[(fc["model"] == st.defining_model) & (fc["init"] == st.defining_init)]
+            model, init = regime_run(st)
+            run = fc[(fc["model"] == model) & (fc["init"] == init)]
             if len(run):
                 storms.at[i, "fc_flow"] = run_flow(run, st.point, st.fc_start, st.fc_end, cfg)
+        if pd.isna(st.get("regime_init")):               # verified before the regime run existed (2026-11-10)
+            found = regime_before_start(st, fc, cfg)
+            if found:
+                for k, v in found.items():
+                    storms.at[i, k] = v
+                relabel = True                           # re-score the blocks with the corrected forecast regime
         new = {p: o for p, o in psteps.items() if (str(st.storm_id), p) not in have}
         if new:
             append_scores(score_storm(storms.loc[i], fc, new, cfg), root)
         mine = blocked[blocked["storm_id"].astype(str) == str(st.storm_id)] if not blocked.empty else blocked
-        if mine.empty or "obs_regime" not in mine or (relabel and storms.at[i, "obs_flow_source"] == "rap"):
+        if mine.empty or "obs_regime" not in mine or (relabel and storms.at[i, "obs_flow_source"] == "rap")                 or pd.notna(storms.at[i, "regime_init"]) and pd.isna(st.get("regime_init")):
             append_block_scores(score_blocks(storms.loc[i], fc, psteps, cfg, rap, soundings), root)
 
 

@@ -18,10 +18,11 @@ import argparse
 import sys
 from datetime import datetime, timedelta, timezone
 
+import pandas as pd
 
 from cottonwoods import timefmt
-from cottonwoods.archive.obs import (archive_collins, archive_ghcn, archive_rap, archive_snotel, archive_synoptic, catchup_begin, ghcn_begin,
-                                     latest_obs, load_collins, with_retries)
+from cottonwoods.archive.obs import (archive_collins, archive_ghcn, archive_pns, archive_rap, archive_snotel, archive_synoptic,
+                                     catchup_begin, ghcn_begin, latest_obs, load_collins, load_pns, with_retries)
 from cottonwoods.obs import collins, synoptic
 from cottonwoods.config import ensure_dirs, load_config
 
@@ -76,6 +77,11 @@ elif cfg.get("collins_source"):
 # NOAA GHCN-Daily (ALTA). Daily values, so even a 20-year span is only ~7,000 rows per element.
 if cfg.get("ghcn"):
     sources.append(("obs:ghcn", archive_ghcn, ghcn_spans or spans))
+# NWS Salt Lake storm statements (obs/pns.py): Collins storm totals where the Worker has none. Public text; a
+# scheduled fetch re-reads the last pns.days (statements are updated for a day or two after a storm).
+if cfg.get("pns"):
+    pns_begin = (today - timedelta(days=cfg["pns"]["days"])).strftime("%Y-%m-%d")
+    sources.append(("obs:pns", archive_pns, spans if (args.start or args.journal) else [(pns_begin, spans[0][1])]))
 # Hourly RAP analyses: the observed 700 mb flow for storm regimes (only hours not stored yet are fetched)
 sources.append(("obs:rap", archive_rap, spans))
 
@@ -84,7 +90,8 @@ for tag, archive, source_spans in sources:
     for begin, end in source_spans:
         try:
             n = with_retries(lambda: archive(cfg, begin, end), cfg, f"{tag} {begin}..{end}")
-            status.setdefault(tag, f"ok ({n} hours received)" if tag == "obs:collins" else f"ok ({begin}..{end})")
+            status.setdefault(tag, f"ok ({n} hours received)" if tag == "obs:collins" else
+                              f"ok ({n} statement rows)" if tag == "obs:pns" else f"ok ({begin}..{end})")
         except Exception as e:  # noqa: BLE001  (failures print in full; the tables follow)
             print(f"[{tag}] {begin}..{end} FAILED after {cfg['obs_fetch']['retries']} tries: {e}")
             status[tag] = "FAILED (see above)"
@@ -102,6 +109,10 @@ rows = [(r.source, status.get(names[r.source], "not fetched"),
 if "obs:collins" in status:      # newest hour only, never values
     stored = load_collins(start=now - timedelta(days=3))
     rows.append(("Collins (Worker)", status["obs:collins"], when(stored["time_utc"].max()) if not stored.empty else "-"))
+if "obs:pns" in status:
+    stored = load_pns(start=now - timedelta(days=60))
+    rows.append(("NWS statements", status["obs:pns"],
+                 when(pd.to_datetime(stored["issued_utc"]).max()) + " (issued)" if not stored.empty else "-"))
 rows += [("Synoptic (Collins)", status["obs:synoptic"], "-")] if "obs:synoptic" in status and "skipped" in status["obs:synoptic"] else []
 print(f"{'source':<22}{'status':<30}newest")
 print("\n".join(f"{a:<22}{b:<30}{c}" for a, b, c in rows))

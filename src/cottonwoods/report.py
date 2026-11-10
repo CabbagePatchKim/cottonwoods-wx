@@ -12,7 +12,7 @@ import pandas as pd
 
 from . import blocks, regimes, timefmt
 from .config import PROCESSED_DIR
-from .storms import bin_scores, hand_obs_totals, manual_totals, run_flow, run_modes
+from .storms import bin_scores, hand_obs_totals, manual_totals, pns_totals, run_flow, run_modes
 from .models.registry import kind_of, retired_by
 from .profile import below_ground
 from .windows import window_total, within_lead
@@ -337,7 +337,7 @@ def storm_models(st, fc: pd.DataFrame, cfg: dict) -> list[dict]:
 
 def storm_notes(st) -> list[tuple[str, str]]:
     """The labelled lines under a storm's heading, e.g. ("flow (IFS)", "SW warm 60% -> NW cold 40%"); empty ones left out."""
-    m = st.defining_model
+    m = st.get("regime_model") if isinstance(st.get("regime_model"), str) else st.defining_model   # regime run
     pairs = [("note", st.outside_note), (f"flow ({m})", st.fc_flow), (f"modes ({m})", st.fc_modes),
              (f"parts ({m})", st.fc_subperiods), ("models disagree", st.fc_periods), ("note", st.note)]
     return [(k, v) for k, v in pairs if isinstance(v, str) and v]
@@ -682,20 +682,23 @@ def _verified_storm(st, scores: pd.DataFrame, totals: pd.DataFrame, readings, bi
     lines = [f"--- Storm {st.storm_id}: {timefmt.clock(st.final_start, weekday=True)} - "
              f"{timefmt.clock(st.final_end, weekday=True)}"]
     obs = f"SNOTEL {st.obs_water_in:.2f}\" water" if pd.notna(st.obs_water_in) else "SNOTEL -"
-    found = [m for m in (manual_totals(st, totals, cfg), hand_obs_totals(st, readings, cfg)) if m]
+    found = [m for m in (hand_obs_totals(st, readings, cfg), pns_totals(st, totals, cfg), manual_totals(st, totals, cfg))
+             if m]
     for man in found:
         parts = [f"{man['new_snow_in']:.0f}\" snow" if pd.notna(man["new_snow_in"]) else "",
                  f"{man['water_in']:.2f}\" water" if pd.notna(man["water_in"]) else ""]
         obs += f" | {man['sources']}: " + ", ".join(p for p in parts if p)
+        if man.get("note"):                              # an NWS statement's own stated period
+            obs += f" ({man['note']})"
     if not found:
-        obs += " | Collins: not entered yet (data/entries/)"
+        obs += " | Collins: no total yet (no Worker hours or NWS statement for this window)"
     lines += [f"    observed: {obs}", _flow_line(st)]
     picks = bin_picks(binned[binned["point"] == st.point] if not binned.empty else binned, st.storm_id, cfg)
     if picks:
         first = next(iter(picks.values())).iloc[0]
         lines.append(f"    observed bin: {first.obs_bin} ({first.obs_snow_in:.0f}\", {first.obs_snow_source})")
     else:
-        lines.append("    bin score: waiting for an observed snow total (hand entry)")
+        lines.append("    bin score: waiting for an observed snow total (Worker or NWS statement)")
     main = scores[scores["point"] == st.point] if not scores.empty else scores
     runs = last_runs_before(main, st.storm_id) if not main.empty else pd.DataFrame()
     if runs.empty:
@@ -715,6 +718,10 @@ def _verified_storm(st, scores: pd.DataFrame, totals: pd.DataFrame, readings, bi
         lines.append(f"    every run up to {cfg['verify']['score_runs_hours']} h before, every gauged point: "
                      "average bin score and average snow error (w = water error, no observed snow there yet);"
                      " 12 h blocks: each run on every block it covered (water, all points)")
+        lines.append(f"    12h blocks = runs x blocks x points scored: every run covering a whole block, issued up to "
+                     f"{cfg['verify']['score_runs_hours']} h before THAT block (so runs made during the storm count "
+                     "too); a count, not a skill: compare the averages. block FA/miss = blocks where the run's "
+                     f">= {cfg['verify']['event_swe_in']:.2f}\" water call was wrong (read it as a share of 12h blocks)")
         tables.append(every)
         lines.append(("TABLE", len(tables) - 1))
     return lines
@@ -740,7 +747,7 @@ def _season_sections(binned: pd.DataFrame, storms: pd.DataFrame, block_scores, c
                                         if k not in ["model", *bands]})
         tables.append(season.sort_values("model", key=lambda c: c.map(model_rank)))
         lines.append(("TABLE", len(tables) - 1))
-    for title, table in (("=== By the storm's forecast regime (defining run's dominant flow): average bin score "
+    for title, table in (("=== By the storm's forecast regime (dominant flow of its last run before it began): average bin score "
                           f"(runs x points), runs up to {cfg['verify']['score_runs_hours']} h before",
                           regime_table(binned, storms, cfg)),
                          ("=== 12 h blocks by observed regime (RAP): average water error, false alarms + misses / blocks",

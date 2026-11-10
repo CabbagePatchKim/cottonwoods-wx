@@ -2,10 +2,13 @@
     python scripts/collins_due.py
 
 Always: the agreed plan (docs/PLAN.md, owner 2026-10-30), so each session opens by recalling it.
-Then: which verified storms still need Alta Collins entries.
-
-A storm "needs" entries when it verified (SNOTEL dry for storms.gap_hours) within storms.report_verified_days and
-nothing in data/entries/ (storm_totals.csv, collins_obs.npy/.csv) matches it. The newest storm list is taken from
+Then (owner 2026-11-10: no more hand entries; the Worker's hours, then NWS statements, give Collins totals) two
+warnings, each only when something is wrong:
+  - a storm under way or just ended while the newest Collins hour is older than storms.collins_worker_late_hours
+    (the Worker or the pass's obs step may be failing; the NWS page holds only ~2 days);
+  - a storm verified (SNOTEL dry for storms.gap_hours) within storms.report_verified_days with no Collins total from
+    the Worker's hours, an NWS statement or an old hand entry.
+The newest storm list is taken from
 the cloud bucket when it can be reached (after the cutover the cloud passes verify storms, not the laptop), else
 the local data/archive/storms.csv. Prints hook JSON when something is due, nothing otherwise; never fails the hook.
 """
@@ -21,7 +24,7 @@ sys.path[:0] = [str(ROOT / "src"), str(Path.home() / ".cwx_pylib")]   # this cop
 import pandas as pd  # noqa: E402
 
 from cottonwoods import storms, timefmt  # noqa: E402
-from cottonwoods.archive.obs import collins_dir, load_collins_readings, load_storm_totals  # noqa: E402
+from cottonwoods.archive.obs import collins_dir, load_collins_readings, load_totals  # noqa: E402
 from cottonwoods.config import load_config  # noqa: E402
 
 
@@ -53,18 +56,20 @@ def newest_state() -> tuple[pd.DataFrame, pd.DataFrame, str]:
 
 
 def due(table: pd.DataFrame, cfg: dict, now: pd.Timestamp, totals: pd.DataFrame, readings: pd.DataFrame) -> pd.DataFrame:
-    """Verified storms within report_verified_days with no hand-entered Collins totals or readings."""
+    """Verified storms within report_verified_days with no Collins total (Worker hours, NWS statement or hand)."""
     days = cfg["storms"]["report_verified_days"]
     v = table[(table["status"] == "verified") & (pd.to_datetime(table["final_end"]) >= now - pd.Timedelta(days=days))]
     missing = [i for i, st in v.iterrows()
-               if not storms.manual_totals(st, totals, cfg) and not storms.hand_obs_totals(st, readings, cfg)]
+               if not (storms.hand_obs_totals(st, readings, cfg) or storms.pns_totals(st, totals, cfg)
+                       or storms.manual_totals(st, totals, cfg))]
     return v.loc[missing].sort_values("final_start")
 
 
 def collins_progress(table: pd.DataFrame, cfg: dict, now: pd.Timestamp, readings: pd.DataFrame) -> str:
     """While a storm is under way or just ended (its window reaches into the last storms.collins_page_hours, the
-    NWS Collins page's reach): where the owner's Collins readings stop, so nothing drops off the page unentered
-    (owner 2026-11-01: the page only goes back ~2 days). "" when no storm is that recent."""
+    NWS Collins page's reach): a warning when the newest Collins hour is older than storms.collins_worker_late_hours
+    (hours older than the page's reach can no longer be recorded). "" when the readings are current or no storm is
+    that recent."""
     hours = cfg["storms"]["collins_page_hours"]
     edge = now - pd.Timedelta(hours=hours)
     live = []                                            # (storm_id, start, end) of storms begun and still on the page
@@ -72,19 +77,19 @@ def collins_progress(table: pd.DataFrame, cfg: dict, now: pd.Timestamp, readings
         s, e = storms.storm_span(st)
         if pd.notna(s) and s <= now and e >= edge:
             live.append((st.storm_id, s, e))
-    if not live:
+    last = readings["end_utc"].max() if readings is not None and not readings.empty else pd.NaT
+    if not live or (pd.notna(last) and last >= now - pd.Timedelta(hours=cfg["storms"]["collins_worker_late_hours"])):
         return ""
     names = ", ".join(f"{sid} ({timefmt.clock(s, weekday=True)} to {timefmt.clock(e, weekday=True)})"
                       for sid, s, e in live)
-    last = readings["end_utc"].max() if readings is not None and not readings.empty else pd.NaT
     where = (f"recorded through {timefmt.clock(last, weekday=True)}" if pd.notna(last) else "none recorded yet")
     lost = (f" Readings between {timefmt.clock(last, weekday=True)} and {timefmt.clock(edge, weekday=True)} may "
             "already be off the page." if pd.isna(last) or last < edge else "")
-    return (f"COLLINS READINGS: storm(s) {names} reach into the last {hours} h, all the NWS Collins page shows. "
-            f"Collins readings (Worker + hand entries) {where}; readings before {timefmt.clock(edge, weekday=True)} drop off the page.{lost} "
-            "At the start of your first reply, tell the owner where they left off and ask for the readings since "
-            "(hourly water, Snow Interval and Snowfall 24 hr boards with their times); offer to type them into "
-            "data/entries/collins_obs.csv and send them (scripts/send_entries.bat, outside pass times).")
+    return (f"COLLINS WORKER BEHIND: storm(s) {names} reach into the last {hours} h, all the NWS Collins page shows, "
+            f"and Collins readings are {where}; readings before {timefmt.clock(edge, weekday=True)} drop off the "
+            f"page.{lost} At the start of your first reply, tell the owner the Worker's readings are late and suggest "
+            "checking the cln-scraper Worker's Logs tab in Cloudflare and the pass's obs step (row 'Collins "
+            "(Worker)'). If the storm is notable, an NWS statement may still give its total.")
 
 
 def plan_context() -> str:
@@ -102,23 +107,23 @@ def main():
     now = pd.Timestamp.now(tz="UTC").tz_localize(None)
     plan = plan_context()
     table, readings, source = newest_state()
-    need = due(table, cfg, now, load_storm_totals(), readings)
+    need = due(table, cfg, now, load_totals(), readings)
     progress = collins_progress(table, cfg, now, readings)
     parts, notes = [], []
     if progress:
         parts.append(progress)
-        notes.append("Collins readings: see where you left off")
+        notes.append("Collins Worker readings are late")
     if not need.empty:
         lines = [f"- storm {st.storm_id}: {timefmt.clock(st.final_start, weekday=True)} to "
                  f"{timefmt.clock(st.final_end, weekday=True)}" for _, st in need.iterrows()]
-        parts.append("COLLINS ENTRIES DUE (from the cottonwoods-wx SessionStart hook; storm list from the "
-                     f"{source}). These storms are over (SNOTEL dry {cfg['storms']['gap_hours']} h) and have no Alta "
-                     "Collins observations entered yet:\n" + "\n".join(lines) + "\nAt the start of your first reply, "
-                     "before anything else, prompt the owner to enter Collins readings for them (12 h boards and/or "
-                     "hourly from https://www.weather.gov/wrh/timeseries?site=CLN, read by eye; format in "
-                     "data/entries/README.txt; offer to type them into data/entries/collins_obs.csv for the owner, "
-                     "then run scripts/send_entries.bat).")
-        notes.append(f"Collins entries due for {len(need)} verified storm(s)")
+        parts.append("NO COLLINS TOTAL (from the cottonwoods-wx SessionStart hook; storm list from the "
+                     f"{source}). These storms are over (SNOTEL dry {cfg['storms']['gap_hours']} h) and neither the "
+                     "Worker's hours nor an NWS statement gave Alta Collins a total:\n" + "\n".join(lines) +
+                     "\nAt the start of your first reply, tell the owner, and that these storms' bin scores wait for "
+                     "a total. Likely causes: the Worker was down during the storm (its Logs tab in Cloudflare), or "
+                     "a small storm NWS wrote no statement for. The owner no longer hand-enters readings "
+                     "(2026-11-10): offer that only as an option for an important storm.")
+        notes.append(f"no Collins total for {len(need)} verified storm(s)")
     if plan:
         parts.append(plan)
         notes.append("plan in docs/PLAN.md")

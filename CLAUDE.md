@@ -239,6 +239,18 @@ Running live, TWO places for now (side-by-side check before cutover):
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
+- IN MAIN, NOT RELEASED (2026-11-10; owner: don't release v1.11 yet): (1) NWS STORM STATEMENTS (obs/pns.py, config pns,
+  archive obs/pns, archive.obs.load_totals = hand totals + statement rows as source "nws statement"; storms.pns_totals
+  picks the latest reading in the window, start within pns.start_match_hours when stated). Both layouts (table;
+  2023-24 sections). OWNER: NO MORE HAND ENTRIES; observed snow order = Worker hours, NWS statement, old hand total
+  (storms.observed_snow). Pass obs step fetches the last pns.days; scripts/backfill_pns.py (2016-10 on, pushed to the
+  bucket 11/10). Journal: 7 of 8 within 1" of the stake; 3/5/2026 NWS 33" vs 16" = NWS's period spans two storms.
+  collins_due: warns only when the Worker is late (storms.collins_worker_late_hours) or a storm has no total.
+  (2) REGIME RUN FROZEN AT THE STORM'S START (storms.csv regime_model / regime_init; fc_flow / modes / parts with it;
+  _block_regimes and the report's flow line use it; storms verified before are re-labelled once by
+  regime_before_start in _backfill_verified, blocks re-scored). Why: the weekend storm read "N mild 100%" from IFS
+  11/02 12z (made in its last hours); pre-start runs said S/E warm -> SW -> NW. (3) Verified-section legend line for
+  "12h blocks" / "block FA/miss".
 - RELEASED v1.10 (owner approved 2026-11-03, CI green; owner chose "option B"): a verified window also covers Collins's own STEADY precip
   (storms.collins_span: events by the 12 h gap rule, then from the first wet hour whose next 3 h hold >= 0.10" to the
   last whose previous 3 h do; config storms.collins_wet_in / collins_onset_*). widen_with_collins at verification and

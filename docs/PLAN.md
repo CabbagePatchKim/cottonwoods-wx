@@ -17,15 +17,27 @@ trends and guidance are all unproven. Until a few storms verify, the work is MEA
 1. [x] Finish the pre-v1.7 dry run (DONE 10/30: all 10 steps ok; fixed guidance in block medians) and
        release v1.7 (RELEASED 10/30 ~08:13Z, tag on 3c43be7; check its first pass log). RRFS / UU runs pre-seeded in the bucket (no first-pass catch-up).
        v1.7 = RRFS in (feed too), NAM / NAM Nest retired 11/3 12z, U of U guidance, HTML report, Verified step.
-2. [ ] Let the weekend storm (Fri 10/30 - Mon 11/2) verify (~11/2-11/3). Enter Collins readings. Read the
-       verification closely: which models, kinds (deterministic / guidance / ensemble) and methods did well;
-       NAM Nest vs RRFS (the only side-by-side). Run scripts/regime_scores.py (laptop, after a bucket pull) by ~11/20.
-3. [ ] FIRST BUILD AFTER THE PAUSE: NWS Salt Lake "Preliminary Storm Information" statements (PNSSLC) as automatic
-       Collins storm totals (free; IEM archive back years: mesonet.agron.iastate.edu/cgi-bin/afos/retrieve.py?pil=PNSSLC).
-       Lines like "Alta - Collins - 9662 ft  4 AM Thu  47.0  4.72" (snow, water) and a stated period ("from 8am Monday
-       through 7am Thursday"). Checked: 2/19/2026 statement 47.0" vs the owner's 46" at the stake. Preliminary, only
-       for notable storms: hand entries stay for the rest. Synoptic (live Collins) needs a $1,000 minimum contract:
-       not an option (owner, 2026-10-30).
+2. [x] DONE 11/10. Weekend storm verified (Sun 11/01 0100 - Mon 11/02 1400 MST) from the Worker: 16" / 2.35"
+       (no hand entry needed). Read with the owner: best over 72 h UUGFS, GDPS, GFS; worst RDPS (9.8" too wet; blend
+       made it worse) and IFS; most last runs short (HRRR / RRFS / IFS 10-12"). NAM Nest last run right bin but 3.73"
+       water (60% wet); RRFS smaller snow error over all runs (3.1 vs 4.3") but more block FA/miss. regime_scores.py
+       11/10 (3 storms): regime-adjusted = plain within 0.1 for every model (no effect yet).
+       FOUND: the storm's FORECAST REGIME label ("N mild 100%") came from IFS 11/02 12z, a run made in the storm's last
+       hours (the defining run keeps updating while a storm is live). Runs before the storm said S/E warm -> SW -> NW
+       (close to observed S/E -> SW -> N). FIXED 11/10 in main (owner approved): storms.csv regime_model / regime_init =
+       the defining run until the storm starts, then FROZEN (fc_flow / fc_modes / fc_subperiods with it; the window
+       still updates); storms verified before the fix are re-labelled once from the newest runs issued before their
+       start (regime_before_start), and their block scores re-scored.
+3. [x] BUILT 11/10 in main, NOT RELEASED: NWS Salt Lake storm statements (PNSSLC) as Collins storm totals
+       (obs/pns.py; both layouts: the "Preliminary Storm Information" table and the 2023-24 "SNOWFALL / PRECIPITATION
+       REPORTS" sections). Owner 11/10: NO MORE HAND ENTRIES; order = Worker hours, then NWS statement, then an old
+       hand total (storms.observed_snow). Pass obs step fetches the last pns.days; laptop backfill 2016-10 on
+       (scripts/backfill_pns.py: 1,628 Collins rows, not yet pushed to the bucket). Journal check: 7 of 8 storms within
+       1" of the stake (10/10, 49/50, 28/28, 10/10, 11.5/11, 46/47); 3/5/2026 stake 16" vs NWS 33": owner 11/10, NWS
+       most likely counted two storms as one period (noon Wed - 6 PM Fri) where the owner counted one. So a statement's
+       period can span two of our storms: the start check (pns.start_match_hours) catches it only when a start is
+       stated. Backfill PUSHED to the bucket 11/10 (81 files, obs/pns). v1.11 NOT released (owner: not yet). Statements may give water only (11/01/2026: 2.43").
+       Session reminder now warns only when the Worker is late or a storm has no total.
 4. [ ] Then the backfill: score archived / re-pulled runs (NOAA HRRR / GFS archives, U of U since 2026-01, RRFS since
        2026-08) against those Collins totals and the journal, so models and methods are judged on many storms.
 5. [ ] Only then decide from results: keep / fix / drop (regime factors, cell blend, the 0 -> 1 C rain/snow rule,
@@ -33,6 +45,8 @@ trends and guidance are all unproven. Until a few storms verify, the work is MEA
        one scores table; split CLAUDE.md into architecture / decision log / status).
 
 ## Small fixes to bundle with the step-3 release (noted 10/30)
+- DONE in main 11/10: Verified section legend line for "12h blocks" (runs x blocks x points, runs up to 72 h before
+  THAT block, so mid-storm runs count; a count, not skill) and "block FA/miss" (read as a share of 12h blocks).
 - 12 h block table: "." is explained nowhere and the code calls it "dry"; it means under 0.05" SNOW (dry OR rain:
   Fri 10/30 NAM / RDPS / IFS had 0.05-0.23" of rain at Alta, wet-bulb > +1 C). Add a legend line; also mark the
   first / last block when the storm covers only part of it ("Fri day" was 6 h of 12).

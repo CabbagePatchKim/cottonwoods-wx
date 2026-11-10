@@ -24,7 +24,7 @@ import pandas as pd
 
 from ..config import ARCHIVE_DIR, ENTRIES_DIR, MANUAL_DIR, RAW_DIR
 from ..timefmt import LOCAL_TZ
-from ..obs import collins, ghcn, rap, snotel, sounding, synoptic
+from ..obs import collins, ghcn, pns, rap, snotel, sounding, synoptic
 from .io import read_df, suffix_for, write_df
 
 KEY = ["station", "element", "time_utc"]  # these three together identify one observation
@@ -52,6 +52,10 @@ def rap_dir(root: Path | None = None) -> Path:
 
 def collins_dir(root: Path | None = None) -> Path:
     return (root or ARCHIVE_DIR) / "obs" / "collins"
+
+
+def pns_dir(root: Path | None = None) -> Path:
+    return (root or ARCHIVE_DIR) / "obs" / "pns"
 
 
 def to_utc(df: pd.DataFrame, tz_offset_hours: float) -> pd.DataFrame:
@@ -244,6 +248,25 @@ def archive_collins(cfg: dict, begin: str = "", end: str = "", root: Path | None
     return len(df)
 
 
+def archive_pns(cfg: dict, begin: str, end: str, root: Path | None = None, fetcher=None) -> int:
+    """NWS Preliminary Storm Information statements issued begin..end (obs/pns.py) -> one row per statement per
+    station in config pns.sites, merged into data/archive/obs/pns (month = the reading's). A statement fetched again
+    replaces its earlier copy. Returns the number of rows read."""
+    df = pns.parse((fetcher or pns.fetch)(cfg, begin, end), cfg["pns"]["sites"])
+    if df.empty:
+        return 0
+    df["time_utc"] = df["reading_utc"]
+    df["start_local"] = df["start_local"].astype(str).replace({"NaT": "", "None": ""})
+    df["fetched_at"] = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
+    merge_into_store(df, cfg, store=pns_dir(root), key=["issued_utc", "site"])
+    return len(df)
+
+
+def load_pns(start=None, end=None, root: Path | None = None) -> pd.DataFrame:
+    """Stored NWS statement rows (obs/pns.COLS + time_utc = reading_utc)."""
+    return _load_store(pns_dir(root), start, end)
+
+
 def load_collins(start=None, end=None, root: Path | None = None) -> pd.DataFrame:
     """Stored Collins hours (time_utc, water_in, snow_interval_in, depth_in, temp_f, rh_pct, fetched_at)."""
     return _load_store(collins_dir(root), start, end)
@@ -336,6 +359,22 @@ def load_storm_totals(path: Path | None = None) -> pd.DataFrame:
     df["start_utc"] = [_local_to_utc(t) for t in df["start"]]
     df["end_utc"] = [_local_to_utc(t) for t in df["end"]]
     return df
+
+
+def load_totals(path: Path | None = None, root: Path | None = None) -> pd.DataFrame:
+    """Every storm total: the hand entries (load_storm_totals) plus each stored NWS statement row as source
+    pns.SOURCE, start_utc = its stated start (NaT when it states none), end_utc = its reading time, issued_utc kept.
+    Statement rows are running totals, so they are never summed: storms.pns_totals picks one."""
+    hand, p = load_storm_totals(path), load_pns(root=root)
+    if p.empty:
+        return hand
+    start = pd.to_datetime(p["start_local"].replace("", None), errors="coerce")
+    start_utc = start.dt.tz_localize(LOCAL_TZ, ambiguous=False, nonexistent="shift_forward").dt.tz_convert("UTC")
+    nws = pd.DataFrame({"start": p["start_local"], "end": p["reading_utc"].astype(str), "site": p["site"],
+                        "source": pns.SOURCE, "new_snow_in": p["snow_in"], "water_in": p["water_in"],
+                        "notes": p["start_note"], "start_utc": start_utc.dt.tz_localize(None),
+                        "end_utc": pd.to_datetime(p["reading_utc"]), "issued_utc": pd.to_datetime(p["issued_utc"])})
+    return pd.concat([f for f in (hand, nws) if not f.empty], ignore_index=True)
 
 
 # Column order of a hand-entered readings array (data/entries/collins_obs.npy); a CSV uses the same names as headers.

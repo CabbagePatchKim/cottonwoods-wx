@@ -25,7 +25,7 @@ from cottonwoods.models import uu
 from cottonwoods.report import render_freezing, render_storms, render_verified
 from cottonwoods.archive.forecasts import load_forecasts
 from cottonwoods.archive.obs import (load_ghcn, load_collins_readings, load_rap, load_snotel, load_soundings,
-                                    load_storm_totals)
+                                    load_totals)
 from cottonwoods.obs.sounding import summarize
 from cottonwoods.config import PROCESSED_DIR, REPORTS_DIR, load_config
 
@@ -52,7 +52,7 @@ days = verify.merge_gauge_pillow_days(days, days_path)
 verify.undercatch_summary(days, cfg).to_csv(PROCESSED_DIR / "undercatch_summary.csv", index=False)
 text = (f"Storms, {timefmt.now_line(now)}. Times are Mountain (MDT/MST), 24-hour.\n\n"
         + render_storms(table, fc, cfg, now, storms.point_steps(obs, cfg)))
-scores, totals = storms.load_scores(), load_storm_totals()
+scores, totals = storms.load_scores(), load_totals()
 binned = storms.bin_scores(table, scores, totals, readings, cfg)
 storms.save_bin_scores(binned)
 # Verification is its own report (owner, 2026-10-30: the Storms step got crowded): data/reports/verified_latest.txt,

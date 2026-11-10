@@ -28,6 +28,22 @@ collins_source:
   key_header: X-CWX-Key
   timeout_s: 90                # the Worker may start a browser when asked to refresh
 
+# NWS Salt Lake "Preliminary Storm Information" statements (obs/pns.py, owner 2026-11-10): Collins storm totals,
+# public, archived by IEM since well before 2016. Scored only where the Worker's hours give no snow total (owner:
+# Worker first, then these). A statement is a running total from a stated start, so a storm takes the latest one
+# whose reading falls in its window (reading at or after the storm's start, up to match_after_hours after its end);
+# when the statement states a start, it must be within start_match_hours of the storm's (else it covers another span).
+pns:
+  url: https://mesonet.agron.iastate.edu/cgi-bin/afos/retrieve.py
+  pil: PNSSLC
+  limit: 9999
+  timeout_s: 60
+  user_agent: cottonwoods-wx (snow forecast verification)
+  days: 10                     # a scheduled pass re-reads the last 10 days of statements
+  sites: {alta: '^alta\W+collins$'}   # our site -> the statement's station name (regex; "Alta Collins", "Alta - Collins")
+  match_after_hours: 12
+  start_match_hours: 24
+
 # NOAA GHCN-Daily cooperative observer stations (free, no token). One reading per day, a 24 h total ending at
 # the observer's time (obs_hour_local, local standard time). Verified on daily PRCP; SNOW gives observed snowfall.
 # ALTA is at the Atwater SNOTEL spot (8,710 ft), lower than Alta's Collins plot: its seasonal snow runs about
@@ -296,7 +312,8 @@ storms:
   manual_match_hours: 12   # hand-entered storm totals (data/manual/storm_totals.csv) match a storm within this slack
   report_verified_days: 10 # the storm report lists storms verified in the last this-many days
   collins_page_hours: 48   # the NWS Collins page (CLN timeseries) shows only this far back; the session reminder
-                           # (scripts/collins_due.py) says where the owner's entries stop while a storm is recent
+                           # (scripts/collins_due.py) warns while a storm is recent if the Worker's hours are late:
+  collins_worker_late_hours: 15  # newest Collins hour older than this = late (Worker renders every 6 h, passes every 3 h)
   max_lead_hours: 168      # storms are detected and totalled only from steps within this lead of each run's init
                            # (owner, 2026-10-27: totals past day 7 aren't trusted). Runs are still ARCHIVED to
                            # 240 h+ and verification scores every archived run, at any lead.

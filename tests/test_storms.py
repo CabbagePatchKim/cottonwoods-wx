@@ -215,7 +215,7 @@ def test_hand_entered_collins_totals_match_a_verified_storm_and_show_in_the_repo
     assert 'SNOTEL 1.52" water | collins: 18" snow, 1.45" water' in text
     assert "10/31 06z" in text and '1.20"' in text and '14"' in text           # GFS: its LAST run before the storm
     assert '0.60"' in text                                                      # GEFS: member mean
-    assert render_verified(pd.DataFrame([st]), scores, totals.iloc[2:], cfg, pd.Timestamp("2026-11-03")).count("not entered yet") == 1
+    assert render_verified(pd.DataFrame([st]), scores, totals.iloc[2:], cfg, pd.Timestamp("2026-11-03")).count("Collins: no total yet") == 1
 
 
 def test_hand_copied_collins_readings_prefer_boards_and_never_double_count():
@@ -289,8 +289,9 @@ def test_session_reminder_lists_only_recent_verified_storms_without_collins_entr
     assert need["storm_id"].tolist() == ["b"]          # a has entries, c isn't over, d is too old
 
 
-def test_session_reminder_says_where_collins_readings_stop_while_a_storm_is_on_the_nws_page():
-    # owner 2026-11-01: the Collins page only goes back ~2 days, so a reading not entered in time is lost
+def test_session_reminder_warns_only_when_the_workers_collins_readings_fall_behind_during_a_storm():
+    # the Collins page only goes back ~2 days (owner 2026-11-01); since 2026-11-10 the Worker records it and the
+    # owner no longer enters readings, so the reminder speaks up only when the Worker's hours are late
     import importlib.util
     spec = importlib.util.spec_from_file_location("collins_due", Path(__file__).resolve().parents[1] / "scripts" / "collins_due.py")
     mod = importlib.util.module_from_spec(spec)
@@ -306,10 +307,12 @@ def test_session_reminder_says_where_collins_readings_stop_while_a_storm_is_on_t
                       "final_start": pd.NaT, "final_end": pd.NaT})
     readings = pd.DataFrame({"end_utc": [pd.Timestamp("2026-11-01 04:00")]})
     now = pd.Timestamp("2026-11-01 07:00")
-    msg = mod.collins_progress(t, cfg, now, readings)
-    assert "live" in msg and "old" not in msg and "future" not in msg and "gone" not in msg
+    assert mod.collins_progress(t, cfg, now, readings) == ""                  # 3 h old: the Worker is current
+    late = now + pd.Timedelta(hours=cfg["storms"]["collins_worker_late_hours"])
+    msg = mod.collins_progress(t, cfg, late, readings)
+    assert "WORKER BEHIND" in msg and "live" in msg and "old" not in msg and "future" not in msg and "gone" not in msg
     assert "recorded through Sat 10/31 2200 MDT" in msg and "already be off" not in msg
-    # two days later with nothing new entered: the gap is flagged
+    # two days later with nothing new: the hours older than the page's reach are flagged as lost
     msg = mod.collins_progress(t, cfg, pd.Timestamp("2026-11-03 12:00"), readings)
     assert "already be off the page" in msg
     assert mod.collins_progress(t, cfg, pd.Timestamp("2026-11-08"), readings) == ""   # no storm on the page
@@ -725,3 +728,113 @@ def test_a_lone_light_shower_ahead_of_the_storm_does_not_stretch_the_collins_sta
     showers = pd.concat([_collins_hours("2026-11-01 20:00", 1, water=0.02), _collins_hours("2026-11-02 02:00", 1, water=0.02)],
                         ignore_index=True)
     assert pd.isna(collins_span(st, showers, cfg)[0])                # never steady: the window is left alone
+
+
+def test_nws_statement_total_is_the_latest_reading_in_the_window_from_a_matching_start():
+    from cottonwoods.storms import pns_totals
+    cfg = make_cfg()
+    st = pd.Series({"point": "alta", "fc_start": pd.Timestamp("2026-02-16 15:00"), "fc_end": pd.Timestamp("2026-02-19 10:00"),
+                    "final_start": pd.Timestamp("2026-02-16 15:00"), "final_end": pd.Timestamp("2026-02-19 10:00")})
+    t = pd.DataFrame({"site": "alta", "source": "nws statement", "notes": "from 8am Monday",
+                      "start_utc": pd.to_datetime(["2026-02-16 15:00", "2026-02-16 15:00", "2026-02-16 15:00", None,
+                                                   "2026-02-10 00:00", "2026-02-19 22:00"]),
+                      "end_utc": pd.to_datetime(["2026-02-18 23:00", "2026-02-19 11:00", "2026-02-19 11:00",
+                                                 "2026-02-19 12:00", "2026-02-19 13:00", "2026-02-20 12:00"]),
+                      "issued_utc": pd.to_datetime(["2026-02-19 00:05", "2026-02-19 14:51", "2026-02-19 13:00",
+                                                    "2026-02-19 13:30", "2026-02-19 14:00", "2026-02-20 16:07"]),
+                      "new_snow_in": [43.0, 47.0, 46.0, 45.5, 60.0, 2.0], "water_in": [4.42, 4.72, 4.70, 4.71, 6.0, 0.18]})
+    # rows: 43" earlier update | 47" final (latest issued for 11Z) | 46" same reading issued earlier |
+    # 45.5" no stated start, reading 12Z (within 12 h of the end: kept) | 60" stated start 6 days early: another span |
+    # 2" the next storm's statement, reading > 12 h past this window
+    got = pns_totals(st, t.drop(index=[3]), cfg)
+    assert got["new_snow_in"] == 47.0 and got["water_in"] == 4.72 and "nws statement" in got["sources"]
+    assert pns_totals(st, t, cfg)["new_snow_in"] == 45.5        # a later reading with no stated start still counts
+    assert pns_totals(st, t[t["new_snow_in"] == 60.0], cfg) is None
+    assert pns_totals(st, t[t["new_snow_in"] == 2.0], cfg) is None
+
+
+def test_observed_snow_takes_the_worker_then_the_nws_statement_then_a_hand_total():
+    # owner 2026-11-10: no more hand entries; the Worker's hours first, then the NWS statement
+    from cottonwoods.storms import observed_snow
+    cfg = make_cfg()
+    st = pd.Series({"point": "alta", "fc_start": pd.Timestamp("2026-11-01 08:00"), "fc_end": pd.Timestamp("2026-11-02 21:00"),
+                    "final_start": pd.Timestamp("2026-11-01 08:00"), "final_end": pd.Timestamp("2026-11-02 21:00"),
+                    "obs_water_in": 2.6})
+    worker = pd.DataFrame({"start_utc": pd.date_range("2026-11-01 09:00", periods=4, freq="h"),
+                           "end_utc": pd.date_range("2026-11-01 10:00", periods=4, freq="h"), "period_h": 1,
+                           "new_snow_in": 4.0, "water_in": 0.5, "depth_in": 20.0, "source": "collins (hourly)"})
+    nws = {"site": "alta", "source": "nws statement", "start_utc": pd.Timestamp("2026-11-01 01:00"),
+           "end_utc": pd.Timestamp("2026-11-02 21:00"), "issued_utc": pd.Timestamp("2026-11-02 22:38"),
+           "new_snow_in": 18.0, "water_in": 2.43, "notes": "beginning 6 PM Saturday October 31st"}
+    hand = {"site": "alta", "source": "collins", "start_utc": pd.Timestamp("2026-11-01 06:00"),
+            "end_utc": pd.Timestamp("2026-11-02 21:00"), "new_snow_in": 20.0, "water_in": 2.5, "notes": ""}
+    both = pd.DataFrame([nws, hand])
+    assert observed_snow(st, both, worker, cfg)[0] == 16.0                         # Worker hours: 4 x 4"
+    snow, src = observed_snow(st, both, pd.DataFrame(), cfg)
+    assert snow == 18.0 and src.startswith("nws statement")                       # no Worker hours: the statement
+    assert observed_snow(st, pd.DataFrame([hand]), pd.DataFrame(), cfg)[0] == 20.0  # then an old hand total
+    water_only = pd.DataFrame([{**nws, "new_snow_in": np.nan}, hand])
+    assert observed_snow(st, water_only, pd.DataFrame(), cfg)[0] == 20.0          # a water-only statement gives no snow
+
+
+def _wet_run(model, init, wet_from, wet_to, hours=48):
+    """One deterministic run at Alta: 1 mm/h from wet_from to wet_to, dry otherwise."""
+    init = pd.Timestamp(init)
+    vs = pd.date_range(init, periods=hours, freq="h")
+    wet = (vs >= pd.Timestamp(wet_from)) & (vs < pd.Timestamp(wet_to))
+    return pd.DataFrame({"model": model, "init": init, "lead_hr": range(1, hours + 1), "valid_start": vs,
+                         "valid_end": vs + pd.Timedelta(hours=1), "point": "alta", "member": np.nan,
+                         "qpf_mm": np.where(wet, 1.0, 0.0)})
+
+
+def _label_runs(storms_mod):
+    """Stub the flow / modes / parts text as the run's own name, so a test can see which run labelled a storm."""
+    name = lambda g, *a: f"{g['model'].iloc[0]} {g['init'].iloc[0]:%d %Hz}" if len(g) else ""   # noqa: E731
+    saved = (storms_mod.run_flow, storms_mod.run_modes, storms_mod.run_subperiods)
+    storms_mod.run_flow = storms_mod.run_modes = storms_mod.run_subperiods = name
+    return saved
+
+
+def test_a_storms_forecast_regime_freezes_once_it_starts_while_its_window_keeps_updating():
+    # owner 2026-11-10: the weekend storm was labelled "N mild 100%" by a run made in its last hours
+    from cottonwoods import storms
+    cfg = make_cfg()
+    saved = _label_runs(storms)
+    try:
+        ifs = _wet_run("IFS", "2026-11-01 12:00", "2026-11-02 00:00", "2026-11-02 12:00")
+        t = storms.update_forecast_storms(pd.DataFrame(columns=storms.COLS), ifs, cfg, pd.Timestamp("2026-11-01 18:00"))
+        assert len(t) == 1 and t.fc_flow.iloc[0] == "IFS 01 12z" and t.regime_model.iloc[0] == "IFS"
+        # before the start, a newer defining run still relabels it
+        ifs2 = _wet_run("IFS", "2026-11-01 18:00", "2026-11-02 00:00", "2026-11-02 14:00")
+        t = storms.update_forecast_storms(t, ifs2, cfg, pd.Timestamp("2026-11-01 23:00"))
+        assert t.fc_flow.iloc[0] == "IFS 01 18z"
+        # under way: a mid-storm HRRR run now defines a longer window, but the regime stays as forecast
+        hrrr = _wet_run("HRRR", "2026-11-02 06:00", "2026-11-02 06:00", "2026-11-02 22:00")
+        t = storms.update_forecast_storms(t, pd.concat([ifs2, hrrr]), cfg, pd.Timestamp("2026-11-02 07:00"))
+        assert len(t) == 1 and t.defining_model.iloc[0] == "HRRR" and t.fc_end.iloc[0] == pd.Timestamp("2026-11-02 22:00")
+        assert t.fc_flow.iloc[0] == "IFS 01 18z" and t.regime_init.iloc[0] == pd.Timestamp("2026-11-01 18:00")
+        assert t.fc_modes.iloc[0] == "IFS 01 18z" and t.fc_subperiods.iloc[0] == "IFS 01 18z"
+    finally:
+        storms.run_flow, storms.run_modes, storms.run_subperiods = saved
+
+
+def test_a_storm_verified_before_the_fix_is_relabelled_from_runs_issued_before_it_began():
+    from cottonwoods import storms
+    cfg = make_cfg()
+    saved = _label_runs(storms)
+    try:
+        fc = pd.concat([_wet_run("IFS", "2026-11-01 12:00", "2026-11-02 00:00", "2026-11-02 12:00"),
+                        _wet_run("GFS", "2026-10-31 12:00", "2026-11-02 00:00", "2026-11-02 18:00"),   # older, longer
+                        _wet_run("IFS", "2026-11-02 12:00", "2026-11-02 12:00", "2026-11-02 18:00"),   # mid-storm
+                        _wet_run("GDPS raw", "2026-10-31 00:00", "2026-11-01 12:00", "2026-11-03 00:00")])  # unblended
+        st = pd.Series({"point": "alta", "status": "verified", "defining_model": "IFS",
+                        "defining_init": pd.Timestamp("2026-11-02 12:00"), "regime_model": None, "regime_init": pd.NaT,
+                        "fc_start": pd.Timestamp("2026-11-02 12:00"), "fc_end": pd.Timestamp("2026-11-02 18:00"),
+                        "final_start": pd.Timestamp("2026-11-02 00:00"), "final_end": pd.Timestamp("2026-11-02 21:00")})
+        got = storms.regime_before_start(st, fc, cfg)
+        assert got["regime_model"] == "GFS" and got["fc_flow"] == "GFS 31 12z"   # longest window of the pre-start runs
+        assert storms.regime_before_start(st, fc[fc["init"] >= "2026-11-02"], cfg) is None
+        assert storms.regime_run(pd.Series({**st.to_dict(), **got})) == ("GFS", pd.Timestamp("2026-10-31 12:00"))
+        assert storms.regime_run(st) == ("IFS", pd.Timestamp("2026-11-02 12:00"))      # not relabelled yet
+    finally:
+        storms.run_flow, storms.run_modes, storms.run_subperiods = saved
