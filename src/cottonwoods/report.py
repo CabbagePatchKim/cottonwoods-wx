@@ -398,6 +398,8 @@ def storm_trend_lines(st, fc: pd.DataFrame, cfg: dict) -> list[str]:
     whole storm; the same numbers as the HTML summary's "since last run"); SAME = under trends.steady_in either way.
     Also how many models moved each way. "-" where no model has two full runs yet (a new storm)."""
     from .trends import model_trends                  # trends imports this module
+    if "snow_in" not in fc.columns:                   # runs without snow (water-only test runs): nothing to trend
+        return []
     steady = cfg["trends"]["steady_in"]
     rows = []
     for p, v in cfg["points"].items():
