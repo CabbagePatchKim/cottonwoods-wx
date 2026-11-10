@@ -838,3 +838,30 @@ def test_a_storm_verified_before_the_fix_is_relabelled_from_runs_issued_before_i
         assert storms.regime_run(st) == ("IFS", pd.Timestamp("2026-11-02 12:00"))      # not relabelled yet
     finally:
         storms.run_flow, storms.run_modes, storms.run_subperiods = saved
+
+
+def test_storm_section_ends_with_each_points_snow_trend_since_the_previous_runs():
+    # owner 2026-11-10: a line at the end of each storm saying whether its snow is trending up, down or the same
+    from cottonwoods.report import storm_trend_lines
+    cfg = make_cfg()
+    st = pd.Series({"fc_start": pd.Timestamp("2026-11-11 00:00"), "fc_end": pd.Timestamp("2026-11-11 12:00")})
+
+    def run(model, init, snow_per_hour):
+        vs = pd.date_range("2026-11-10 12:00", "2026-11-11 23:00", freq="h")
+        inside = (vs >= st.fc_start) & (vs < st.fc_end)
+        return pd.DataFrame({"model": model, "init": pd.Timestamp(init), "point": "alta", "member": np.nan,
+                             "lead_hr": 1, "valid_start": vs, "valid_end": vs + pd.Timedelta(hours=1),
+                             "qpf_mm": np.where(inside, 2.0, 0.0), "snow_in": np.where(inside, snow_per_hour, 0.0)})
+    # 12 storm hours: GFS 6 -> 9.6" (up), IFS 6 -> 6.6" (same), GDPS 6 -> 3.6" (down); median +0.6" = SAME
+    fc = pd.concat([run("GFS", "2026-11-10 00:00", 0.5), run("GFS", "2026-11-10 06:00", 0.8),
+                    run("IFS", "2026-11-10 00:00", 0.5), run("IFS", "2026-11-10 06:00", 0.55),
+                    run("GDPS", "2026-11-10 00:00", 0.5), run("GDPS", "2026-11-10 12:00", 0.3)])
+    text = "\n".join(storm_trend_lines(st, fc, cfg))
+    assert "trend: storm snow vs each model's previous run" in text
+    alta = next(ln for ln in text.splitlines() if ln.startswith("alta"))
+    assert "SAME" in alta and '+0.6"' in alta and "1 / 1 / 1" in alta
+    up = pd.concat([fc[fc["model"] != "IFS"], run("IFS", "2026-11-10 00:00", 0.5), run("IFS", "2026-11-10 06:00", 0.9)])
+    alta = next(ln for ln in storm_trend_lines(st, up, cfg) if ln.startswith("alta"))
+    assert "UP" in alta and '+3.6"' in alta and "2 / 1 / 0" in alta
+    snowbird = next(ln for ln in storm_trend_lines(st, fc, cfg) if ln.startswith("snowbird"))
+    assert snowbird.split()[1:] == ["-", "-", "-"]                          # no runs there: nothing to compare

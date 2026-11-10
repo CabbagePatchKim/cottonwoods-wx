@@ -45,6 +45,9 @@ trends and guidance are all unproven. Until a few storms verify, the work is MEA
        one scores table; split CLAUDE.md into architecture / decision log / status).
 
 ## Small fixes to bundle with the step-3 release (noted 10/30)
+- DONE in main 11/10 (owner request): each storm in the text Storms report ends with a trend table: per point UP /
+  DOWN / SAME (median change of each model's storm snow vs its previous run, both full; SAME = under
+  trends.steady_in 1"), plus models up / down / same (report.storm_trend_lines; same numbers as the HTML summary).
 - DONE in main 11/10: Verified section legend line for "12h blocks" (runs x blocks x points, runs up to 72 h before
   THAT block, so mid-storm runs count; a count, not skill) and "block FA/miss" (read as a share of 12h blocks).
 - 12 h block table: "." is explained nowhere and the code calls it "dry"; it means under 0.05" SNOW (dry OR rain:

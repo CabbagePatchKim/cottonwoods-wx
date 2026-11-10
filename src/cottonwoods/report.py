@@ -392,6 +392,28 @@ def _storm_table(models: list[dict], points: list[str], tail_w: dict[str, int],
     return out
 
 
+def storm_trend_lines(st, fc: pd.DataFrame, cfg: dict) -> list[str]:
+    """The last part of a storm's section (owner, 2026-11-10): is each point's snow trending up, down or the same?
+    The median of each model's change in storm snow vs its previous run (trends.model_trends: both runs covering the
+    whole storm; the same numbers as the HTML summary's "since last run"); SAME = under trends.steady_in either way.
+    Also how many models moved each way. "-" where no model has two full runs yet (a new storm)."""
+    from .trends import model_trends                  # trends imports this module
+    steady = cfg["trends"]["steady_in"]
+    rows = []
+    for p, v in cfg["points"].items():
+        ch = [m["change"]["snow_in"] for m in model_trends(st, fc, cfg, p) if m["change"]]
+        if not ch:
+            rows.append((v.get("label", p), "-", "-", "-"))
+            continue
+        med, up, down = float(np.median(ch)), sum(c >= steady for c in ch), sum(c <= -steady for c in ch)
+        word = "UP" if med >= steady else "DOWN" if med <= -steady else "SAME"
+        rows.append((v.get("label", p), word, f"{med:+.1f}\"", f"{up} / {down} / {len(ch) - up - down}"))
+    w = max(len(r[0]) for r in rows)
+    return ([f"    trend: storm snow vs each model's previous run (median change; SAME = under {steady:g}\" either way)",
+             f"{'point':<{w}}  trend  change  models up / down / same"]
+            + [f"{a:<{w}}  {b:<5}  {c:>6}  {d}" for a, b, c, d in rows])
+
+
 def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Timestamp,
                   psteps: dict[str, pd.DataFrame] | None = None) -> str:
     """Each storm still ahead or under way, with every model's newest run totalled over the storm window.
@@ -402,6 +424,7 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Tim
     can't see the whole storm, and a 0 would read like a forecast). A storm whose window has ended gets one
     "awaiting verification" line, like the feed leaving it out (owner, 2026-10-28). Times are Mountain.
     Under each storm's totals: the same runs in fixed 12 h blocks (storm_block_lines), where short-range runs count.
+    Last: whether each point's snow is trending up, down or the same since each model's previous run (storm_trend_lines).
     """
     fc, adjusted = regime_adjusted(fc, cfg)
     lines = ["Snow is regime-adjusted per step (each resort's history in that step's flow, regime_factors.csv)."
@@ -424,6 +447,7 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Tim
         labels = {p: v.get("label", p) for p, v in cfg["points"].items()}
         lines += _storm_table(models, list(cfg["points"]), tail_w, labels) if models else ["(no model reaches this storm)"]
         lines += storm_block_lines(st, fc, cfg, now, (psteps or {}).get(cfg["storms"]["block_point"])) if models else []
+        lines += storm_trend_lines(st, fc, cfg) if models else []
         lines.append("")
     for _, st in ended.iterrows():
         lines.append(f"--- Storm {st.storm_id} ({timefmt.clock(st.fc_start, weekday=True)} - "
