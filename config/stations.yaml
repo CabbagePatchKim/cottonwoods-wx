@@ -39,6 +39,9 @@ backfill:
   models: [GFS, HRRR, IFS]
   leads_hours: [24, 48, 72]
   min_water_in: 0.5          # storms with less observed water are not worth a download
+  gfs_aws_first: true        # GFS from AWS first (2021 on), NCAR GDEX for older runs (live passes: GDEX first)
+  download_workers: {noaa: 4}  # overrides archive.download_workers for these servers (HRRR's 12 ran the laptop
+                               # low on memory alongside other programs, 2026-11-10)
 
 # NWS Salt Lake "Preliminary Storm Information" statements (obs/pns.py, owner 2026-11-10): Collins storm totals,
 # public, archived by IEM since well before 2016. Scored only where the Worker's hours give no snow total (owner:

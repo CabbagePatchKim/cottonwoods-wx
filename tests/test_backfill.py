@@ -68,3 +68,26 @@ def test_a_backfill_run_fetches_only_the_hours_it_needs():
     with tempfile.TemporaryDirectory() as d:
         fa.archive_run("HRRR", datetime(2026, 2, 16, 6), cfg, root=Path(d), puller=pull, max_lead_hours=30)
     assert asked == [list(range(1, 31))]
+
+
+def test_backfill_gfs_comes_from_aws_first_and_falls_back_to_gdex_while_live_stays_gdex_first():
+    from cottonwoods.models import gfs, gfs_gdex, registry
+    cfg = make_cfg()
+    assert registry.get_puller("GFS", cfg).keywords["aws_first"] is False          # live passes: unchanged
+    cfg["archive"]["gfs_aws_first"] = True
+    assert registry.get_puller("GFS", cfg).keywords["aws_first"] is True
+    saved, calls = (gfs._pull_run_aws, gfs_gdex.pull_run), []
+
+    def aws(*a, **k):
+        calls.append("aws")
+        raise RuntimeError("no such run on AWS (before 2021)")
+
+    def gdex(*a, **k):
+        calls.append("gdex")
+        return pd.DataFrame({"qpf_mm": [1.0]})
+    gfs._pull_run_aws, gfs_gdex.pull_run = aws, gdex
+    try:
+        out = gfs.pull_run(None, [6], {}, workers=1, gdex_workers=1, aws_first=True)
+    finally:
+        gfs._pull_run_aws, gfs_gdex.pull_run = saved
+    assert calls == ["aws", "gdex"] and len(out) == 1

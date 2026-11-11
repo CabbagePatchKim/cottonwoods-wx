@@ -1,6 +1,6 @@
 """Verification backfill step 2 (docs/PLAN.md step 4): fetch the past runs for the storm list (backfill.plan_runs)
 into data/local/backfill/archive (its own archive: never the live one, never synced). Laptop; one model at a time,
-with the live pass's parallel downloads. Already fetched runs are skipped, so it can be stopped and started again.
+with config backfill's download choices (GFS from AWS first, fewer NOAA downloads). Already fetched runs are skipped, so it can be stopped and started again.
 
     python scripts/backfill_runs.py --winter 2025-26 --model GFS            # every planned GFS run of that winter
     python scripts/backfill_runs.py --winter 2025-26 --model GFS --limit 1  # one run, to time it
@@ -8,6 +8,7 @@ with the live pass's parallel downloads. Already fetched runs are skipped, so it
 Each run's result (archived / exists / failed, seconds) is appended to data/local/backfill/runs_log.csv.
 """
 import argparse
+import copy
 import time
 from datetime import datetime, timezone
 
@@ -24,6 +25,9 @@ ap.add_argument("--limit", type=int, help="fetch at most this many runs")
 args = ap.parse_args()
 
 cfg = load_config()
+fetch_cfg = copy.deepcopy(cfg)          # the backfill's download choices (config backfill), live config untouched
+fetch_cfg["archive"]["gfs_aws_first"] = cfg["backfill"]["gfs_aws_first"]
+fetch_cfg["archive"]["download_workers"].update(cfg["backfill"]["download_workers"])
 base = DATA_DIR / "local" / "backfill"
 y = int(args.winter[:4])
 found = pd.read_csv(base / "storms.csv", parse_dates=["final_start", "final_end"])
@@ -37,7 +41,7 @@ log = base / "runs_log.csv"
 for r in plan.itertuples():
     t0, status = time.time(), ""
     try:
-        _, status = archive_run(r.model, r.init.to_pydatetime(), cfg, root=base / "archive",
+        _, status = archive_run(r.model, r.init.to_pydatetime(), fetch_cfg, root=base / "archive",
                                 max_lead_hours=r.max_lead_hours)
     except Exception as e:  # noqa: BLE001 - one bad run doesn't stop the rest; it's logged and retried next time
         status = f"failed: {type(e).__name__}: {str(e)[:150]}"

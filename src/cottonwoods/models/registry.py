@@ -157,7 +157,8 @@ def get_puller(model: str, cfg: dict):
         return partial(pull_run, workers=workers)
     if model == "GFS":
         from .gfs import pull_run
-        return partial(pull_run, workers=workers, gdex_workers=w["gdex"])
+        return partial(pull_run, workers=workers, gdex_workers=w["gdex"],
+                       aws_first=bool(cfg["archive"].get("gfs_aws_first")))   # set only by the backfill
     if model in ("RDPS", "GDPS"):
         from . import canada
         return partial(canada.pull_run, model, workers=workers)

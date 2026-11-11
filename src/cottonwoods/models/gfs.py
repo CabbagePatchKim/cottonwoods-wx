@@ -19,10 +19,20 @@ from .points import nearest_index
 
 
 def pull_run(init: datetime, fxx_list, points: dict[str, dict], save_dir: str | None = None, *,
-             workers: int, gdex_workers: int) -> pd.DataFrame:
-    """One GFS run: GDEX first, AWS (Herbie) if GDEX doesn't have it. Same model data either way."""
+             workers: int, gdex_workers: int, aws_first: bool = False) -> pd.DataFrame:
+    """One GFS run: GDEX first, AWS (Herbie) if GDEX doesn't have it. Same model data either way.
+    aws_first (the verification backfill, config backfill.gfs_aws_first): AWS first, GDEX when AWS has nothing (runs
+    before 2021); one 80 h run took 9 min from GDEX, which also timed out on some hours."""
     from . import gfs_gdex
 
+    if aws_first:
+        try:
+            df = _pull_run_aws(init, fxx_list, points, save_dir, workers=workers)
+            if df is not None and not df.empty:
+                return df
+        except Exception:  # noqa: BLE001 - AWS doesn't have it (before 2021) or failed: GDEX next
+            pass
+        return gfs_gdex.pull_run(init, fxx_list, points, workers=gdex_workers)
     try:
         return gfs_gdex.pull_run(init, fxx_list, points, workers=gdex_workers)
     except gfs_gdex.NotInArchive:
