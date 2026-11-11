@@ -1,1 +1,10 @@
+# Line endings (2026-11-10): the repo stores LF, and the working copy keeps LF too, whatever core.autocrlf says
+# (Python, YAML and CI on Linux all read LF; this ends git's "LF will be replaced by CRLF" warnings on Windows).
+* text=auto eol=lf
+# Batch files need Windows line endings to run reliably in cmd.exe.
 *.bat text eol=crlf
+# Data and images: never touched.
+*.parquet binary
+*.npy binary
+*.png binary
+*.grib2 binary

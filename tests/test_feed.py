@@ -229,3 +229,21 @@ def test_only_the_configured_models_reach_the_feed_and_retired_ones_leave():
     cfg["archive"]["retired"] = {"NAMNEST": "2026-11-01T12:00"}             # retired before NOW (11/01 18z)
     f = feed.build_feed(st, pd.concat([fc, more], ignore_index=True), cfg, NOW, "v9.9", warn)
     assert "NAMNEST" not in json.dumps(f) and '"RRFS"' in json.dumps(f)
+
+
+def test_feed_snow_level_says_when_it_is_only_the_models_ground():
+    # owner 2026-11-10: a level below the model's terrain is stored as its ground (e.g. HRRR ~9,300 ft at Alta); the
+    # feed keeps that number and flags it, so the site can show "below 9,300 ft"
+    cfg, fc, st = _world()
+    fc = fc.copy()
+    fc["z_ground_m"] = 2835.0                                    # ~9,300 ft
+    hrrr = fc["model"] == "HRRR"
+    fc.loc[hrrr, "snow_level_m"] = 3000.0                        # above ground at first...
+    late = hrrr & (fc["valid_start"] >= fc.loc[hrrr, "valid_start"].max() - pd.Timedelta(hours=6))
+    fc.loc[late, "snow_level_m"] = 2835.0                        # ...then at the ground: below it, really
+    f = feed.build_feed(st, fc, cfg, NOW, "v9.9", [])
+    sl = next(r for r in f["storms"]["storms"][0]["models"] if r["model"] == "HRRR")["snow_level_ft"]
+    assert set(sl) == {"start", "end", "start_below_ground", "end_below_ground"}
+    assert sl["start_below_ground"] is False and sl["end_below_ground"] is True
+    assert sl["start"] == 9800 and sl["end"] == 9300            # the numbers keep their meaning (to 100 ft)
+    json.dumps(f["storms"], allow_nan=False)

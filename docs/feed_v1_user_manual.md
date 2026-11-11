@@ -147,7 +147,7 @@ Each entry in a storm's `models`:
 | `model`, `cycle`, `init` | Which run |
 | `covers_full_storm` | `false` when the run ends before the storm does, or starts after the storm began |
 | `run_ends` | How far that run reaches |
-| `snow_level_ft` | `{"start", "end"}`: snow level at the start and end of the storm, or `null` (ensembles) |
+| `snow_level_ft` | `{"start", "end", "start_below_ground", "end_below_ground"}`: snow level at the start and end of the storm, or `null` (ensembles). `*_below_ground: true` means the model's snow level is at or below its own ground at that resort: `start` / `end` then holds the model's ground elevation, and the real snow level is somewhere lower (unknown). Show it as e.g. "below 9,300 ft". |
 | `flow` | Wind-regime text for the storm, e.g. `"SW warm -1C 68% -> N mild -5C 30%"`, or `null` |
 | `modes` | Precipitation-type text, e.g. `"frontal 79% -> post-frontal 21%"`, or `null` |
 | `points` | `{ "alta": <amount>, ... }` per section 5 |
@@ -157,8 +157,9 @@ partial total isn't a forecast for the whole storm, and a number would read like
 got. This includes runs made after a storm began: a storm stays listed until observations confirm it's over, and a
 run that started after it ended would otherwise report 0 for it. An amount is also `null` for a run made before a resort's point existed.
 
-**Notes labels** (`notes[].label`): `"flow (MODEL)"` and `"modes (MODEL)"` describe the storm as the defining run
-sees it; `"parts (MODEL)"` lists separate pieces of a storm with dry gaps between them; `"models disagree"` says
+**Notes labels** (`notes[].label`): `"flow (MODEL)"` and `"modes (MODEL)"` describe the storm as MODEL's run saw
+it: the run that set the storm's window, until the storm starts; from then on they stay as they were at the start
+(a run made during the storm sees only what's left of it); `"parts (MODEL)"` lists separate pieces of a storm with dry gaps between them; `"models disagree"` says
 which models see it as separate events; `"note"` covers other remarks such as `"split from 2026103109"` or another
 model starting or ending earlier.
 
@@ -235,6 +236,12 @@ Each published version puts its own copy of this manual here, so this list is cu
   run; it is now 12 h from RDPS. No fields were added, removed or renamed.
 - **v1.10:** no changes to the feed. This version only changes how finished storms are verified behind the
   scenes.
+- **v1.11:** `snow_level_ft` gains `start_below_ground` and `end_below_ground` (true / false). When true, that
+  number is the model's own ground elevation at the resort, not a real snow level: the real one is lower and unknown
+  (e.g. HRRR's ground at Alta is about 9,300 ft, so in a cold storm it used to read "9,300 ft"). `start` and `end`
+  keep their meaning. Once a storm has started, its `flow`, `modes` and `parts` notes stay as the last run before
+  the start described them, instead of changing to whatever a run made during the storm sees (which is only the
+  tail end of it). Nothing was removed or renamed.
 
 ## 10. Credits and licences
 

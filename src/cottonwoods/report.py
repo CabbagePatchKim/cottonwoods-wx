@@ -202,7 +202,8 @@ def snow_col(g: pd.DataFrame) -> str:
 
 
 def _amount(v: float, cover: str) -> str:
-    """A block's snow as text: '-' not reached, '.' dry (under 0.05"), '2.4' / '2.4*' (only part of the block)."""
+    """A block's snow as text: '-' not reached, '.' under 0.05" of SNOW (dry, or rain: owner 2026-10-30, the 10/30
+    blocks had up to 0.23" of rain at Alta), '2.4' / '2.4*' (the run covers only part of the block)."""
     if cover == blocks.NONE or np.isnan(v):
         return "-"
     return ("." if v < 0.05 else f"{v:.1f}") + ("*" if cover == blocks.PART else "")
@@ -247,7 +248,9 @@ def storm_block_lines(st, fc: pd.DataFrame, cfg: dict, now=None, osteps: pd.Data
         return []
     wet_mm = cfg["verify"]["event_swe_in"] * MM_PER_IN
     point, labels = bcfg["block_point"], {p: v.get("label", p) for p, v in cfg["points"].items()}
-    head = [blocks.label(b[2]) for b in blks]
+    # a block the storm fills only part of (its first / last) says how many hours, e.g. "Fri day 6h"
+    head = [blocks.label(b[2]) + ("" if (b[1] - b[0]) >= pd.Timedelta(hours=bcfg["block_hours"])
+                                  else f" {(b[1] - b[0]) / pd.Timedelta(hours=1):.0f}h") for b in blks]
     det, guid, ens, full = [], [], [], {p: [[] for _ in blks] for p in cfg["points"]}
     for model, g in sorted(storm_runs(fc, cfg, st.fc_start), key=lambda mg: model_rank(mg[0])):
         if "member" in g.columns and g["member"].notna().any():
@@ -272,7 +275,8 @@ def storm_block_lines(st, fc: pd.DataFrame, cfg: dict, now=None, osteps: pd.Data
     going = now is not None and st.fc_start < pd.Timestamp(now) < st.fc_end
     rest = _rest_of_storm(st, fc, cfg, point, now) if going else {}
     tail = lambda m: f"  {rest.get(m, '-'):>6}" if going else ""  # noqa: E731
-    out = [f"    12 h blocks: {labels.get(point, point)} snow (in) by model; * = run covers only part of the block"
+    out = [f"    12 h blocks: {labels.get(point, point)} snow (in) by model; * = run covers only part of the block; "
+           "\".\" = under 0.05\" of snow (dry or rain); \"6h\" = the storm fills only 6 h of that block"
            + (f"; rest = snow from now ({timefmt.clock(now, date=False)}) to the end" if going else ""),
            row("model", "run", head) + (f"  {'rest':>6}" if going else "")]
     out += [row(m, timefmt.cycle(i), [_amount(v, c) for v, c in got]) + tail(m) for m, i, got in det]

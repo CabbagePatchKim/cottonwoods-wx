@@ -893,3 +893,20 @@ def test_storm_trend_counts_only_runs_that_cover_the_whole_storm():
     both = pd.concat([partial, run("HRRR", "2026-11-10 12:00", "2026-11-12 00:00")])
     alta = next(ln for ln in storm_trend_lines(st, both, cfg) if ln.startswith("alta"))
     assert "SAME" in alta and '+0.0"' in alta and "0 / 0 / 1" in alta
+
+
+def test_block_table_explains_the_dot_and_marks_blocks_the_storm_only_partly_fills():
+    # plan 10/30: "." means under 0.05" of SNOW (dry or rain), and "Fri day" was only 6 h of 12
+    from cottonwoods.report import storm_block_lines
+    cfg = make_cfg()
+    t = pd.date_range("2026-11-01 12:00", "2026-11-03 12:00", freq="1h")
+    fc = pd.DataFrame([{"model": "GFS", "init": pd.Timestamp("2026-11-01 12:00"), "point": "alta",
+                        "valid_start": a, "valid_end": b, "qpf_mm": 1.0, "snow_in": 0.0 if a < pd.Timestamp("2026-11-02 12:00") else 0.5}
+                       for a, b in zip(t[:-1], t[1:])])
+    st = pd.Series({"fc_start": pd.Timestamp("2026-11-02 06:00"), "fc_end": pd.Timestamp("2026-11-03 00:00")})   # 6 h + 12 h
+    lines = storm_block_lines(st, fc, cfg)
+    assert '"." = under 0.05" of snow (dry or rain)' in lines[0]
+    head = next(line for line in lines if line.startswith("model"))
+    assert head.split()[2:] == ["Sun", "ngt", "6h", "Mon", "day"]       # first block 6 of 12 h; the second whole
+    gfs = next(line for line in lines if line.startswith("GFS"))
+    assert gfs.split()[3:] == [".", "6.0"]                               # rain all of the first block: "."

@@ -50,9 +50,16 @@ trends and guidance are all unproven. Until a few storms verify, the work is MEA
   trends.steady_in 1"), plus models up / down / same (report.storm_trend_lines; same numbers as the HTML summary).
 - DONE in main 11/10: Verified section legend line for "12h blocks" (runs x blocks x points, runs up to 72 h before
   THAT block, so mid-storm runs count; a count, not skill) and "block FA/miss" (read as a share of 12h blocks).
-- 12 h block table: "." is explained nowhere and the code calls it "dry"; it means under 0.05" SNOW (dry OR rain:
-  Fri 10/30 NAM / RDPS / IFS had 0.05-0.23" of rain at Alta, wet-bulb > +1 C). Add a legend line; also mark the
-  first / last block when the storm covers only part of it ("Fri day" was 6 h of 12).
+- DONE in main 11/10: 12 h block table legend ('"." = under 0.05" of snow (dry or rain)') and a block the storm fills
+  only part of is headed with its hours ("Sun ngt 6h").
+- DONE in main 11/10: FEED snow_level_ft gains start_below_ground / end_below_ground (owner chose ground value + flag);
+  manual v1.11 entry written (also covers the frozen flow / modes / parts notes, which the feed's notes show).
+- DONE in main 11/10: .gitattributes keeps LF in the working copy (bat files CRLF); renormalize changed nothing.
+- CHECKED 11/10, NOT A BUG: the season freezing table's "RDPS raw +5329 / GFS raw +2563" outliers. (a) SLC balloon
+  11/03 12z crossed 0 C at ~7,800 ft and stayed -0.7 to -2.1 C up to ~13,600 ft: in a near-isothermal layer a model
+  1-2 C warm puts its level 3,000-5,500 ft higher (every model, even GFS at 6 h). (b) 8-14 day runs with the level
+  below their ground (~6,700-7,000 ft) vs balloons ~13,000 ft: real misses. Idea (not built): show a median miss
+  next to the mean so a few such balloons don't swing the 3-7 d averages.
 - Freezing levels: every model ran 230-530 ft above the SLC balloon on 10/30 12z (650 mb 1-2 C warmer at Alta).
   Scoring checked correct (balloon 3,258 m recomputed; our 700 mb heights within 10 m). Model error or Alta vs SLC
   35 km apart? Idea: store RAP's freezing level at each point (we keep only t_700) as an observed value over

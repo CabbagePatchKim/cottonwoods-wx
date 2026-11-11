@@ -101,10 +101,13 @@ def build_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Time
     for _, st in live.sort_values("fc_start").iterrows():
         models = []
         for r in storm_models(st, fc, cfg):
-            sl = r["snow_level_m"]
+            sl, low = r["snow_level_m"], r.get("snow_level_below") or (False, False)
             models.append({"model": r["model"], **_run(r["init"]), "covers_full_storm": r["full"],
                            "run_ends": iso(r["valid_to"]),
-                           "snow_level_ft": {"start": _num(sl[0] * FT_PER_M, -2), "end": _num(sl[1] * FT_PER_M, -2)} if sl else None,
+                           # *_below_ground (owner 2026-11-10): the level is the model's ground there; the real
+                           # one is lower and unknown (profile.below_ground). Additive: start / end keep their meaning.
+                           "snow_level_ft": {"start": _num(sl[0] * FT_PER_M, -2), "end": _num(sl[1] * FT_PER_M, -2),
+                                             "start_below_ground": low[0], "end_below_ground": low[1]} if sl else None,
                            "flow": r["flow"] or None, "modes": r["modes"] or None,
                            "points": {p: _amounts(c) if r["full"] else None
                                       for p, c in r["points"].items() if p in shown}})
