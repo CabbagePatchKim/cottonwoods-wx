@@ -319,14 +319,14 @@ Alta - Collins - 9662 ft                 6 AM Sun     9.99
 def test_nws_statement_columns_follow_each_statements_own_header():
     from cottonwoods.obs import pns
     sites = make_cfg()["pns"]["sites"]
-    feb = pns.parse(PNS_FEB, sites)
+    feb = pns.parse(PNS_FEB, sites, 10)
     assert len(feb) == 1                                                      # Collins only; wind table ignored
     r = feb.iloc[0]
     assert r.snow_in == 47.0 and r.water_in == 4.72 and r.site == "alta"
     assert r.reading_utc == pd.Timestamp("2026-02-19 11:00")                 # 4 AM MST Thu
     assert r.issued_utc == pd.Timestamp("2026-02-19 14:51")
     assert r.start_local == pd.Timestamp("2026-02-16 08:00") and r.start_note.startswith("from 8am Monday")
-    nov = pns.parse(PNS_NOV, sites)                                           # precip-only table: water, no snow
+    nov = pns.parse(PNS_NOV, sites, 10)                                           # precip-only table: water, no snow
     assert len(nov) == 1 and pd.isna(nov.snow_in.iloc[0]) and nov.water_in.iloc[0] == 0.65
     assert nov.start_local.iloc[0] == pd.Timestamp("2026-10-31 18:00")
     assert nov.reading_utc.iloc[0] == pd.Timestamp("2026-11-01 13:00")      # 6 AM MST, the day DST ended
@@ -342,15 +342,43 @@ def test_nws_statement_start_reads_the_many_ways_it_is_written():
              "from 12AM Tuesday Feb 21": "2023-02-21 00:00",
              "Storm totals beginning Monday morning.": "2023-02-27 06:00"}
     for prose, want in cases.items():
-        note, got = start_of(prose, issued)
+        note, got = start_of(prose, issued, 10)
         if "Feb 23" in prose:                    # only an hour and no day before "ending": no start can be read
             assert got is None, (prose, got)
             continue
         assert got == pd.Timestamp(want), (prose, got)
-    assert start_of("from the past 24 hours", issued)[1] is None
-    assert start_of("Below are the latest totals.", issued) == ("", None)
+    assert start_of("from the past 24 hours", issued, 10)[1] is None
+    assert start_of("Below are the latest totals.", issued, 10) == ("", None)
     # a December start in a January statement belongs to the year before
-    assert start_of("beginning December 30th", pd.Timestamp("2027-01-02 08:00"))[1] == pd.Timestamp("2026-12-30")
+    assert start_of("beginning December 30th", pd.Timestamp("2027-01-02 08:00"), 10)[1] == pd.Timestamp("2026-12-30")
+
+
+def test_nws_statement_typos_and_reading_times_do_not_move_a_start():
+    """Real misreads found in the 2016-2026 backfill (2026-11-11)."""
+    from cottonwoods.obs.pns import _reading_time, start_of
+    # "as of" is the reading, not the start
+    assert start_of("from the storm as of 9 AM Sunday", pd.Timestamp("2022-10-23 09:36"), 10)[1] is None
+    # words that only begin like a weekday are not one (10/6/2021 read "thunderstorms" as Thursday)
+    assert start_of("from thunderstorms this afternoon", pd.Timestamp("2021-10-05 21:31"), 10)[1] is None
+    assert start_of("from a month of sunny days", pd.Timestamp("2021-10-05 21:31"), 10)[1] is None
+    got = start_of("since Thurs. Sept 30", pd.Timestamp("2021-10-05 21:31"), 10)[1]
+    assert got == pd.Timestamp("2021-09-30"), got
+    assert start_of("since Tues", pd.Timestamp("2021-10-05 21:31"), 10)[1] == pd.Timestamp("2021-10-05")
+    # a typo'd month: the weekday decides (Fri Nov 4 2022, not Sep 4)
+    got = start_of("beginning 4PM MDT Friday September 4 2022", pd.Timestamp("2022-11-05 17:08"), 10)[1]
+    assert got == pd.Timestamp("2022-11-04 16:00"), got
+    got = start_of("since noon on sunday, Feb 2", pd.Timestamp("2025-03-03 09:34"), 10)[1]      # Sun Mar 2
+    assert got == pd.Timestamp("2025-03-02 12:00"), got
+    # a weekday start after the statement: no start
+    assert start_of("beginning Monday evening updated through 9 AM Monday", pd.Timestamp("2022-02-21 09:22"), 10)[1] is None
+    # a later "beginning ..." phrase is used when the first "from" states no time
+    got = start_of("Reports from trained spotters. Totals beginning Sunday morning.", pd.Timestamp("2023-02-28 07:31"), 10)
+    assert got == ("beginning Sunday morning", pd.Timestamp("2023-02-26 06:00")), got
+    # a row time later on the statement's own day is a slip: the statement's time, not a week earlier
+    issued = pd.Timestamp("2025-01-11 08:26")                                  # a Saturday
+    assert _reading_time("Sat", 15, issued) == issued
+    assert _reading_time("Sat", 6, issued) == pd.Timestamp("2025-01-11 06:00")
+    assert _reading_time("Fri", 15, issued) == pd.Timestamp("2025-01-10 15:00")
 
 
 def test_nws_statements_are_stored_once_each_and_read_back_as_storm_totals():
@@ -403,7 +431,7 @@ Alta - Collins               1.80 in   0436 AM 12/09   40.58N/111.64W
 
 def test_nws_statements_in_the_2023_24_sections_layout_join_snow_and_water():
     from cottonwoods.obs import pns
-    df = pns.parse(PNS_DEC2023, make_cfg()["pns"]["sites"])
+    df = pns.parse(PNS_DEC2023, make_cfg()["pns"]["sites"], 10)
     assert len(df) == 1                                    # "Top of Collins" (a wind site) is not Collins
     r = df.iloc[0]
     assert r.snow_in == 28.0 and r.water_in == 1.80        # the owner's stake: 28"

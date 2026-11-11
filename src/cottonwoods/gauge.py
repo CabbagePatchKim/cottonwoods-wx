@@ -13,7 +13,8 @@ every hourly rise counts each wobble as precip (Atwater, dry 10/27/2026: net 0.0
      up or down, and is back within reset_drop_in of it inside glitch_hours is a GLITCH, skipped: older SNOTEL
      hourly data has one-hour spikes (Atwater April 2023 and Snowbird March 2019: 34.5" -> 63.5" -> 34.5" every
      day at 08Z, PST midnight), which rules 2-3 counted as ~29" of precip a day;
-  5. a rise above max_hourly_in in one hour is not precip (a service or sensor jump: Atwater 4/17/2023 went 34.6"
+  5. a rise above max_hourly_in per hour (hours since the previous reading, so a gap's rise is judged by its hours;
+     2026-11-11: no 2016-2026 gap rose more than 0.4") is not precip (a service or sensor jump: Atwater 4/17/2023 went 34.6"
      -> 48.7" in 2 h with the snow pillow flat): the envelope moves up without counting it.
 On the stored months this matches each gauge's net change within ~0.1"; rules 4-5 change nothing on clean months.
 """
@@ -39,7 +40,8 @@ def gauge_increments(total: pd.Series, gcfg: dict) -> pd.Series:
             level = v
             out.append(0.0)
         elif v > level:
-            out.append(v - level if v - level <= cap else 0.0)   # a jump too big for an hour isn't precip
+            hours = max(1.0, (times[i] - times[i - 1]) / pd.Timedelta(hours=1))   # missing hours: the rise spans them
+            out.append(v - level if v - level <= cap * hours else 0.0)   # a jump too big for its hours isn't precip
             level = v
         else:
             out.append(0.0)

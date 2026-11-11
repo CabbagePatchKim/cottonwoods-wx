@@ -58,6 +58,8 @@ pns:
   sites: {alta: '^alta\W+collins$'}   # our site -> the statement's station name (regex; "Alta Collins", "Alta - Collins")
   match_after_hours: 12
   start_match_hours: 24
+  max_storm_days: 10           # a stated start date further back than this (or after the statement) is an NWS typo:
+                               # the weekday decides instead (2026-11-11: "Friday September 4" in a November statement)
 
 # NOAA GHCN-Daily cooperative observer stations (free, no token). One reading per day, a 24 h total ending at
 # the observer's time (obs_hour_local, local standard time). Verified on daily PRCP; SNOW gives observed snowfall.

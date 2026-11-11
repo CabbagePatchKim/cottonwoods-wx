@@ -100,7 +100,9 @@ def plan_runs(found: pd.DataFrame, cfg: dict) -> pd.DataFrame:
             last = max(REGISTRY[model].fxx_list(start.to_pydatetime(), cfg))
             for lead in b["leads_hours"]:
                 t = start - pd.Timedelta(hours=lead)
-                init = t.normalize() + pd.Timedelta(hours=max(h for h in hours if h <= t.hour))                     if any(h <= t.hour for h in hours) else                     (t.normalize() - pd.Timedelta(days=1)) + pd.Timedelta(hours=max(hours))
+                earlier = [h for h in hours if h <= t.hour]          # the newest cycle at or before t
+                init = (t.normalize() + pd.Timedelta(hours=max(earlier)) if earlier
+                        else t.normalize() - pd.Timedelta(days=1) + pd.Timedelta(hours=max(hours)))
                 need = (end - init) / pd.Timedelta(hours=1)
                 if (start - init) / pd.Timedelta(hours=1) >= last:
                     continue                             # the run ends before the storm begins

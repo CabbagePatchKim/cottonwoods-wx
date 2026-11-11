@@ -743,7 +743,9 @@ def _backfill_verified(storms: pd.DataFrame, fc: pd.DataFrame, psteps: dict, ost
         if new:
             append_scores(score_storm(storms.loc[i], fc, new, cfg), root)
         mine = blocked[blocked["storm_id"].astype(str) == str(st.storm_id)] if not blocked.empty else blocked
-        if mine.empty or "obs_regime" not in mine or (relabel and storms.at[i, "obs_flow_source"] == "rap")                 or pd.notna(storms.at[i, "regime_init"]) and pd.isna(st.get("regime_init")):
+        regime_found = pd.notna(storms.at[i, "regime_init"]) and pd.isna(st.get("regime_init"))   # set just now
+        if (mine.empty or "obs_regime" not in mine or regime_found
+                or (relabel and storms.at[i, "obs_flow_source"] == "rap")):
             append_block_scores(score_blocks(storms.loc[i], fc, psteps, cfg, rap, soundings), root)
 
 

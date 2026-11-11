@@ -53,10 +53,26 @@ trends and guidance are all unproven. Until a few storms verify, the work is MEA
        (2) pilot 11/10: backfill uses GFS from AWS first + 4 NOAA downloads (config backfill). ECMWF 2025-26: 71 runs,
        ~1 min each, 7 MB total; every 06/18z run failed at first: the mirrors file older off-hour runs as "scda"
        (ENS "waef"), not "oper". FIXED (herbie_generic.herbie_args; recent runs resolve to the same file, live
-       unchanged); failed runs retried. Next: time 1 GFS + 1 HRRR run (ask the owner first: memory), then their pilot.
+       unchanged). 11/10 end: 40 of 69 archived (all 00/12z); the 29 06/18z runs were NOT retried until 11/11:
+       retry DONE, all 69 IFS runs archived (manifest 69, none failed).
+       GFS 11/11: the two slow timings (1,211 s / 532 s) were GDEX (before AWS-first). AWS: 10-03 00z 56 h in 63 s,
+       10-02 00z 80 h in 87 s (~1.1 s per forecast hour; 2025-26 plan 69 runs / 5,121 h ~ 1.5 h). AWS vs GDEX same
+       run: every shared row identical; GDEX lacked 2 steps per run (10-01 320/340, 10-02 240/260), AWS complete.
+       Next: GFS pilot (~1.5 h, ask), time 1 HRRR run (ask the owner first: memory), then its pilot.
 5. [ ] Only then decide from results: keep / fix / drop (regime factors, cell blend, the 0 -> 1 C rain/snow rule,
        PRISM idea), and the design changes (store raw + derive on read; a `variant` column instead of "GFS raw";
        one scores table; split CLAUDE.md into architecture / decision log / status).
+
+## Review of the 11/10 work (11/11, in main, not released)
+Dry run of main's storms step on a bucket copy: ok (frozen regime: weekend storm now S/E -> SW -> NW from GDPS
+11/01 00z; trend table + NWS line render). FIXED: (1) cells.blend_points blended the int `filled_values` of
+hole-filled runs -> pandas 3 TypeError (golden check crashed; the cloud re-derive would at the next DERIVE_VERSION);
+bookkeeping now not blended. (2) NWS statement parser: "updated as of / as of" times read as starts; NWS date typos
+(Sep for Nov, Feb for Mar) -> weekday decides past pns.max_storm_days (10); weekday start after the statement -> none;
+"thunderstorms" read as Thursday (whole names only); a row time later on the statement's day (1/11/2025 slip) ->
+statement time, not a week back. 9 stored starts + 1 reading corrected; no backfill storm's NWS total changed.
+(3) gauge rule 5 per elapsed hour (no stored gap rose > 0.4": no effect). Golden IDENTICAL, 197 tests, ruff clean.
+OPEN (owner): Collins Worker hours win over an NWS statement even when they cover only part of the window.
 
 ## Small fixes to bundle with the step-3 release (noted 10/30)
 - DONE in main 11/10 (owner request): each storm in the text Storms report ends with a trend table: per point UP /

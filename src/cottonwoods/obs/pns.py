@@ -39,6 +39,11 @@ _START = re.compile(r"\b(?:from|beginning|starting|since|between)\b(?P<rest>[^.]
 _PROSE_END = re.compile(r"\*{5}|^\.\.\.[A-Z ]+ REPORTS\.\.\.", re.MULTILINE | re.IGNORECASE)
 _DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 _PARTS = {"morning": 6, "afternoon": 12, "evening": 18, "night": 18}
+# whole names or abbreviations only ("thunderstorms" is not Thursday, "month" not Monday, "marginal" not March)
+_WEEKDAY = re.compile(r"\b(mon|tue|wed|thu|fri|sat|sun)(?:day|s|sday|nesday|r|rs|rsday|urday)?\.?(?![a-z])",
+                      re.IGNORECASE)
+_MONTH_DAY = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(?:uary|ruary|ch|il|e|y|ust|t|tember|"
+                        r"ober|ember)?\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b", re.IGNORECASE)
 
 
 def fetch(cfg: dict, begin: str, end: str) -> str:
@@ -98,29 +103,50 @@ def _hour(text: str) -> int | None:
     return _PARTS[m.group(1).lower()] if m else None
 
 
-def start_of(prose: str, issued_local: pd.Timestamp) -> tuple[str, pd.Timestamp | None]:
-    """The stated storm start (the prose as written, and a naive local time when one can be read). Only the words
-    before through / until / to / ending / and count. A date ("October 31st", "Feb 16") wins over a weekday; the
-    hour is a clock time, noon / midnight or a part of the day (morning 6, afternoon 12, evening / night 18), else
-    midnight. Neither a date nor a weekday: no start."""
-    flat = " ".join(prose.split())
-    m = _START.search(flat)
-    if not m:
-        return "", None
-    rest = re.split(r"\b(?:through|thru|until|to|ending|and|continuing)\b", m.group("rest"), maxsplit=1,
-                    flags=re.IGNORECASE)[0]
-    note = m.group(0).strip()
-    hour = _hour(rest)
-    date = re.search(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b",
-                     rest, re.IGNORECASE)
+def start_of(prose: str, issued_local: pd.Timestamp, max_storm_days: float) -> tuple[str, pd.Timestamp | None]:
+    """The stated storm start (the prose as written, and a naive local time when one can be read). Each "from /
+    beginning / since ..." phrase is tried in turn; only its words before through / until / to / ending / and /
+    updated / as of count ("from the storm as of 9 AM Sunday" states no start: 9 AM is the reading). A date
+    ("October 31st", "Feb 16") wins over a weekday unless it is after the statement or more than max_storm_days
+    before it (NWS typos, checked 2026-11-11: "Friday September 4" in a November statement, "Sunday, Feb 2" in
+    March): then the weekday decides. A weekday start after the statement ("beginning Monday evening" on a Monday
+    morning) is a typo too: no start. The hour is a clock time, noon / midnight or a part of the day (morning 6,
+    afternoon 12, evening / night 18), else midnight. Neither a date nor a weekday: no start."""
+    flat, first = " ".join(prose.split()), ""
+    for m in _START.finditer(flat):
+        rest = re.split(r"\b(?:through|thru|until|to|ending|and|continuing|updated|as of)\b", m.group("rest"),
+                        maxsplit=1, flags=re.IGNORECASE)[0]
+        first = first or m.group(0).strip()
+        t = _start_time(rest, issued_local, max_storm_days)
+        if t is not None:
+            return m.group(0).strip(), t
+    return first, None
+
+
+def _start_time(rest: str, issued_local: pd.Timestamp, max_storm_days: float) -> pd.Timestamp | None:
+    """start_of's time from one phrase (see there), or None."""
+    hour = pd.Timedelta(hours=_hour(rest) or 0)
+    date = _MONTH_DAY.search(rest)
     if date:
-        t = _dated(pd.to_datetime(date.group(1)[:3], format="%b").month, int(date.group(2)), issued_local)
-        return note, t + pd.Timedelta(hours=hour or 0)
-    day = re.search(r"\b(" + "|".join(_DAYS) + r")[a-z]*\b", rest, re.IGNORECASE)
+        t = _dated(pd.to_datetime(date.group(1)[:3], format="%b").month, int(date.group(2)), issued_local) + hour
+        if issued_local - pd.Timedelta(days=max_storm_days) <= t <= issued_local:
+            return t
+    day = _WEEKDAY.search(rest)
     if day:
         t = _on_or_before(day.group(1), 0, issued_local.normalize() + pd.Timedelta(hours=23, minutes=59))
-        return note, t + pd.Timedelta(hours=hour or 0) if t is not None else None
-    return note, None
+        if t is not None and t + hour <= issued_local:
+            return t + hour
+    return None
+
+
+def _reading_time(day: str, hour: int, issued_local: pd.Timestamp) -> pd.Timestamp | None:
+    """A table row's time ("4 AM Thu"): the latest such time not after the statement. A time later on the statement's
+    own day is an NWS slip, not last week (1/11/2025: "3 PM Sat" in a statement sent 8:26 AM Sat, corrected that
+    afternoon): the statement's time."""
+    same_day = day.lower()[:3] == _DAYS[issued_local.weekday()]
+    if same_day and issued_local.normalize() + pd.Timedelta(hours=hour) > issued_local:
+        return issued_local
+    return _on_or_before(day, hour, issued_local)
 
 
 def _columns(header: str) -> dict[str, int]:
@@ -154,7 +180,7 @@ def _readings(lines: list[str], sites: dict[str, str], issued_local: pd.Timestam
                 label = min(cols, key=lambda k: abs(cols[k] - right))
                 if label in ("snow", "precip") and abs(cols[label] - right) <= 3:
                     got["snow" if label == "snow" else "water"] = float(v.group(0))
-            local = _on_or_before(m.group("day"), int(m.group("hour")) % 12 + 12 * (m.group("ampm") == "PM"),
+            local = _reading_time(m.group("day"), int(m.group("hour")) % 12 + 12 * (m.group("ampm") == "PM"),
                                   issued_local)
             if got and local is not None:
                 out.append({"site": site, "local": local, **got})
@@ -172,8 +198,9 @@ def _readings(lines: list[str], sites: dict[str, str], issued_local: pd.Timestam
     return out
 
 
-def parse_statement(text: str, sites: dict[str, str]) -> list[dict]:
-    """One statement -> one row per station in `sites` ({our site: regex on the station name}). A station listed
+def parse_statement(text: str, sites: dict[str, str], max_storm_days: float) -> list[dict]:
+    """One statement -> one row per station in `sites` ({our site: regex on the station name}); max_storm_days: see
+    start_of (config pns.max_storm_days). A station listed
     more than once: a line with both values wins (the latest); otherwise its latest snow and latest water are joined,
     read at the later of their times. Values whose time can't be read are left out."""
     lines = text.split("\n")
@@ -187,7 +214,7 @@ def parse_statement(text: str, sites: dict[str, str]) -> list[dict]:
     # the prose: after the issue line (and the title, when there is one), before the first table or section
     first = next(i for i, ln in enumerate(lines) if _ISSUED.match(ln.strip()))
     body = _PROSE_END.split("\n".join(lines[first + 1:first + 40]), maxsplit=1)[0]
-    note, start = start_of(body.split("Preliminary Storm Information...")[-1], issued_local)
+    note, start = start_of(body.split("Preliminary Storm Information...")[-1], issued_local, max_storm_days)
     product = next((ln.strip() for ln in lines[:6] if ln.startswith("NOUS")), "")
     rows = []
     for site, g in pd.DataFrame(values).reindex(columns=["site", "local", "snow", "water"]).groupby("site"):
@@ -206,9 +233,9 @@ def parse_statement(text: str, sites: dict[str, str]) -> list[dict]:
     return rows
 
 
-def parse(text: str, sites: dict[str, str]) -> pd.DataFrame:
+def parse(text: str, sites: dict[str, str], max_storm_days: float) -> pd.DataFrame:
     """Every statement in IEM's text -> one row per station per statement (COLS)."""
-    rows = [r for s in statements(text) for r in parse_statement(s, sites)]
+    rows = [r for s in statements(text) for r in parse_statement(s, sites, max_storm_days)]
     df = pd.DataFrame(rows, columns=COLS)
     if df.empty:
         return df

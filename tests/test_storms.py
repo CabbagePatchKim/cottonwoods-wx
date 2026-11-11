@@ -406,6 +406,13 @@ def test_gauge_spikes_and_dips_that_come_straight_back_and_impossible_jumps_are_
     assert abs(gauge_increments(jump, g).sum() - (0.8 + 0.7)) < 1e-9 # the 1.4" and 11.9" hours aren't precip
     emptied = pd.Series([12.0, 12.1, 12.2, 0.0, 0.0, 0.1, 0.2, 0.3, 0.3, 0.3, 0.4, 0.4], index=t)   # stays low: real
     assert abs(gauge_increments(emptied, g).sum() - 0.6) < 1e-9
+    # missing hours (2026-11-11): a 1.5" rise over a 4 h gap is real precip (under 1.0"/h); 11.9" in 2 h still isn't
+    gap = pd.Series([10.0, 10.1, 11.6, 11.7], index=pd.to_datetime(["2023-04-10 04:00", "2023-04-10 05:00",
+                                                                     "2023-04-10 09:00", "2023-04-10 10:00"]))
+    assert abs(gauge_increments(gap, g).sum() - 1.7) < 1e-9
+    big = pd.Series([34.6, 46.5, 46.6], index=pd.to_datetime(["2023-04-17 04:00", "2023-04-17 06:00",
+                                                              "2023-04-17 07:00"]))
+    assert abs(gauge_increments(big, g).sum() - 0.1) < 1e-9
 
 
 def test_dry_day_with_gauge_wobble_is_not_an_observed_event():

@@ -23,7 +23,9 @@ import numpy as np
 import pandas as pd
 
 KEYS = ["lead_hr", "valid_start", "valid_end", "member"]          # one step of one run (member: ensembles)
-NOT_BLENDED = KEYS + ["grid_dist_km"]                             # numbers that describe the row, not the weather
+# numbers that describe the row, not the weather. filled_values / derive_version (2026-11-11): bookkeeping; blending
+# the int count of a hole-filled run wrote 30.0 into an int column, which pandas 3 refuses (golden check crashed).
+NOT_BLENDED = KEYS + ["grid_dist_km", "filled_values", "derive_version"]
 
 
 def cell_name(model: str, lat: float, lon: float) -> str:

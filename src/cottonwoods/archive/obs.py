@@ -252,7 +252,7 @@ def archive_pns(cfg: dict, begin: str, end: str, root: Path | None = None, fetch
     """NWS Preliminary Storm Information statements issued begin..end (obs/pns.py) -> one row per statement per
     station in config pns.sites, merged into data/archive/obs/pns (month = the reading's). A statement fetched again
     replaces its earlier copy. Returns the number of rows read."""
-    df = pns.parse((fetcher or pns.fetch)(cfg, begin, end), cfg["pns"]["sites"])
+    df = pns.parse((fetcher or pns.fetch)(cfg, begin, end), cfg["pns"]["sites"], cfg["pns"]["max_storm_days"])
     if df.empty:
         return 0
     df["time_utc"] = df["reading_utc"]

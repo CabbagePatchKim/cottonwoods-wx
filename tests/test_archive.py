@@ -149,6 +149,10 @@ def test_points_take_the_blend_of_the_four_cells_and_cells_stay_as_pulled():
     assert out.loc["nw", "qpf_mm"] == 3.0                                             # exactly the NW cell
     assert out.loc["gfs_40.50N_111.75W", "qpf_mm"] == 1.0 and out.loc["mid", "cell_blend"]
     assert blend_points(blend_points(df, cfg), cfg).equals(blend_points(df, cfg))     # re-deriving is safe
+    # a hole-filled run's int bookkeeping is not weather: not blended (pandas 3 refused 30.0 in an int column)
+    filled = df.assign(filled_values=[30, 0, 0, 0, 30, 30][:len(df)]).astype({"filled_values": "int64"})
+    got = blend_points(filled, cfg).set_index("point")
+    assert got.loc["mid", "filled_values"] == 30 and got["filled_values"].dtype == "int64"
 
 
 def test_a_model_marked_blend_false_keeps_its_nearest_cell():
