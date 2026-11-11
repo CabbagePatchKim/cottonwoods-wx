@@ -10,13 +10,17 @@ Step 1, the storm list (this module, scripts/backfill_storms.py):
     storms.gap_hours dry, at least storms.min_total_in;
   - each storm's totals: the NWS statement (storms.pns_totals, the live rule) and the owner's journal stake reading
     (journal storms overlapping it).
-Later steps score model runs against these storms with the live scoring code.
+Step 2, the runs (plan_runs, scripts/backfill_runs.py): for each storm and each model in config backfill.models,
+the newest run of that model issued at least each of backfill.leads_hours before the storm began, fetched only up
+to the storm's end (archive_run max_lead_hours) into its own archive (data/local/backfill/archive), never the live
+one. Later steps score them with the live scoring code.
 """
 from __future__ import annotations
 
 import pandas as pd
 
 from . import journal, storms
+from .models.registry import REGISTRY, cycles
 from .units import MM_PER_IN
 
 WINTER = (10, 5)           # October through May
@@ -81,3 +85,30 @@ def attach_totals(st: pd.DataFrame, totals: pd.DataFrame, journal_storms: pd.Dat
                 out.at[i, "journal_id"], out.at[i, "journal_snow_in"] = j.storm_id, j.actual_in
                 break
     return out
+
+
+def plan_runs(found: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """The runs to fetch: one row per (model, init) with the storms it serves and the furthest lead any of them
+    needs (hours to the latest storm end, capped at the model's own last hour). Storms under backfill.min_water_in
+    are left out. A run that can't reach a storm's start (HRRR at 72 h) is left out for that storm."""
+    b = cfg["backfill"]
+    rows = []
+    for _, s in found[found["obs_water_in"] >= b["min_water_in"]].iterrows():
+        start, end = pd.Timestamp(s.final_start), pd.Timestamp(s.final_end)
+        for model in b["models"]:
+            hours = cycles(cfg, model)
+            last = max(REGISTRY[model].fxx_list(start.to_pydatetime(), cfg))
+            for lead in b["leads_hours"]:
+                t = start - pd.Timedelta(hours=lead)
+                init = t.normalize() + pd.Timedelta(hours=max(h for h in hours if h <= t.hour))                     if any(h <= t.hour for h in hours) else                     (t.normalize() - pd.Timedelta(days=1)) + pd.Timedelta(hours=max(hours))
+                need = (end - init) / pd.Timedelta(hours=1)
+                if (start - init) / pd.Timedelta(hours=1) >= last:
+                    continue                             # the run ends before the storm begins
+                rows.append({"model": model, "init": init, "storm_id": str(s.storm_id), "lead_h": lead,
+                             "max_lead_hours": min(need, last)})
+    plan = pd.DataFrame(rows, columns=["model", "init", "storm_id", "lead_h", "max_lead_hours"])
+    if plan.empty:
+        return plan
+    return (plan.groupby(["model", "init"], as_index=False)
+            .agg(storms=("storm_id", lambda x: " ".join(sorted(set(x)))), max_lead_hours=("max_lead_hours", "max"))
+            .sort_values(["model", "init"]).reset_index(drop=True))

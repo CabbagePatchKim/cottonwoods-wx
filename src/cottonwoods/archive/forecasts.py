@@ -181,8 +181,12 @@ def archive_run(
     force: bool = False,
     save_dir: str | None = None,
     puller=None,
+    max_lead_hours: float | None = None,
 ) -> tuple[Path, str]:
     """Archive one model run. Returns (path, status) with status 'exists' or 'archived'.
+    max_lead_hours: fetch only the forecast hours up to this lead (the verification backfill, 2026-11-10: a past
+    storm needs only the hours reaching it). The hours kept are the run's first ones, so totals since init (IFS) and
+    bucket resets (GFS) still deaccumulate correctly.
 
     Raises RuntimeError if nothing came back or the run is too incomplete (usually: not fully posted yet).
     """
@@ -194,6 +198,8 @@ def archive_run(
 
     spec = REGISTRY[model]
     fxx = spec.fxx_list(init, cfg)
+    if max_lead_hours is not None:
+        fxx = [f for f in fxx if f <= max_lead_hours]
     # Tests pass a fake `puller` so no download happens; normally we look up the real one for this model.
     pull = puller or get_puller(model, cfg)
     points = run_points(model, cfg)

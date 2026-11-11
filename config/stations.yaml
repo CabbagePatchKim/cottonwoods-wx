@@ -33,6 +33,12 @@ collins_source:
 # Snowbird SNOTEL, 9,170 ft, ~1.5 km from Collins, goes back years).
 backfill:
   fallback_sites: {alta: [snowbird]}
+  # step 2, the runs (scripts/backfill_runs.py): each model's run issued at least each lead before a storm began,
+  # fetched only up to the storm's end, a model at a time, with the live archive.download_workers (one GFS run of
+  # 104 h peaked at ~130 MB; 2 workers took 20 min, mostly waiting on NCAR)
+  models: [GFS, HRRR, IFS]
+  leads_hours: [24, 48, 72]
+  min_water_in: 0.5          # storms with less observed water are not worth a download
 
 # NWS Salt Lake "Preliminary Storm Information" statements (obs/pns.py, owner 2026-11-10): Collins storm totals,
 # public, archived by IEM since well before 2016. Scored only where the Worker's hours give no snow total (owner:
