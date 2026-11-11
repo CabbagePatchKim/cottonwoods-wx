@@ -55,7 +55,7 @@ REQUIRED = {
                "freezing_wet_hours"],
     "snotel_settings": ["tz_offset_hours"],
     "obs_fetch": ["retries", "retry_wait_s", "catchup_max_days", "ghcn_days"],
-    "gauge": ["median_hours", "reset_drop_in"],
+    "gauge": ["median_hours", "reset_drop_in", "glitch_hours", "max_hourly_in"],
     "local_settings": ["standard_offset_hours"],
     "points": [],
     "snotel": [],

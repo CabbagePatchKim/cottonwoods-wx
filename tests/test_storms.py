@@ -393,6 +393,21 @@ def test_gauge_noise_is_not_precip_but_real_rises_and_resets_are_handled():
     assert abs(gauge_increments(emptied, g).sum() - 0.5) < 1e-9
 
 
+def test_gauge_spikes_and_dips_that_come_straight_back_and_impossible_jumps_are_not_precip():
+    # found by the verification backfill (2026-11-10): older SNOTEL hourly data spikes for one hour at 08Z
+    from cottonwoods.gauge import gauge_increments
+    g = make_cfg()["gauge"]
+    t = pd.date_range("2023-04-10 04:00", periods=12, freq="h")
+    spike = pd.Series([34.6, 34.6, 34.6, 34.6, 63.5, 34.6, 34.6, 34.7, 34.6, 34.6, 34.6, 34.6], index=t)   # Atwater
+    assert abs(gauge_increments(spike, g).sum() - 0.1) < 1e-9        # only the real 0.1" wobble, not 28.9"
+    dip = pd.Series([20.0, 20.1, 0.4, 20.1, 20.2, 20.3, 20.3, 20.3, 20.4, 20.4, 20.4, 20.4], index=t)
+    assert abs(gauge_increments(dip, g).sum() - 0.4) < 1e-9          # a one-hour dip is not a gauge emptying
+    jump = pd.Series([34.6, 35.4, 36.8, 48.7, 48.7, 48.8, 48.8, 48.9, 48.9, 49.2, 49.4, 49.4], index=t)   # 4/17/2023
+    assert abs(gauge_increments(jump, g).sum() - (0.8 + 0.7)) < 1e-9 # the 1.4" and 11.9" hours aren't precip
+    emptied = pd.Series([12.0, 12.1, 12.2, 0.0, 0.0, 0.1, 0.2, 0.3, 0.3, 0.3, 0.4, 0.4], index=t)   # stays low: real
+    assert abs(gauge_increments(emptied, g).sum() - 0.6) < 1e-9
+
+
 def test_dry_day_with_gauge_wobble_is_not_an_observed_event():
     from cottonwoods.storms import detect_events, obs_steps
     cfg = make_cfg()

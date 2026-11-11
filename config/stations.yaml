@@ -28,6 +28,12 @@ collins_source:
   key_header: X-CWX-Key
   timeout_s: 90                # the Worker may start a browser when asked to refresh
 
+# Verification backfill (src/cottonwoods/backfill.py, docs/PLAN.md step 4, owner 2026-11-10). A point whose own SNOTEL
+# gauges didn't exist yet uses these instead for finding past storms (Atwater reports only from the 2022-23 winter;
+# Snowbird SNOTEL, 9,170 ft, ~1.5 km from Collins, goes back years).
+backfill:
+  fallback_sites: {alta: [snowbird]}
+
 # NWS Salt Lake "Preliminary Storm Information" statements (obs/pns.py, owner 2026-11-10): Collins storm totals,
 # public, archived by IEM since well before 2016. Scored only where the Worker's hours give no snow total (owner:
 # Worker first, then these). A statement is a running total from a stated start, so a storm takes the latest one
@@ -214,6 +220,8 @@ gauge:
   median_hours: 1         # centered rolling median first (1 = off: on real months the plain envelope matched the
                           # net change best, and smoothing loses precip at resets and at the newest hour)
   reset_drop_in: 0.5      # a drop bigger than this = gauge emptied/serviced: start over (noise never drops this far)
+  glitch_hours: 3         # a reading that jumps more than reset_drop_in and is back within this many hours = glitch
+  max_hourly_in: 1.0      # an hourly rise above this is a service / sensor jump, not precip (2026-11-10, backfill)
 
 # Utah local STANDARD time (MST, UTC-7): the NOAA coop observer's daily reading time (ALTA reads at 18:00 MST) and
 # the local date of hand-entered snow reports. Not the same as SNOTEL's clock above. (Report DISPLAY times are

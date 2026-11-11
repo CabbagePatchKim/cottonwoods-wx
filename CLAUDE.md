@@ -243,7 +243,7 @@ Running live, TWO places for now (side-by-side check before cutover):
   archive obs/pns, archive.obs.load_totals = hand totals + statement rows as source "nws statement"; storms.pns_totals
   picks the latest reading in the window, start within pns.start_match_hours when stated). Both layouts (table;
   2023-24 sections). OWNER: NO MORE HAND ENTRIES; observed snow order = Worker hours, NWS statement, old hand total
-  (storms.observed_snow). Pass obs step fetches the last pns.days; scripts/backfill_pns.py (2016-10 on, pushed to the
+  (storms.observed_snow). Pass obs step fetches the last pns.days; scripts/backfill_obs.py pns (2016-10 on, pushed to the
   bucket 11/10). Journal: 7 of 8 within 1" of the stake; 3/5/2026 NWS 33" vs 16" = NWS's period spans two storms.
   collins_due: warns only when the Worker is late (storms.collins_worker_late_hours) or a storm has no total.
   (2) REGIME RUN FROZEN AT THE STORM'S START (storms.csv regime_model / regime_init; fc_flow / modes / parts with it;

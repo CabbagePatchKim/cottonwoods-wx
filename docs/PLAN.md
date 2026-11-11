@@ -32,7 +32,7 @@ trends and guidance are all unproven. Until a few storms verify, the work is MEA
        (obs/pns.py; both layouts: the "Preliminary Storm Information" table and the 2023-24 "SNOWFALL / PRECIPITATION
        REPORTS" sections). Owner 11/10: NO MORE HAND ENTRIES; order = Worker hours, then NWS statement, then an old
        hand total (storms.observed_snow). Pass obs step fetches the last pns.days; laptop backfill 2016-10 on
-       (scripts/backfill_pns.py: 1,628 Collins rows, not yet pushed to the bucket). Journal check: 7 of 8 storms within
+       (scripts/backfill_obs.py pns: 1,628 Collins rows, not yet pushed to the bucket). Journal check: 7 of 8 storms within
        1" of the stake (10/10, 49/50, 28/28, 10/10, 11.5/11, 46/47); 3/5/2026 stake 16" vs NWS 33": owner 11/10, NWS
        most likely counted two storms as one period (noon Wed - 6 PM Fri) where the owner counted one. So a statement's
        period can span two of our storms: the start check (pns.start_match_hours) catches it only when a start is
@@ -40,6 +40,16 @@ trends and guidance are all unproven. Until a few storms verify, the work is MEA
        Session reminder now warns only when the Worker is late or a storm has no total.
 4. [ ] Then the backfill: score archived / re-pulled runs (NOAA HRRR / GFS archives, U of U since 2026-01, RRFS since
        2026-08) against those Collins totals and the journal, so models and methods are judged on many storms.
+       STARTED 11/10 (owner). Stages: (1) storm list, (2) pilot re-pull 2025-26 GFS / HRRR / ECMWF at 24/48/72 h,
+       (3) widen, (4) season tables + regime factors on vs off -> step 5.
+       (1) DONE 11/10: SNOTEL hourly backfilled 2016-10 to 2026-05 (scripts/backfill_obs.py snotel, laptop only, not
+       pushed); backfill.py + scripts/backfill_storms.py -> data/local/backfill/storms.csv: 696 storms, 269 with
+       >= 0.5" water, 165 of those with an NWS snow total; journal storms all match NWS within 1" but 3/5/2026.
+       Alta = Atwater from 2022-23, Snowbird SNOTEL before (config backfill.fallback_sites).
+       FOUND + FIXED (live rule too, owner to hear): older SNOTEL hourly data has one-hour spikes (Atwater / Snowbird
+       34.5 -> 63.5 -> 34.5" daily at 08Z) and sensor jumps (Atwater 4/17/2023 +14" in 2 h, pillow flat); the gauge
+       rule counted them (winters of 400-1,500"). gauge.py rules 4-5 (config gauge.glitch_hours 3, max_hourly_in
+       1.0): 151 of 314 months changed, winters now 35-58"; live Oct-Nov 2026 months unchanged to 0.01".
 5. [ ] Only then decide from results: keep / fix / drop (regime factors, cell blend, the 0 -> 1 C rain/snow rule,
        PRISM idea), and the design changes (store raw + derive on read; a `variant` column instead of "GFS raw";
        one scores table; split CLAUDE.md into architecture / decision log / status).
