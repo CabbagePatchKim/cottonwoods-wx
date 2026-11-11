@@ -411,7 +411,8 @@ def storm_trend_lines(st, fc: pd.DataFrame, cfg: dict) -> list[str]:
         word = "UP" if med >= steady else "DOWN" if med <= -steady else "SAME"
         rows.append((v.get("label", p), word, f"{med:+.1f}\"", f"{up} / {down} / {len(ch) - up - down}"))
     w = max(len(r[0]) for r in rows)
-    return ([f"    trend: storm snow vs each model's previous run (median change; SAME = under {steady:g}\" either way)",
+    return ([f"    trend: storm snow vs each model's previous run, only runs covering the whole storm (median change; "
+             f"SAME = under {steady:g}\" either way)",
              f"{'point':<{w}}  trend  change  models up / down / same"]
             + [f"{a:<{w}}  {b:<5}  {c:>6}  {d}" for a, b, c, d in rows])
 

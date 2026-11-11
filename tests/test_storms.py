@@ -865,3 +865,31 @@ def test_storm_section_ends_with_each_points_snow_trend_since_the_previous_runs(
     assert "UP" in alta and '+3.6"' in alta and "2 / 1 / 0" in alta
     snowbird = next(ln for ln in storm_trend_lines(st, fc, cfg) if ln.startswith("snowbird"))
     assert snowbird.split()[1:] == ["-", "-", "-"]                          # no runs there: nothing to compare
+
+
+def test_storm_trend_counts_only_runs_that_cover_the_whole_storm():
+    # owner 2026-11-10: a run that reaches more of the storm than the one before naturally "trends up"; only runs
+    # covering the whole window may be compared
+    from cottonwoods.report import storm_trend_lines
+    cfg = make_cfg()
+    st = pd.Series({"fc_start": pd.Timestamp("2026-11-11 00:00"), "fc_end": pd.Timestamp("2026-11-11 12:00")})
+
+    def run(model, init, last_valid, snow_per_hour=0.5):
+        vs = pd.date_range("2026-11-10 12:00", last_valid, freq="h", inclusive="left")
+        inside = (vs >= st.fc_start) & (vs < st.fc_end)
+        return pd.DataFrame({"model": model, "init": pd.Timestamp(init), "point": "alta", "member": np.nan,
+                             "lead_hr": 1, "valid_start": vs, "valid_end": vs + pd.Timedelta(hours=1),
+                             "qpf_mm": np.where(inside, 2.0, 0.0), "snow_in": np.where(inside, snow_per_hour, 0.0)})
+    # HRRR's older run ends 6 h into the storm (3"), the newer covers it all (6"): not a trend, left out
+    partial = pd.concat([run("HRRR", "2026-11-10 00:00", "2026-11-11 06:00"),
+                         run("HRRR", "2026-11-10 06:00", "2026-11-12 00:00")])
+    alta = next(ln for ln in storm_trend_lines(st, partial, cfg) if ln.startswith("alta"))
+    assert alta.split()[1:] == ["-", "-", "-"]
+    # the newest run partial (ends early) and the older one full: also left out
+    late = pd.concat([run("HRRR", "2026-11-10 00:00", "2026-11-12 00:00"),
+                      run("HRRR", "2026-11-10 06:00", "2026-11-11 06:00")])
+    assert next(ln for ln in storm_trend_lines(st, late, cfg) if ln.startswith("alta")).split()[1:] == ["-", "-", "-"]
+    # once two runs cover it all, it counts: same snow = SAME
+    both = pd.concat([partial, run("HRRR", "2026-11-10 12:00", "2026-11-12 00:00")])
+    alta = next(ln for ln in storm_trend_lines(st, both, cfg) if ln.startswith("alta"))
+    assert "SAME" in alta and '+0.0"' in alta and "0 / 0 / 1" in alta
