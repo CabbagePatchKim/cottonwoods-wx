@@ -50,6 +50,10 @@ trends and guidance are all unproven. Until a few storms verify, the work is MEA
        34.5 -> 63.5 -> 34.5" daily at 08Z) and sensor jumps (Atwater 4/17/2023 +14" in 2 h, pillow flat); the gauge
        rule counted them (winters of 400-1,500"). gauge.py rules 4-5 (config gauge.glitch_hours 3, max_hourly_in
        1.0): 151 of 314 months changed, winters now 35-58"; live Oct-Nov 2026 months unchanged to 0.01".
+       (2) pilot 11/10: backfill uses GFS from AWS first + 4 NOAA downloads (config backfill). ECMWF 2025-26: 71 runs,
+       ~1 min each, 7 MB total; every 06/18z run failed at first: the mirrors file older off-hour runs as "scda"
+       (ENS "waef"), not "oper". FIXED (herbie_generic.herbie_args; recent runs resolve to the same file, live
+       unchanged); failed runs retried. Next: time 1 GFS + 1 HRRR run (ask the owner first: memory), then their pilot.
 5. [ ] Only then decide from results: keep / fix / drop (regime factors, cell blend, the 0 -> 1 C rain/snow rule,
        PRISM idea), and the design changes (store raw + derive on read; a `variant` column instead of "GFS raw";
        one scores table; split CLAUDE.md into architecture / decision log / status).
