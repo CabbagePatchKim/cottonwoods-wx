@@ -3,6 +3,16 @@
 Shown at the start of every Claude Code session by the SessionStart hook (scripts/collins_due.py). Update it as
 steps finish; keep it short.
 
+## FIRST THING NEXT SESSION (owner, 2026-11-11): ask these before anything else
+1. Collins Worker hours win over an NWS statement even when they cover only part of the storm window (e.g. a
+   Worker outage). Fall back to the statement when the Worker hours have a gap? (storms.observed_snow /
+   hand_obs_totals: no coverage check today)
+2. Push the re-read NWS statements to the bucket (data/archive/obs/pns: 9 starts + 1 reading corrected 11/11 on the
+   laptop only; the bucket still has the old rows)? `bucket_sync.py push --only ...`
+3. Start the 2025-26 GFS backfill pilot (69 runs, ~1.5 h from AWS)? And re-pull GFS 2025-10-01 / 10-02 00z from AWS
+   (their GDEX copies lack 2 steps each)?
+Then: time 1 HRRR run (ask first), its pilot; v1.11 still unreleased (owner: not yet).
+
 ## Collins Worker (done 2026-11-03)
 Locked (X-CWX-Key; 403 without it, checked), deployed, GitHub secrets CWX_COLLINS_URL / CWX_COLLINS_KEY set,
 pushed to main, released as v1.8 (owner approved 11/03). The key's only copy is ~/.cwx_collins_key (laptop, never
