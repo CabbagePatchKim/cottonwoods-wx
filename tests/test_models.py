@@ -164,7 +164,7 @@ def test_each_puller_gets_its_servers_download_workers_from_config():
     cfg = load_config()
     w = cfg["archive"]["download_workers"]
     assert get_puller("HRRR", cfg).keywords == {"workers": w["noaa"]}
-    assert get_puller("GFS", cfg).keywords == {"workers": w["noaa"], "gdex_workers": w["gdex"]}
+    assert get_puller("GFS", cfg).keywords == {"workers": w["noaa"], "gdex_workers": w["gdex"], "aws_first": False}
     thr = cfg["archive"]["throttle"]                            # Herbie (S3) pullers also wait out throttling
     assert get_puller("IFS", cfg).keywords == {"workers": w["ecmwf"], "throttle": thr}
     assert get_puller("IFS", cfg).args == ("IFS",)
