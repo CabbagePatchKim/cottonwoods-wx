@@ -359,3 +359,12 @@ def test_a_retired_model_leaves_the_high_res_set_and_the_season_tables_but_its_s
 def test_uu_gfs_runs_only_at_the_cycles_its_files_exist():
     cfg = make_cfg()
     assert [t.hour for t in cycles_between("UUGFS", cfg, datetime(2026, 11, 1), datetime(2026, 11, 1, 23))] == [0, 6, 12]
+
+
+def test_ecmwf_off_hour_runs_use_their_own_product_names():
+    from cottonwoods.models.herbie_generic import herbie_args
+    assert herbie_args("IFS", datetime(2025, 12, 24, 0))["product"] == "oper"
+    assert herbie_args("IFS", datetime(2025, 12, 24, 6))["product"] == "scda"
+    assert herbie_args("IFS", datetime(2025, 12, 24, 18))["product"] == "scda"
+    assert herbie_args("ENS", datetime(2025, 12, 24, 18))["product"] == "waef"
+    assert herbie_args("NAM", datetime(2025, 12, 24, 6))["product"] == "awphys"

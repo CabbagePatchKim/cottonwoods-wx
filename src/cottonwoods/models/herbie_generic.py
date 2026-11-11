@@ -42,6 +42,20 @@ SPECS = {
 }
 
 
+# ECMWF files its 06/18z runs under other product names (open data "scda" for HRES, "waef" for ENS). The newest runs
+# came through under "oper" (live pass), but the mirrors' older runs only answer to these names (backfill 2026-11-10:
+# every 06/18z IFS run of 2025-26 "nothing retrieved" under "oper", found under "scda" on AWS / Google / Azure).
+OFF_HOUR_PRODUCT = {"oper": "scda", "enfo": "waef"}
+
+
+def herbie_args(model: str, init) -> dict:
+    """The Herbie settings for this model and run (ECMWF 06/18z runs use their own product name)."""
+    args = dict(SPECS[model]["herbie"])
+    if args.get("model") == "ifs" and init.hour in (6, 18) and args["product"] in OFF_HOUR_PRODUCT:
+        args["product"] = OFF_HOUR_PRODUCT[args["product"]]
+    return args
+
+
 def _values(ds, points: dict[str, dict], scale: float = 1.0, member_dim: str | None = None) -> dict:
     """{point: value} (or {point: {member: value}}) at each point's nearest grid cell."""
     var = list(ds.data_vars)[0]
@@ -89,7 +103,7 @@ def pull_run(model: str, init: datetime, fxx_list, points: dict[str, dict], save
     extra: dict[tuple[str, int], dict] = {}
 
     def download(fxx):
-        h = Herbie(init, fxx=fxx, verbose=False, **spec["herbie"], **kw)
+        h = Herbie(init, fxx=fxx, verbose=False, **herbie_args(model, init), **kw)
         pick = choose_precip(list(h.inventory(spec["precip"])["search_this"]), fxx)
         if pick is None:
             raise RuntimeError(f"no precip message ending at f{fxx:03d}")
@@ -137,7 +151,7 @@ def pull_ensemble(model: str, init: datetime, fxx_list, points: dict[str, dict],
 
     if model == "ENS":
         def download(fxx):
-            h = Herbie(init, fxx=fxx, verbose=False, **spec["herbie"], **kw)
+            h = Herbie(init, fxx=fxx, verbose=False, **herbie_args(model, init), **kw)
             return h.download(spec["precip"], verbose=False)   # tp of every member: total since start
 
         def decode(fxx, path):
@@ -153,7 +167,7 @@ def pull_ensemble(model: str, init: datetime, fxx_list, points: dict[str, dict],
     else:
         def download(item):
             fxx, m = item
-            h = Herbie(init, fxx=fxx, member=m, verbose=False, **spec["herbie"], **kw)
+            h = Herbie(init, fxx=fxx, member=m, verbose=False, **herbie_args(model, init), **kw)
             pick = choose_precip(list(h.inventory(spec["precip"])["search_this"]), fxx)
             if pick is None:
                 raise RuntimeError(f"member {m}: no precip message ending at f{fxx:03d}")
