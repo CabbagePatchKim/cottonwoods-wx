@@ -437,3 +437,12 @@ def test_nws_statements_in_the_2023_24_sections_layout_join_snow_and_water():
     assert r.snow_in == 28.0 and r.water_in == 1.80        # the owner's stake: 28"
     assert r.reading_utc == pd.Timestamp("2023-12-09 11:36")                 # 0436 AM MST
     assert r.start_local == pd.Timestamp("2023-12-07") and r.start_note.startswith("beginning December 7")
+
+
+def test_noaa_alta_outage_does_not_fail_a_scheduled_pass():
+    # 11/12: NCEI 503s marked whole cloud passes failed; NOAA ALTA now shows FAILED in the table only
+    assert not oa.step_failed([], scheduled=True)
+    assert not oa.step_failed(["obs:ghcn"], scheduled=True)
+    assert oa.step_failed(["obs:ghcn"], scheduled=False)                 # a backfill still fails
+    assert oa.step_failed(["obs"], scheduled=True)                       # SNOTEL still fails a pass
+    assert oa.step_failed(["obs:ghcn", "obs:rap"], scheduled=True)

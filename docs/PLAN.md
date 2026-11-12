@@ -11,7 +11,7 @@ steps finish; keep it short.
    laptop only; the bucket still has the old rows)? `bucket_sync.py push --only ...`
 3. Start the 2025-26 GFS backfill pilot (69 runs, ~1.5 h from AWS)? And re-pull GFS 2025-10-01 / 10-02 00z from AWS
    (their GDEX copies lack 2 steps each)?
-Then: time 1 HRRR run (ask first), its pilot; v1.11 still unreleased (owner: not yet).
+Then: time 1 HRRR run (ask first), its pilot; v1.11 RELEASED 11/12 (owner): check its first pass log.
 
 ## Collins Worker (done 2026-11-03)
 Locked (X-CWX-Key; 403 without it, checked), deployed, GitHub secrets CWX_COLLINS_URL / CWX_COLLINS_KEY set,
@@ -46,7 +46,7 @@ trends and guidance are all unproven. Until a few storms verify, the work is MEA
        1" of the stake (10/10, 49/50, 28/28, 10/10, 11.5/11, 46/47); 3/5/2026 stake 16" vs NWS 33": owner 11/10, NWS
        most likely counted two storms as one period (noon Wed - 6 PM Fri) where the owner counted one. So a statement's
        period can span two of our storms: the start check (pns.start_match_hours) catches it only when a start is
-       stated. Backfill PUSHED to the bucket 11/10 (81 files, obs/pns). v1.11 NOT released (owner: not yet). Statements may give water only (11/01/2026: 2.43").
+       stated. Backfill PUSHED to the bucket 11/10 (81 files, obs/pns). v1.11 released 11/12. Statements may give water only (11/01/2026: 2.43").
        Session reminder now warns only when the Worker is late or a storm has no total.
 4. [ ] Then the backfill: score archived / re-pulled runs (NOAA HRRR / GFS archives, U of U since 2026-01, RRFS since
        2026-08) against those Collins totals and the journal, so models and methods are judged on many storms.

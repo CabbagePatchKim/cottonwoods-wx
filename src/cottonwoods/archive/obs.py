@@ -150,6 +150,17 @@ def ghcn_begin(cfg: dict, today, begin):
     return min(begin, today - timedelta(days=cfg["obs_fetch"]["ghcn_days"]))
 
 
+# Sources whose failure on a scheduled pass shows FAILED in the obs table but doesn't fail the step (owner,
+# 2026-11-12): NOAA ALTA posts 1-3 weeks late and every pass re-asks its whole window, so an NCEI outage (503s on
+# 11/12) costs nothing, yet it marked whole cloud passes failed.
+SOFT_ON_SCHEDULE = {"obs:ghcn"}
+
+
+def step_failed(failed_tags, scheduled: bool) -> bool:
+    """True if these failed sources should fail the obs step. A backfill (--start / --journal) fails on any."""
+    return any(not (scheduled and t in SOFT_ON_SCHEDULE) for t in failed_tags)
+
+
 def with_retries(fetch, cfg: dict, label: str, log=print, sleep=time.sleep):
     """fetch() with up to obs_fetch.retries tries, obs_fetch.retry_wait_s apart (a DNS or server blip shouldn't cost a
     pass its observations). The last failure is raised."""

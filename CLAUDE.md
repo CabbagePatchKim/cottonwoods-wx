@@ -239,7 +239,10 @@ Running live, TWO places for now (side-by-side check before cutover):
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
-- IN MAIN, NOT RELEASED (2026-11-10; owner: don't release v1.11 yet): (1) NWS STORM STATEMENTS (obs/pns.py, config pns,
+- RELEASED v1.11 (owner approved 2026-11-12 "make everything since 1.10 live as 1.11"): everything below, the
+  review fixes / backfill scripts / ECMWF 06-18z names / feed below-ground flag, and (4) NOAA ALTA (obs:ghcn) failing
+  on a SCHEDULED pass shows FAILED in the obs table only, not a failed run (archive.obs.step_failed; NCEI 503s
+  failed the 05:50 / 08:50Z passes 11/12); a --start / --journal backfill still exits 1. Contents: (1) NWS STORM STATEMENTS (obs/pns.py, config pns,
   archive obs/pns, archive.obs.load_totals = hand totals + statement rows as source "nws statement"; storms.pns_totals
   picks the latest reading in the window, start within pns.start_match_hours when stated). Both layouts (table;
   2023-24 sections). OWNER: NO MORE HAND ENTRIES; observed snow order = Worker hours, NWS statement, old hand total

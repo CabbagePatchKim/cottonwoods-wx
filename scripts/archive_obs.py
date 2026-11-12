@@ -22,7 +22,8 @@ import pandas as pd
 
 from cottonwoods import timefmt
 from cottonwoods.archive.obs import (archive_collins, archive_ghcn, archive_pns, archive_rap, archive_snotel, archive_synoptic,
-                                     catchup_begin, ghcn_begin, latest_obs, load_collins, load_pns, with_retries)
+                                     catchup_begin, ghcn_begin, latest_obs, load_collins, load_pns, step_failed,
+                                     with_retries)
 from cottonwoods.obs import collins, synoptic
 from cottonwoods.config import ensure_dirs, load_config
 
@@ -59,7 +60,8 @@ else:
     ghcn_spans = [(ghcn_begin(cfg, today, begin).strftime("%Y-%m-%d"), spans[0][1])]
 
 # Each source is tried obs_fetch.retries times per span. A failure doesn't stop the other sources (the storm step
-# after this one uses whatever is stored); the exit code is 1 if anything still failed, so the log shows it.
+# after this one uses whatever is stored); the exit code is 1 if anything still failed, so the log shows it,
+# except NOAA ALTA on a scheduled pass, which shows FAILED in the table only (archive.obs.step_failed).
 sources = [("obs", archive_snotel, spans)]
 status = {}                # source tag -> what happened, shown in the table at the end
 # Synoptic/MesoWest stations (Alta Collins). cfg.get() returns None instead of erroring if the section is missing.
@@ -85,7 +87,7 @@ if cfg.get("pns"):
 # Hourly RAP analyses: the observed 700 mb flow for storm regimes (only hours not stored yet are fetched)
 sources.append(("obs:rap", archive_rap, spans))
 
-failed = False
+failed = []      # source tags that still failed after their retries
 for tag, archive, source_spans in sources:
     for begin, end in source_spans:
         try:
@@ -95,7 +97,7 @@ for tag, archive, source_spans in sources:
         except Exception as e:  # noqa: BLE001  (failures print in full; the tables follow)
             print(f"[{tag}] {begin}..{end} FAILED after {cfg['obs_fetch']['retries']} tries: {e}")
             status[tag] = "FAILED (see above)"
-            failed = True
+            failed.append(tag)
 
 # The step's output is two tables (owner, 2026-10-30): each source's status and newest value, then each site's latest
 now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -125,4 +127,4 @@ for r in sites.itertuples():
           f"{f(r.water_24h_in, '.2f', chr(34)):>7}{f(r.depth_in, '.0f', chr(34)):>7}{f(r.pillow_in, '.1f', chr(34)):>8}"
           f"{f(r.temp_f, '.0f', 'F'):>6}")
 print("  water = gauge precip (noise-filtered, gauge.py); pillow = snow water on the pillow (blank without snowpack)")
-sys.exit(1 if failed else 0)
+sys.exit(1 if step_failed(failed, scheduled=not (args.start or args.journal)) else 0)
