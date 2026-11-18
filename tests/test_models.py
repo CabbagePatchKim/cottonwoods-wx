@@ -366,5 +366,5 @@ def test_ecmwf_off_hour_runs_use_their_own_product_names():
     assert herbie_args("IFS", datetime(2025, 12, 24, 0))["product"] == "oper"
     assert herbie_args("IFS", datetime(2025, 12, 24, 6))["product"] == "scda"
     assert herbie_args("IFS", datetime(2025, 12, 24, 18))["product"] == "scda"
-    assert herbie_args("ENS", datetime(2025, 12, 24, 18))["product"] == "waef"
+    assert herbie_args("ENS", datetime(2025, 12, 24, 18))["product"] == "enfo"     # waef = wave ensemble, no tp
     assert herbie_args("NAM", datetime(2025, 12, 24, 6))["product"] == "awphys"

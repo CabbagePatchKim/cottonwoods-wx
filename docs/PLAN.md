@@ -3,15 +3,22 @@
 Shown at the start of every Claude Code session by the SessionStart hook (scripts/collins_due.py). Update it as
 steps finish; keep it short.
 
-## FIRST THING NEXT SESSION (owner, 2026-11-11): ask these before anything else
-1. Collins Worker hours win over an NWS statement even when they cover only part of the storm window (e.g. a
-   Worker outage). Fall back to the statement when the Worker hours have a gap? (storms.observed_snow /
-   hand_obs_totals: no coverage check today)
-2. Push the re-read NWS statements to the bucket (data/archive/obs/pns: 9 starts + 1 reading corrected 11/11 on the
-   laptop only; the bucket still has the old rows)? `bucket_sync.py push --only ...`
-3. Start the 2025-26 GFS backfill pilot (69 runs, ~1.5 h from AWS)? And re-pull GFS 2025-10-01 / 10-02 00z from AWS
-   (their GDEX copies lack 2 steps each)?
-Then: time 1 HRRR run (ask first), its pilot; v1.11 RELEASED 11/12 (owner): check its first pass log.
+## FIRST THING NEXT SESSION (2026-11-17): ask before anything else
+1. Release v1.12? In main, NOT released: (a) partial Collins coverage (owner 11/17: a Worker total missing more than
+   storms.collins_max_missing_hours (0) of the window's hours yields to the NWS statement, then the hand total; the
+   partial total is the last resort, labelled "N of M h missing"; no verified storm changed); (b) ENS 06/18z FIX:
+   v1.11 mapped ENS off-hour runs to "waef" (= ECMWF's WAVE ensemble, no tp), so EVERY live ENS 06/18z run failed from
+   11/12 18z on (IFS fine). Now "enfo" again (real pull 11/17 06z: 50 members). After release: re-pull the missed ENS
+   06/18z runs 11/12-11/17 (failure log skips them after 4 tries; Google mirror still has them).
+2. GFS 2025-26 backfill PAUSED by the owner 11/17 at 25 of 69 runs (through 2025-12-22 00z; all complete, none short).
+   Resume (skips runs already on disk): python scripts/backfill_runs.py --winter 2025-26 --model GFS
+   ~100-120 s per run (~1.5 h left). Keep the laptop awake: Modern Standby 11/17 21:31-22:14 stalled one run 46 min.
+   10/01 + 10/02 00z re-pulled from AWS (complete); their GDEX copies were set aside in the session scratchpad.
+   Then: score GFS vs IFS for 2025-26 (stage 4), time 1 HRRR run (ask first), its pilot.
+DONE 11/17: corrected NWS statements pushed to the bucket (80 months 2016-10..2026-10; obs/pns). v1.11 first pass log
+checked (11/12 14:59Z: all steps ok, NWS statements step ok). Obs step FAILED 4 passes 11/16 21Z-11/17 06Z: SNOTEL
+AWDB 502s; catch-up refilled every hour (checked). UUHRRR 11/16 18z-11/17 12z never posted by U of U (404).
+Storm 11/14 verified: Collins 5" / 0.49" (18/18 h), SNOTEL 0.70"; most models too snowy (SLR), water close.
 
 ## Collins Worker (done 2026-11-03)
 Locked (X-CWX-Key; 403 without it, checked), deployed, GitHub secrets CWX_COLLINS_URL / CWX_COLLINS_KEY set,
@@ -82,7 +89,7 @@ bookkeeping now not blended. (2) NWS statement parser: "updated as of / as of" t
 "thunderstorms" read as Thursday (whole names only); a row time later on the statement's day (1/11/2025 slip) ->
 statement time, not a week back. 9 stored starts + 1 reading corrected; no backfill storm's NWS total changed.
 (3) gauge rule 5 per elapsed hour (no stored gap rose > 0.4": no effect). Golden IDENTICAL, 197 tests, ruff clean.
-OPEN (owner): Collins Worker hours win over an NWS statement even when they cover only part of the window.
+RESOLVED 11/17 (owner): a partial Collins total yields to the NWS statement (storms.collins_max_missing_hours).
 
 ## Small fixes to bundle with the step-3 release (noted 10/30)
 - DONE in main 11/10 (owner request): each storm in the text Storms report ends with a trend table: per point UP /

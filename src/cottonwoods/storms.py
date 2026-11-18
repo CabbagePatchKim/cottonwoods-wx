@@ -555,7 +555,10 @@ def hand_obs_totals(storm: pd.Series, readings: pd.DataFrame, cfg: dict, source:
         the shorter ones are kept and the overlapping longer one is skipped;
       - a board missing that variable is filled from the hourly readings inside its period;
       - hourly readings outside every board's period (e.g. after the last board) are added.
-    Max depth is reported as well. {"new_snow_in", "water_in", "max_depth_in", "sources"}, or None if there are no
+    Max depth is reported as well, and missing_hours: the window's hours with no snow reading (no hourly reading with
+    snow, and not inside a counted board), e.g. a Worker outage; their count is named in "sources" (owner 2026-11-17:
+    such a partial total yields to the NWS statement, observed_snow).
+    {"new_snow_in", "water_in", "max_depth_in", "missing_hours", "hours", "sources"}, or None if there are no
     readings in the window."""
     if readings is None or readings.empty:
         return None
@@ -594,8 +597,14 @@ def hand_obs_totals(storm: pd.Series, readings: pd.DataFrame, cfg: dict, source:
     snow, how_s = total("new_snow_in")
     water, how_w = total("water_in")
     kinds = sorted(how_s | how_w)
+    ends = pd.date_range(s + pd.Timedelta(hours=1), e, freq="h")     # the window's hours, by their end time
+    have = set(r.loc[(r["period_h"] < 12) & r["new_snow_in"].notna(), "end_utc"])
+    missing = sum(1 for t in ends if t not in have and not any(b.start_utc < t <= b.end_utc for b in boards))
+    label = f"{source} ({', '.join(kinds)})" if kinds else source
+    if missing:
+        label += f", {missing} of {len(ends)} h missing"
     return {"new_snow_in": snow, "water_in": water, "max_depth_in": r["depth_in"].max(),
-            "sources": f"{source} ({', '.join(kinds)})" if kinds else source}
+            "missing_hours": missing, "hours": len(ends), "sources": label}
 
 
 def pns_totals(storm: pd.Series, totals: pd.DataFrame, cfg: dict, point: str | None = None) -> dict | None:
@@ -624,11 +633,16 @@ def observed_snow(storm: pd.Series, totals: pd.DataFrame, readings: pd.DataFrame
     owner's order (2026-11-10): (the storm's point only: Alta) the Collins readings (the Worker's hours, plus any
     hand-entered ones), else the NWS statement total (pns_totals), else a hand-entered storm total, else 0 when that
     point's SNOTEL gauge saw no measurable water (obs_water_in; default the storm's). SNOTEL depth is too noisy for new
-    snow, so a wet storm with none of these has no observed snow yet: (nan, "")."""
+    snow, so a wet storm with none of these has no observed snow yet: (nan, "").
+    PARTIAL COLLINS (owner 2026-11-17): readings missing more than storms.collins_max_missing_hours of the window's
+    hours (a Worker outage) come after the statement and the hand total, used only when neither has snow."""
     point = point or storm.point
     water = storm.get("obs_water_in") if obs_water_in is None else obs_water_in
-    hand = [hand_obs_totals(storm, readings, cfg)] if point == storm.point else []
+    collins = hand_obs_totals(storm, readings, cfg) if point == storm.point else None
+    partial = bool(collins) and collins["missing_hours"] > cfg["storms"]["collins_max_missing_hours"]
+    hand = [] if partial else [collins]
     hand += [pns_totals(storm, totals, cfg, point), manual_totals(storm, totals, cfg, point)]
+    hand += [collins] if partial else []
     for found in hand:
         if found and pd.notna(found["new_snow_in"]):
             return float(found["new_snow_in"]), found["sources"]

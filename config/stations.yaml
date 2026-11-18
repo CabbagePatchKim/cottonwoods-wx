@@ -333,6 +333,10 @@ storms:
   collins_page_hours: 48   # the NWS Collins page (CLN timeseries) shows only this far back; the session reminder
                            # (scripts/collins_due.py) warns while a storm is recent if the Worker's hours are late:
   collins_worker_late_hours: 15  # newest Collins hour older than this = late (Worker renders every 6 h, passes every 3 h)
+  collins_max_missing_hours: 0   # a Collins storm total missing more of the window's hours than this (Worker outage,
+                                 # or hours not fetched yet) yields to the NWS statement / hand total (owner 2026-11-17;
+                                 # storms.observed_snow). A gap loses that hour's water; snow mostly carries to the next
+                                 # hour's board rise, unless the board was cleared in the gap.
   max_lead_hours: 168      # storms are detected and totalled only from steps within this lead of each run's init
                            # (owner, 2026-10-27: totals past day 7 aren't trusted). Runs are still ARCHIVED to
                            # 240 h+ and verification scores every archived run, at any lead.

@@ -244,9 +244,9 @@ def test_hand_copied_collins_readings_prefer_boards_and_never_double_count():
     t = hand_obs_totals(st, r, cfg)
     assert t["new_snow_in"] == 12.0                  # boards 7 + 5; the hourly 1 + 2 are NOT added on top
     assert abs(t["water_in"] - 0.60) < 1e-9          # water from the one board that has it
-    assert t["max_depth_in"] == 18 and t["sources"] == "collins (board)"
+    assert t["max_depth_in"] == 18 and t["sources"].startswith("collins (board),")   # partial: hours named
     hourly_only = hand_obs_totals(st, r[r["period_h"] == 1], cfg)
-    assert hourly_only["new_snow_in"] == 3.0 and hourly_only["sources"] == "collins (hourly)"
+    assert hourly_only["new_snow_in"] == 3.0 and hourly_only["sources"].startswith("collins (hourly),")
 
 
 def test_a_board_missing_water_is_filled_from_its_hours_and_overlapping_boards_count_once():
@@ -268,7 +268,7 @@ def test_a_board_missing_water_is_filled_from_its_hours_and_overlapping_boards_c
     t = hand_obs_totals(st, r, cfg)
     assert abs(t["new_snow_in"] - (4 + 6 + 7 + 0.4)) < 1e-9          # 12 h boards, plus the hour after the last one
     assert abs(t["water_in"] - (0.35 + 0.48 + 0.05 + 0.03 + 0.02)) < 1e-9
-    assert t["sources"] == "collins (board, hourly)"
+    assert t["sources"].startswith("collins (board, hourly)")
 
 
 def test_session_reminder_lists_only_recent_verified_storms_without_collins_entries():
@@ -791,7 +791,18 @@ def test_observed_snow_takes_the_worker_then_the_nws_statement_then_a_hand_total
     hand = {"site": "alta", "source": "collins", "start_utc": pd.Timestamp("2026-11-01 06:00"),
             "end_utc": pd.Timestamp("2026-11-02 21:00"), "new_snow_in": 20.0, "water_in": 2.5, "notes": ""}
     both = pd.DataFrame([nws, hand])
-    assert observed_snow(st, both, worker, cfg)[0] == 16.0                         # Worker hours: 4 x 4"
+    full = pd.DataFrame({"start_utc": pd.date_range("2026-11-01 08:00", periods=37, freq="h"),
+                         "end_utc": pd.date_range("2026-11-01 09:00", periods=37, freq="h"), "period_h": 1,
+                         "new_snow_in": 0.5, "water_in": 0.05, "depth_in": 20.0})
+    snow, src = observed_snow(st, both, full, cfg)
+    assert snow == 18.5 and src == "collins (hourly)"                           # every window hour: the Worker
+    snow, src = observed_snow(st, both, worker, cfg)                             # 4 of 37 h: a Worker outage
+    assert snow == 18.0 and src.startswith("nws statement")                       # owner 11/17: the statement wins
+    assert observed_snow(st, pd.DataFrame([hand]), worker, cfg)[0] == 20.0        # then an old hand total
+    snow, src = observed_snow(st, pd.DataFrame(), worker, cfg)
+    assert snow == 16.0 and src.endswith("33 of 37 h missing")                    # partial Worker: the last resort
+    snow, src = observed_snow(st, pd.DataFrame(), pd.DataFrame(), cfg)
+    assert np.isnan(snow) and src == ""
     snow, src = observed_snow(st, both, pd.DataFrame(), cfg)
     assert snow == 18.0 and src.startswith("nws statement")                       # no Worker hours: the statement
     assert observed_snow(st, pd.DataFrame([hand]), pd.DataFrame(), cfg)[0] == 20.0  # then an old hand total
@@ -932,3 +943,24 @@ def test_block_table_explains_the_dot_and_marks_blocks_the_storm_only_partly_fil
     assert head.split()[2:] == ["Sun", "ngt", "6h", "Mon", "day"]       # first block 6 of 12 h; the second whole
     gfs = next(line for line in lines if line.startswith("GFS"))
     assert gfs.split()[3:] == [".", "6.0"]                               # rain all of the first block: "."
+
+
+def test_collins_missing_hours_counts_hours_without_snow_and_board_cover():
+    # owner 2026-11-17: a Worker gap makes the Collins total partial; a board's period covers its hours
+    from cottonwoods.storms import hand_obs_totals
+    cfg = make_cfg()
+    st = pd.Series({"point": "alta", "fc_start": pd.Timestamp("2026-11-14 09:00"), "fc_end": pd.Timestamp("2026-11-15 03:00"),
+                    "final_start": pd.Timestamp("2026-11-14 09:00"), "final_end": pd.Timestamp("2026-11-15 03:00")})
+    ends = pd.date_range("2026-11-14 10:00", "2026-11-15 03:00", freq="h")          # 18 window hours
+    hours = pd.DataFrame({"end_utc": ends, "start_utc": ends - pd.Timedelta(hours=1), "period_h": 1,
+                          "new_snow_in": 0.25, "water_in": 0.02, "depth_in": 21.0})
+    t = hand_obs_totals(st, hours, cfg)
+    assert t["missing_hours"] == 0 and t["hours"] == 18 and t["sources"] == "collins (hourly)"
+    gap = hours.drop(index=[3, 4]).copy()
+    gap.loc[7, "new_snow_in"] = np.nan                                               # board blank that hour
+    t = hand_obs_totals(st, gap, cfg)
+    assert t["missing_hours"] == 3 and t["sources"].endswith("3 of 18 h missing")
+    board = pd.DataFrame([{"end_utc": pd.Timestamp("2026-11-14 21:00"), "start_utc": pd.Timestamp("2026-11-14 09:00"),
+                           "period_h": 12, "new_snow_in": 3.0, "water_in": 0.3, "depth_in": 21.0}])
+    t = hand_obs_totals(st, pd.concat([gap, board], ignore_index=True), cfg)        # the 12 h board covers the gap
+    assert t["missing_hours"] == 0

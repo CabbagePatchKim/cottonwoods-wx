@@ -42,10 +42,11 @@ SPECS = {
 }
 
 
-# ECMWF files its 06/18z runs under other product names (open data "scda" for HRES, "waef" for ENS). The newest runs
-# came through under "oper" (live pass), but the mirrors' older runs only answer to these names (backfill 2026-11-10:
-# every 06/18z IFS run of 2025-26 "nothing retrieved" under "oper", found under "scda" on AWS / Google / Azure).
-OFF_HOUR_PRODUCT = {"oper": "scda", "enfo": "waef"}
+# ECMWF files its 06/18z HRES runs under open data "scda", not "oper" (backfill 2026-11-10: every 06/18z IFS run of
+# 2025-26 "nothing retrieved" under "oper", found under "scda" on AWS / Google / Azure). ENS 06/18z stays "enfo":
+# "waef" is the WAVE ensemble (no tp). Mapping ENS there (v1.11) lost every live ENS 06/18z run from 11/12 to 11/17
+# (checked 2026-11-17: 11/17 06z and 2025-11-20 18z have 50-51 tp messages under enfo, 0 under waef).
+OFF_HOUR_PRODUCT = {"oper": "scda"}
 
 
 def herbie_args(model: str, init) -> dict:

@@ -41,7 +41,7 @@ REQUIRED = {
     "storms": ["point", "gap_hours", "wet_in", "obs_wet_in", "collins_wet_in", "collins_onset_hours", "collins_onset_in", "min_total_in", "subperiod_gap_hours", "block_hours",
                "block_end_utc_hour", "block_point",
                "manual_match_hours", "report_verified_days", "max_lead_hours", "collins_page_hours",
-               "collins_worker_late_hours"],
+               "collins_worker_late_hours", "collins_max_missing_hours"],
     "report": ["days", "deterministic_lead_hours", "ensemble_lead_hours"],
     "feed": ["regime_snow", "models"],
     "rap": ["lag_hours", "workers"],
