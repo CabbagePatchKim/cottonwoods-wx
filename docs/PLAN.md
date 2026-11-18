@@ -10,6 +10,7 @@ steps finish; keep it short.
    v1.11 mapped ENS off-hour runs to "waef" (= ECMWF's WAVE ensemble, no tp), so EVERY live ENS 06/18z run failed from
    11/12 18z on (IFS fine). Now "enfo" again (real pull 11/17 06z: 50 members). After release: re-pull the missed ENS
    06/18z runs 11/12-11/17 (failure log skips them after 4 tries; Google mirror still has them).
+   BEFORE RELEASING: rerun tools/golden.py check (11/17 run was stopped for low memory; close other programs).
 2. GFS 2025-26 backfill PAUSED by the owner 11/17 at 25 of 69 runs (through 2025-12-22 00z; all complete, none short).
    Resume (skips runs already on disk): python scripts/backfill_runs.py --winter 2025-26 --model GFS
    ~100-120 s per run (~1.5 h left). Keep the laptop awake: Modern Standby 11/17 21:31-22:14 stalled one run 46 min.
