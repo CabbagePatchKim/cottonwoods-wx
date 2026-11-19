@@ -3,6 +3,14 @@
 Shown at the start of every Claude Code session by the SessionStart hook (scripts/collins_due.py). Update it as
 steps finish; keep it short.
 
+## DO FIRST, NO QUESTION (owner 2026-11-18): resume the GFS 2025-26 backfill the moment the session opens
+Stopped at 51 of 69 runs (through 2026-03-01 18z; all complete, none short) when Claude Code stopped it for low
+memory. Resume (skips runs on disk, ~18 runs / ~30 min left), in the background, keeping the laptop awake:
+    python scripts/backfill_runs.py --winter 2025-26 --model GFS
+(11/18 used a PowerShell wrapper calling SetThreadExecutionState around it; its log came out UTF-16.) Memory is
+tight (~1-1.5 GB free): suggest closing Discord / VS Code / Edge. THEN, before the session ends (owner): the golden
+check (tools/golden.py check) for v1.12, then score GFS vs IFS for 2025-26.
+
 ## FIRST THING NEXT SESSION (2026-11-17): ask before anything else
 1. Release v1.12? In main, NOT released: (a) partial Collins coverage (owner 11/17: a Worker total missing more than
    storms.collins_max_missing_hours (0) of the window's hours yields to the NWS statement, then the hand total; the
@@ -11,7 +19,7 @@ steps finish; keep it short.
    11/12 18z on (IFS fine). Now "enfo" again (real pull 11/17 06z: 50 members). After release: re-pull the missed ENS
    06/18z runs 11/12-11/17 (failure log skips them after 4 tries; Google mirror still has them).
    BEFORE RELEASING: rerun tools/golden.py check (11/17 run was stopped for low memory; close other programs).
-2. GFS 2025-26 backfill PAUSED by the owner 11/17 at 25 of 69 runs (through 2025-12-22 00z; all complete, none short).
+2. GFS 2025-26 backfill: 51 of 69 runs as of 11/18 (see DO FIRST above).
    Resume (skips runs already on disk): python scripts/backfill_runs.py --winter 2025-26 --model GFS
    ~100-120 s per run (~1.5 h left). Keep the laptop awake: Modern Standby 11/17 21:31-22:14 stalled one run 46 min.
    10/01 + 10/02 00z re-pulled from AWS (complete); their GDEX copies were set aside in the session scratchpad.
