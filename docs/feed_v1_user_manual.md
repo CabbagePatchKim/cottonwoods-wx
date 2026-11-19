@@ -242,6 +242,9 @@ Each published version puts its own copy of this manual here, so this list is cu
   keep their meaning. Once a storm has started, its `flow`, `modes` and `parts` notes stay as the last run before
   the start described them, instead of changing to whatever a run made during the storm sees (which is only the
   tail end of it). Nothing was removed or renamed.
+- **v1.12:** `ENS` (the ECMWF ensemble) runs from 06z and 18z are back. Under v1.11 every 06z / 18z ENS run failed
+  to download from 11/12 18z on, so the feed's ENS numbers came only from the 00z and 12z runs and could be up to
+  18 h old. No fields were added, removed or renamed.
 
 ## 10. Credits and licences
 

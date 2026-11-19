@@ -40,6 +40,9 @@ def reports(cfg):
     from cottonwoods.archive.forecasts import load_forecasts
     from cottonwoods.report import render
     fc = load_forecasts(cfg, start=NOW - pd.Timedelta(days=20))
+    if sys.argv[1] == "check":   # only the runs the snapshot saw: runs archived after it would DIFF the reports
+        have = {p.stem for p in OUT.glob("model=*_init=*.pkl")}
+        fc = fc[[f"model={m}_init={i:%Y%m%d%H}" in have for m, i in zip(fc["model"], fc["init"])]]
     st = storms.load_storms(OUT)        # the snapshot's own copy (see save below)
     st = storms.update_forecast_storms(st, fc, cfg, NOW)
     render_storms = getattr(storms, "render_open", None)

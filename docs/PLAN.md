@@ -3,13 +3,18 @@
 Shown at the start of every Claude Code session by the SessionStart hook (scripts/collins_due.py). Update it as
 steps finish; keep it short.
 
-## DO FIRST, NO QUESTION (owner 2026-11-18): resume the GFS 2025-26 backfill the moment the session opens
-Stopped at 51 of 69 runs (through 2026-03-01 18z; all complete, none short) when Claude Code stopped it for low
-memory. Resume (skips runs on disk, ~18 runs / ~30 min left), in the background, keeping the laptop awake:
-    python scripts/backfill_runs.py --winter 2025-26 --model GFS
-(11/18 used a PowerShell wrapper calling SetThreadExecutionState around it; its log came out UTF-16.) Memory is
-tight (~1-1.5 GB free): suggest closing Discord / VS Code / Edge. THEN, before the session ends (owner): the golden
-check (tools/golden.py check) for v1.12, then score GFS vs IFS for 2025-26.
+## DONE 2026-11-18 (evening): GFS 2025-26 backfill complete, 69 of 69 runs (last 18 archived, exit 0)
+GOLDEN CHECK 11/18 for v1.12: every run IDENTICAL; both reports IDENTICAL on the snapshot's own runs (the first
+"DIFF report storms/models" was runs archived after the 11/11 snapshot). golden.py check now uses only the
+snapshot's runs for the reports. v1.12 is ready to release on the owner's approve (CI green first).
+SCORED 11/18: scripts/backfill_scores.py --winter 2025-26 (new, laptop) -> data/local/backfill/scores_2025-26.csv.
+23 storms, 12 with snow totals. BOTH far too dry at Alta: water ratio GFS 0.45/0.42/0.29 at 24/48/72 h, IFS
+0.33/0.30/0.26 (live 2026-27, 2 storms: ~0.5-0.6). GFS beats IFS: snow MAE 7.2" vs 10.7", bin avg -1.4 vs -3.5,
+right bins 7/36 vs 1/36, closer on water 39 of 69. Blend beats raw for both (GFS 7/36 vs 3/36). 168 of 276 runs stop
+1-2 h before the storm end (backfill fetched to the exact last hour, 3-hourly steps): scored over the covered window,
+obs water re-totalled to match (cut_h). Fix backfill.plan_runs to round up to a step before widening.
+Suspect obs: 2025121721 (1.1" in 3 h), 2025110900 (both models 0.00). Next: regime factors on vs off (stage 4). Storm 2026111718 (11/17-18) not verified as of 11/18 1713 MST: a lone 0.1"
+SNOTEL tick at 11/18 18z reset the 12 h dry clock; check it verifies (and doesn't merge with 2026111906b).
 
 ## FIRST THING NEXT SESSION (2026-11-17): ask before anything else
 1. Release v1.12? In main, NOT released: (a) partial Collins coverage (owner 11/17: a Worker total missing more than
@@ -19,7 +24,7 @@ check (tools/golden.py check) for v1.12, then score GFS vs IFS for 2025-26.
    11/12 18z on (IFS fine). Now "enfo" again (real pull 11/17 06z: 50 members). After release: re-pull the missed ENS
    06/18z runs 11/12-11/17 (failure log skips them after 4 tries; Google mirror still has them).
    BEFORE RELEASING: rerun tools/golden.py check (11/17 run was stopped for low memory; close other programs).
-2. GFS 2025-26 backfill: 51 of 69 runs as of 11/18 (see DO FIRST above).
+2. GFS 2025-26 backfill: DONE 11/18, 69 of 69 runs.
    Resume (skips runs already on disk): python scripts/backfill_runs.py --winter 2025-26 --model GFS
    ~100-120 s per run (~1.5 h left). Keep the laptop awake: Modern Standby 11/17 21:31-22:14 stalled one run 46 min.
    10/01 + 10/02 00z re-pulled from AWS (complete); their GDEX copies were set aside in the session scratchpad.

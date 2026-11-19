@@ -144,6 +144,16 @@ values to the feed, the public log, or git. Real check 11/01: 70 h, 0.30" + 2" l
 owner's reading of the page. Laptop bucket access: boto3 in
 ~/.cwx_pylib (PYTHONPATH), not the main environment.
 
+PHONE VIEWER (owner 2026-11-18, DEPLOYED + WORKING 11/18 at the Worker's workers.dev address, cwx-viewer.<account>.
+workers.dev; Access: Worker -> Worker URL -> Enable Access, scope All traffic, reusable Zero Trust policy "owner only"
+(Allow, Emails = owner); the quick panel only offers "Email domain": never use gmail.com there. Bucket cwx-archive.
+To change it: edit the file, paste it into the Worker's code editor, Deploy). cloud/viewer_worker.js =
+Cloudflare Worker "cwx-viewer", R2 binding BUCKET (read only), behind Cloudflare Access (email one-time PIN); the
+Worker ALSO verifies the Access JWT itself (ACCESS_TEAM_DOMAIN / ACCESS_AUD / ALLOWED_EMAILS; unset -> 403). Pages:
+passes (last pass's step results from the log's "===== " / "----- steps:" lines, problem lines, recent passes),
+storms HTML, verified / models / storms text, each pass's log. PRIVATE: shows Collins totals (record, never publish).
+Reads only what the pass already saves; no pass change. Checks: tests/test_cloud_viewer.py (CI, in step with pass.yml)
+and `node tests/viewer_worker_check.mjs` (local, fake bucket from data/, real RS256 tokens, 8 rejected-login cases).
 Observation clients (`obs/`): `snotel.py` (AWDB), `synoptic.py` (CLN, needs token), `ghcn.py` (NOAA coop),
 `sounding.py` (SLC balloons via IEM). Scheduled (until the cloud cutover): Windows tasks "Cottonwoods models" (every 3 h, run_models.bat) and
 "Cottonwoods soundings" (8 am/8 pm), both via `conhost --headless` (no window to close by accident).
