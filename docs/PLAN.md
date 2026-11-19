@@ -17,7 +17,9 @@ Suspect obs: 2025121721 (1.1" in 3 h), 2025110900 (both models 0.00). Next: regi
 SNOTEL tick at 11/18 18z reset the 12 h dry clock; check it verifies (and doesn't merge with 2026111906b).
 
 ## FIRST THING NEXT SESSION (2026-11-17): ask before anything else
-1. Release v1.12? In main, NOT released: (a) partial Collins coverage (owner 11/17: a Worker total missing more than
+1. RELEASED v1.12 (owner approved 11/18, tag on fcd9e85, CI green). CHECK the first v1.12 pass in the phone viewer /
+   bucket log: code v1.12, ENS 06/18z archived again. THEN re-pull the ENS 06/18z runs 11/12 18z-11/17 the failure log
+   skipped (Google mirror). Was: (a) partial Collins coverage (owner 11/17: a Worker total missing more than
    storms.collins_max_missing_hours (0) of the window's hours yields to the NWS statement, then the hand total; the
    partial total is the last resort, labelled "N of M h missing"; no verified storm changed); (b) ENS 06/18z FIX:
    v1.11 mapped ENS off-hour runs to "waef" (= ECMWF's WAVE ensemble, no tp), so EVERY live ENS 06/18z run failed from
