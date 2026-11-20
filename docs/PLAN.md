@@ -19,7 +19,7 @@ steps finish; keep it short.
 
 ## IN MAIN 11/19 (not released)
 - U of U parser: "0:1 /  -%" (zero snow ratio, UUGFS) dropped hours; fixed + test (1 of 278 live runs affected).
-- park_city point at the Thaynes Canyon SNOTEL (internal; label "Thaynes Canyon SNOTEL"), verified on its gauge and
+- park_city point at the Thaynes Canyon SNOTEL (IN THE PUBLIC FEED from v1.13, owner 11/19; label "Thaynes Canyon SNOTEL"), verified on its gauge and
   NWS "Park City Mountain" totals (pns.sites); thaynes_canyon in config snotel (obs fetched every pass; history
   2016-10+ backfilled on the laptop, not pushed). GDPS cells 2x3 (a column at -111.45). cells.blend_points now
   checks each point's own cells (old runs keep blending their old points).

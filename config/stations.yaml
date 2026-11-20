@@ -155,8 +155,9 @@ points:
                     label: "Brighton SNOTEL"}
   # WASATCH BACK (owner 2026-11-19): forecast at the Thaynes Canyon SNOTEL on Park City Mountain (9,260 ft),
   # verified on its gauge (water) and the NWS "Park City Mountain - 9300 ft" statement totals (snow, config pns).
-  # Internal for now (not in the feed). Exists only in runs archived after the change.
-  park_city:       {lat: 40.62350, lon: -111.53322, elev_ft: 9260, obs: [thaynes_canyon], internal: true,
+  # IN THE PUBLIC FEED from v1.13 (owner 2026-11-19), feed key "park_city". Exists only in runs archived after the
+  # change (earlier storms / days show null there).
+  park_city:       {lat: 40.62350, lon: -111.53322, elev_ft: 9260, obs: [thaynes_canyon],
                     label: "Thaynes Canyon SNOTEL"}   # storm-table header "Thaynes SNTL"
 
 # The 2x2 block of grid points around the Cottonwoods for each COARSE model. The resorts all sit nearest the same

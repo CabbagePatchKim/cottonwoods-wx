@@ -1,7 +1,8 @@
 # Cottonwoods Snow Feed: User Manual (v1)
 
 An automated JSON feed of computer-model snow and precipitation forecasts for the four Cottonwood Canyon resorts
-(Alta, Snowbird, Solitude, Brighton). It updates itself every 3 hours. There is nothing to install, no key, and no
+(Alta, Snowbird, Solitude, Brighton) and, since v1.13, Park City Mountain on the Wasatch back. It updates itself every
+3 hours. There is nothing to install, no key, and no
 account: you fetch three public URLs.
 
 > Experimental, automated model guidance. **Not an official forecast.** Check the National Weather Service and the
@@ -50,7 +51,7 @@ const [meta, storms, daily] = await Promise.all(
 | **Model runs** | Each run has `init` (its start time, ISO) and `cycle`, its everyday name, e.g. `"10/28 12z"` (date and hour in UTC). |
 | **Units** | Water and snow in **inches**, snow levels in **feet** (`meta.json` → `units`). |
 | **Missing** | `null`, never `0`. A `0` always means "the model says none". |
-| **Resorts** | Keys `alta`, `snowbird`, `solitude`, `brighton`. Their coordinates and elevations are in `meta.json` → `points`. |
+| **Resorts** | Keys `alta`, `snowbird`, `solitude`, `brighton`, and since v1.13 `park_city` (Park City Mountain, forecast at the Thaynes Canyon SNOTEL site, 9,260 ft). Their coordinates and elevations are in `meta.json` → `points`. Don't assume a fixed list: loop over the keys you find. |
 | **Rounding** | Water to 0.01 in, snow to 0.1 in, snow level to 100 ft. |
 
 ## 4. The models
@@ -245,11 +246,14 @@ Each published version puts its own copy of this manual here, so this list is cu
 - **v1.12:** `ENS` (the ECMWF ensemble) runs from 06z and 18z are back. Under v1.11 every 06z / 18z ENS run failed
   to download from 11/12 18z on, so the feed's ENS numbers came only from the 00z and 12z runs and could be up to
   18 h old. No fields were added, removed or renamed.
-- **v1.13:** `GDPS` at Brighton is now a true blend of the grid points around it. Brighton sits just east of
-  the GDPS block the feed used before, so it took that block's eastern edge; the block now reaches one column
-  further east, and about 13% of Brighton's GDPS numbers come from that new column. GDPS water and snow at Brighton
-  can shift slightly; every other resort and model is made exactly as in v1.12. No fields were added, removed or
-  renamed.
+- **v1.13:** new point `park_city`: Park City Mountain on the Wasatch back, forecast at the Thaynes Canyon SNOTEL
+  site (9,260 ft), in `meta.json` → `points`, `daily.json` and every storm's model entries, made like the other
+  resorts. It is new, so the runs made before v1.13 have no numbers there: until each model's next run arrives (a
+  few hours), `daily.json` → `points.park_city` is an empty list and its storm amounts are `null`. If your site lists resorts by name, add `park_city` (or loop over the keys).
+  Also: `GDPS` at Brighton is now a true blend of the grid points around it. Brighton sits just east of the GDPS
+  block the feed used before, so it took that block's eastern edge; the block now reaches one column further east,
+  and about 13% of Brighton's GDPS numbers come from that new column, so GDPS water and snow at Brighton can shift
+  slightly. Every other resort and model is made exactly as in v1.12. No fields were removed or renamed.
 
 ## 10. Credits and licences
 
