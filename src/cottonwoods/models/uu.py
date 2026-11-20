@@ -32,7 +32,7 @@ ROW = re.compile(r"^\s*(\d+)\s+\d\d (AM|PM) \w{3} \w{3} \d\d \d{4}\s")
 # zero at or below the Salt Lake airport is printed "≤ KSLC" (GFS) or "<KSLC" (HRRR), common in cold storms: kept as
 # NaN (an upper bound only)
 _WBZ = r"(?:(\d+) ?FT|[≤<] ?KSLC)"
-_H2O = r"(?:\d+%|-)"     # snow water content; "-" when their snow ratio is 0 ("0:1/-")
+_H2O = r"(?:\d+%|-%?)"   # snow water content; "-" when their snow ratio is 0 ("0:1/-"; UUGFS "0:1 /  -%")
 TAILS = {
     "UUHRRR": re.compile(_WBZ + r"\s+(\d+):1/\s*" + _H2O + r"\s+[\d.]+/([\d.]+)\s+[\d.]+/\s*([\d.]+)\s*$"),
     "UUGFS": re.compile(_WBZ + r"\s+(\d+):1 /\s*" + _H2O + r"\s+[\d.]+\"\s*/\s*[\d.]+\"\s+([\d.]+)\"\s*/\s*([\d.]+)\"\s*$"),

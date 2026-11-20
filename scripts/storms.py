@@ -50,8 +50,11 @@ d_snd = load_soundings(start=d_obs["time_utc"].min() - timedelta(days=1)) if fir
 days = verify.gauge_pillow_days(d_obs, cfg, summarize(d_snd).set_index("time_utc") if not d_snd.empty else None)
 days = verify.merge_gauge_pillow_days(days, days_path)
 verify.undercatch_summary(days, cfg).to_csv(PROCESSED_DIR / "undercatch_summary.csv", index=False)
-text = (f"Storms, {timefmt.now_line(now)}. Times are Mountain (MDT/MST), 24-hour.\n\n"
-        + render_storms(table, fc, cfg, now, storms.point_steps(obs, cfg)))
+psteps = storms.point_steps(obs, cfg)
+head = f"Storms, {timefmt.now_line(now)}. Times are Mountain (MDT/MST), 24-hour.\n\n"
+# PRINTED (the pass log is public): no Collins values. SAVED (private bucket / viewer): with the Collins rows.
+text = head + render_storms(table, fc, cfg, now, psteps)
+text_private = head + render_storms(table, fc, cfg, now, psteps, readings=readings)
 scores, totals = storms.load_scores(), load_totals()
 binned = storms.bin_scores(table, scores, totals, readings, cfg)
 storms.save_bin_scores(binned)
@@ -77,9 +80,11 @@ if freezing:
 print(text)
 out = REPORTS_DIR
 out.mkdir(parents=True, exist_ok=True)
-(out / "storms_latest.txt").write_text(text, encoding="utf-8")
+(out / "storms_latest.txt").write_text(text_private, encoding="utf-8")
 (out / "verified_latest.txt").write_text(vtext, encoding="utf-8")
-# The same storms as a web page (htmlreport.py: summary, chances, timeline, NOAA ALTA); internal, not the feed
-html = htmlreport.render_html(table, fc, cfg, now, text + "\n" + vtext, load_ghcn(start=now - timedelta(days=40)),
-                              uu.load_use())
+# The same storms as a web page (htmlreport.py: summary, chances, timeline, observed at Alta, NOAA ALTA); internal,
+# private, not the feed
+html = htmlreport.render_html(table, fc, cfg, now, text_private + "\n" + vtext,
+                              load_ghcn(start=now - timedelta(days=40)), uu.load_use(), readings=readings,
+                              totals=totals)
 (out / "storms_latest.html").write_text(html, encoding="utf-8")

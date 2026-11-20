@@ -190,7 +190,7 @@ def chances_html(st, fc: pd.DataFrame, cfg: dict, point: str, label: str) -> str
                  *[_pct(lg["water"][t]) for t in thr],
                  top(lg["snow_bins"]) or f"no run covers the whole storm ({lg['short']} too short)"])
     out = [f"<h3>Chances at {escape(label)} <span class='muted'>(share of members; uncalibrated)</span></h3>",
-           _table(["set", "members / runs", *[f"water &ge; {t:g}\"" for t in thr], "likeliest snow bins"], rows),
+           _table(["set", "members / runs", *[f"water &ge; {t:g}\"" for t in thr], "most likely bins"], rows),
            "<p class='note'>GEFS / ENS snow bins reflect the spread in WATER only: each member's water is turned into "
            "snow with its family's deterministic run (the run named), so every member shares that run's temperatures, "
            "snow ratio and rain/snow split. In a marginal storm the snow level is the bigger unknown; the RRFS "
@@ -284,6 +284,40 @@ def storm_html(st, fc: pd.DataFrame, cfg: dict, use=None) -> str:
             + use_html(st, use, cfg, label) + timeline_html(tr[bp], ens, cfg, label))
 
 
+def observed_html(storms: pd.DataFrame, readings: pd.DataFrame | None, totals: pd.DataFrame | None, cfg: dict,
+                  now) -> str:
+    """Observed snow at Alta for the storm under way and the recent ones (owner 2026-11-19: the page showed only
+    NOAA ALTA, weeks late): Alta Collins (the Worker's hours + hand entries; so far for a storm under way), the NWS
+    statement total, and for a verified storm the total its scores use (storms.observed_snow). PRIVATE page only:
+    Collins is never published."""
+    from .report import collins_window
+    from .storms import observed_snow, pns_totals, storm_span
+    recent = storms[storms["status"].isin(["forecast", "verified"])
+                    & (pd.to_datetime(storms["fc_start"]) <= pd.Timestamp(now))
+                    & (pd.to_datetime(storms["fc_end"]) >= pd.Timestamp(now)
+                       - pd.Timedelta(days=cfg["storms"]["report_verified_days"]))]
+    if recent.empty:
+        return ""
+    amt = lambda d, k, spec: "-" if not d or pd.isna(d.get(k)) else format(d[k], spec) + '"'  # noqa: E731
+    rows = []
+    for _, st in recent.sort_values("fc_start", ascending=False).iterrows():
+        s, e = storm_span(st)
+        going = st.status == "forecast" and pd.Timestamp(now) < e
+        col = collins_window(readings, s, min(e, pd.Timestamp(now)), cfg)
+        nws = pns_totals(st, totals, cfg) if totals is not None else None
+        used = observed_snow(st, totals, readings, cfg) if st.status == "verified" else (np.nan, "")
+        state = "under way" if going else ("verified" if st.status == "verified" else "ended, awaiting verification")
+        miss = f" ({col['missing_hours']} of {col['hours']} h missing)" if col and col.get("missing_hours") else ""
+        rows.append([escape(f"{timefmt.clock(s, weekday=True)} - {timefmt.clock(e, weekday=True)}"), escape(state),
+                     amt(col, "new_snow_in", ".0f") + escape(miss), amt(col, "water_in", ".2f"),
+                     amt(nws, "new_snow_in", ".0f"), amt(nws, "water_in", ".2f"),
+                     "-" if pd.isna(used[0]) else escape(f'{used[0]:.0f}" ({used[1]})', quote=False)])
+    return ("<h2>Observed at Alta</h2><p class='note'>Alta Collins (hourly readings; so far for a storm under way), "
+            "the NWS storm statement, and the total the scores use once a storm is verified (Collins, else NWS). "
+            "Private: not in the feed.</p>"
+            + _table(["storm", "status", "Collins snow", "Collins water", "NWS snow", "NWS water", "scored as"], rows))
+
+
 def noaa_html(ghcn: pd.DataFrame | None, storms: pd.DataFrame, cfg: dict, now) -> str:
     """NOAA ALTA (coop) daily water, new snow and depth, and totals over recent storms (observer days overlapping
     the storm window), to compare with Alta Collins by eye. NOAA posts these 1-3 weeks late."""
@@ -326,9 +360,10 @@ def noaa_html(ghcn: pd.DataFrame | None, storms: pd.DataFrame, cfg: dict, now) -
 
 
 def render_html(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now, text: str = "",
-                ghcn: pd.DataFrame | None = None, use=None) -> str:
-    """The whole page: every storm still ahead or under way, NOAA ALTA, and the full text report (use: the newest
-    Utah Snow Ensemble run, uu.load_use)."""
+                ghcn: pd.DataFrame | None = None, use=None, readings: pd.DataFrame | None = None,
+                totals: pd.DataFrame | None = None) -> str:
+    """The whole page: every storm still ahead or under way, observed at Alta (Collins / NWS; readings, totals),
+    NOAA ALTA, and the full text report (use: the newest Utah Snow Ensemble run, uu.load_use)."""
     fc, adjusted = regime_adjusted(fc, cfg)
     open_ = storms[(storms["status"] == "forecast") & (pd.to_datetime(storms["fc_end"]) > pd.Timestamp(now))]
     body = [storm_html(st, fc, cfg, use) for _, st in open_.sort_values("fc_start").iterrows()] or \
@@ -338,4 +373,5 @@ def render_html(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now, text: st
             f"content='width=device-width,initial-scale=1'><title>Cottonwoods storms</title><style>{CSS}</style></head>"
             f"<body><main><h1>Cottonwoods storms</h1><p class='muted'>{escape(timefmt.now_line(now))}. Times Mountain, "
             f"24-hour. Snow {'regime-adjusted' if adjusted else 'plain Kuchera'}. Internal; not the feed.</p>"
-            + "".join(body) + noaa_html(ghcn, storms, cfg, now) + full + "</main></body></html>")
+            + "".join(body) + observed_html(storms, readings, totals, cfg, now) + noaa_html(ghcn, storms, cfg, now)
+            + full + "</main></body></html>")

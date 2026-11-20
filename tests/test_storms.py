@@ -964,3 +964,56 @@ def test_collins_missing_hours_counts_hours_without_snow_and_board_cover():
                            "period_h": 12, "new_snow_in": 3.0, "water_in": 0.3, "depth_in": 21.0}])
     t = hand_obs_totals(st, pd.concat([gap, board], ignore_index=True), cfg)        # the 12 h board covers the gap
     assert t["missing_hours"] == 0
+
+
+def test_daily_table_fills_a_day_already_under_way_and_names_the_snow_day():
+    # owner 2026-11-19: "no total for Thursday": runs made mid-day showed "-" for the day under way, and "Fri 11/20"
+    # (0500 Thu to 0500 Fri) read as Friday's snow
+    from cottonwoods.report import model_days, model_table
+    cfg = make_cfg()
+    now = pd.Timestamp("2026-11-01 18:00")                 # the day under way: 11/01 12z (0500 MST) to 11/02 12z
+    fc = pd.concat([run_steps("HRRR", "2026-11-01 18:00", [(0, 6)], hours=48),
+                    run_steps("GFS", "2026-11-01 12:00", [], hours=120)])
+    feed_like = {r["model"]: r for r in model_days(fc, cfg, "alta", 2, now)}
+    assert feed_like["HRRR"]["days"][0] is None             # the feed keeps null: unchanged
+    part = {r["model"]: r for r in model_days(fc, cfg, "alta", 2, now, partial=True)}
+    c = part["HRRR"]["days"][0]
+    assert c["partial"] and abs(c["water_in"] - 6 / 25.4) < 1e-9 and not part["GFS"]["days"][0]["partial"]
+    lines = model_table(fc, cfg, "alta", 2, now, partial=True,
+                        observed={"water_in": 0.5, "snow_in": 4.0, "source": "Collins"})
+    assert "Sun-Mon 11/02" in lines[0] and "Mon-Tue 11/03" in lines[0]
+    assert "0.24*" in next(ln for ln in lines if ln.startswith("HRRR"))
+    obs = next(ln for ln in lines if ln.startswith("obs"))
+    assert "0.50" in obs and "4" in obs and "(Collins)" in obs
+
+
+def test_collins_so_far_is_private_and_matches_the_hours():
+    from cottonwoods import htmlreport
+    from cottonwoods.report import collins_window, observed_today, storm_block_lines
+    cfg = make_cfg()
+    t0 = pd.Timestamp("2026-11-01 12:00")
+    ends = pd.date_range(t0 + pd.Timedelta(hours=1), periods=6, freq="h")
+    rd = pd.DataFrame({"end_utc": ends, "start_utc": ends - pd.Timedelta(hours=1), "period_h": 1,
+                       "new_snow_in": 1.0, "water_in": 0.1, "depth_in": 30.0, "temp_f": 20.0, "rh_pct": 90.0})
+    got = collins_window(rd, t0, t0 + pd.Timedelta(hours=6), cfg)
+    assert abs(got["new_snow_in"] - 6) < 1e-9 and abs(got["water_in"] - 0.6) < 1e-9
+    assert collins_window(None, t0, t0 + pd.Timedelta(hours=6), cfg) is None
+    steps = hourly(t0, [2.54] * 6)                           # SNOTEL: 0.1"/h
+    now = t0 + pd.Timedelta(hours=6)
+    public = observed_today({"alta": steps}, None, cfg, now, t0)
+    assert public["alta"]["source"] == "SNOTEL water" and abs(public["alta"]["water_in"] - 0.6) < 1e-9
+    private = observed_today({"alta": steps}, rd, cfg, now, t0)
+    assert private["alta"]["source"] == "Collins" and abs(private["alta"]["snow_in"] - 6) < 1e-9
+    # the storm under way: Collins rows in the 12 h blocks only when readings are passed (the saved file)
+    st = pd.Series({"storm_id": "s", "point": "alta", "fc_start": pd.Timestamp("2026-11-01 06:00"),
+                    "fc_end": pd.Timestamp("2026-11-02 18:00"), "status": "forecast"})
+    fc = run_steps("GFS", "2026-11-01 00:00", [(6, 42)], hours=72)
+    fc["snow_in"] = fc["qpf_mm"] / 25.4 * 12
+    with_c = storm_block_lines(st, fc, cfg, now, None, rd)
+    assert any(ln.startswith("Collins") and "6*" in ln for ln in with_c)
+    assert not any(ln.startswith("Collins") for ln in storm_block_lines(st, fc, cfg, now, None, None))
+    # the page's observed table: a verified storm's Collins total and what the scores use
+    storms = pd.DataFrame([{**st.to_dict(), "status": "verified", "final_start": t0, "final_end": now,
+                            "obs_water_in": 0.6}])
+    page = htmlreport.observed_html(storms, rd, pd.DataFrame(columns=["source"]), cfg, now + pd.Timedelta(hours=1))
+    assert "Observed at Alta" in page and "6&quot;" not in page and '6"' in page and "0.60" in page

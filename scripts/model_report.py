@@ -6,16 +6,22 @@ Run automatically after each scheduled archive pass (scripts/run_models.bat); al
 
 Saved to data/reports/models_latest.txt (overwritten) and data/reports/models_<UTC time>.txt (kept).
 Each cell: deterministic models "water_in snow_in" (Kuchera); ensembles "members_with_0.10in/N mean_water_in".
-"-" means the run doesn't cover that whole day (e.g. HRRR beyond 48 h), or the day ends past the shown lead
-(config report: deterministic 168 h, ensembles 240 h).
+"-" means the run doesn't cover that day (e.g. HRRR beyond 48 h), or the day ends past the shown lead (config
+report: deterministic 168 h, ensembles 240 h); "*" = the run started during the day (its part only).
+The PRINTED report has no Collins values (the pass log is public); the saved one adds Alta Collins to the
+"observed so far" row.
 """
 import argparse
 from datetime import datetime, timedelta, timezone
 
+import pandas as pd
+
 from cottonwoods.archive.forecasts import load_forecasts
+from cottonwoods.archive.obs import load_collins_readings, load_snotel
 from cottonwoods.config import REPORTS_DIR, load_config
 from cottonwoods import timefmt
-from cottonwoods.report import render, staleness
+from cottonwoods.report import day_windows, observed_today, render, staleness
+from cottonwoods.storms import point_steps
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--days", type=int, help="default: config report.days")
@@ -31,11 +37,19 @@ header += ("\n".join(warnings) + "\n(check data\\logs\\models.log for [fail] lin
     "All models current: every run due in the last 2 days is archived.\n"
 # Only runs from the last 2 days can be "newest", so don't read the whole archive.
 fc = load_forecasts(cfg, start=now - timedelta(days=2))
-body = render(fc, cfg, args.points or list(cfg["points"]), args.days) if not fc.empty else \
-    "No model runs archived in the last 2 days. Run scripts/archive_forecasts.py.\n"
-
-text = header + "\n" + body
-print(text)
+points = args.points or list(cfg["points"])
+if fc.empty:
+    body = body_private = "No model runs archived in the last 2 days. Run scripts/archive_forecasts.py.\n"
+else:
+    # today's column so far (owner 2026-11-19): SNOTEL gauge water at every gauged point; Alta Collins new snow +
+    # water only in the SAVED report (private): the printed one goes to the public pass log.
+    day0 = day_windows(pd.Timestamp(now), 1, cfg["verify"]["window_end_utc_hour"])[0][0]
+    psteps = point_steps(load_snotel(start=day0 - timedelta(days=1)), cfg)
+    body = render(fc, cfg, points, args.days, partial=True, observed=observed_today(psteps, None, cfg, now, day0))
+    body_private = render(fc, cfg, points, args.days, partial=True,
+                          observed=observed_today(psteps, load_collins_readings(), cfg, now, day0))
+print(header + "\n" + body)
+text = header + "\n" + body_private
 out = REPORTS_DIR
 out.mkdir(parents=True, exist_ok=True)
 (out / "models_latest.txt").write_text(text, encoding="utf-8")

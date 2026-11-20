@@ -17,10 +17,12 @@ one. Later steps score them with the live scoring code.
 """
 from __future__ import annotations
 
+import copy
+
 import pandas as pd
 
 from . import journal, storms
-from .models.registry import REGISTRY, cycles
+from .models.registry import REGISTRY, cycles, kind_of
 from .units import MM_PER_IN
 
 WINTER = (10, 5)           # October through May
@@ -90,22 +92,28 @@ def attach_totals(st: pd.DataFrame, totals: pd.DataFrame, journal_storms: pd.Dat
 def plan_runs(found: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """The runs to fetch: one row per (model, init) with the storms it serves and the furthest lead any of them
     needs (hours to the latest storm end, capped at the model's own last hour). Storms under backfill.min_water_in
-    are left out. A run that can't reach a storm's start (HRRR at 72 h) is left out for that storm."""
+    are left out. A run that can't reach a storm's start (HRRR at 72 h), or issued before
+    backfill.first_init[model] (the U of U archive starts 2026-01), is left out for that storm."""
     b = cfg["backfill"]
     rows = []
     for _, s in found[found["obs_water_in"] >= b["min_water_in"]].iterrows():
         start, end = pd.Timestamp(s.final_start), pd.Timestamp(s.final_end)
         for model in b["models"]:
             hours = cycles(cfg, model)
-            last = max(REGISTRY[model].fxx_list(start.to_pydatetime(), cfg))
             for lead in b["leads_hours"]:
                 t = start - pd.Timedelta(hours=lead)
                 earlier = [h for h in hours if h <= t.hour]          # the newest cycle at or before t
                 init = (t.normalize() + pd.Timedelta(hours=max(earlier)) if earlier
                         else t.normalize() - pd.Timedelta(days=1) + pd.Timedelta(hours=max(hours)))
+                # the run's OWN last hour (2026-11-19: it was the storm START's hour, so IFS / ENS 00z / 12z runs
+                # took the 06z / 18z length for storms starting off-cycle, and ENS had none at all)
+                last = max(REGISTRY[model].fxx_list(init.to_pydatetime(), cfg) or [0])
                 need = (end - init) / pd.Timedelta(hours=1)
                 if (start - init) / pd.Timedelta(hours=1) >= last:
                     continue                             # the run ends before the storm begins
+                first = (b.get("first_init") or {}).get(model)
+                if first is not None and init < pd.Timestamp(first):
+                    continue                             # before the model's archive begins
                 rows.append({"model": model, "init": init, "storm_id": str(s.storm_id), "lead_h": lead,
                              "max_lead_hours": min(need, last)})
     plan = pd.DataFrame(rows, columns=["model", "init", "storm_id", "lead_h", "max_lead_hours"])
@@ -114,3 +122,18 @@ def plan_runs(found: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     return (plan.groupby(["model", "init"], as_index=False)
             .agg(storms=("storm_id", lambda x: " ".join(sorted(set(x)))), max_lead_hours=("max_lead_hours", "max"))
             .sort_values(["model", "init"]).reset_index(drop=True))
+
+
+def runs_by_lead(storm: pd.Series, cfg: dict, leads=None, ensembles: bool = False) -> list[tuple[str, int, pd.Timestamp]]:
+    """[(model, lead, init)] the backfill planned for this storm (plan_runs, one lead at a time; default every
+    backfill.leads_hours). Ensembles (ENS, GEFS: one row per member) are left out unless asked for: the scoring
+    scripts total a run's rows as one forecast, which for an ensemble would add its members together (they get
+    their own scoring: members wet / bin probabilities, docs/LEARNING_PLAN.md layer 7)."""
+    out = []
+    for lead in leads or cfg["backfill"]["leads_hours"]:
+        c = copy.deepcopy(cfg)
+        c["backfill"]["leads_hours"] = [lead]
+        for _, r in plan_runs(storm.to_frame().T, c).iterrows():
+            if ensembles or kind_of(r["model"]) != "ensemble":
+                out.append((r["model"], lead, pd.Timestamp(r["init"])))
+    return out

@@ -99,7 +99,9 @@ def weights(model: str, cells: dict, lat: float, lon: float) -> dict[str, float]
 def blend_points(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Replace each configured point's pulled numbers with the bilinear blend of the model's four cells.
     Models without model_cells or with `blend: false` there (GEFS: its 0.5 deg block reaches the Salt Lake Valley),
-    and runs missing a cell, come back unchanged. Adds cell_blend (bool) per row."""
+    and points whose cells the run lacks, come back unchanged. Adds cell_blend (bool) per row.
+    A point needs only the cells it is weighted on, so a run archived before a block was widened (GDPS gained a
+    column 2026-11-19 for park_city) still blends its old points exactly as before."""
     if df.empty or "model" not in df.columns:
         return df
     model = df["model"].iloc[0]
@@ -107,7 +109,8 @@ def blend_points(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         return df
     cells = model_cells(model, cfg)
     names = list(cell_points(model, cells))
-    if not set(names) <= set(df["point"].unique()):
+    present = set(df["point"].unique())
+    if not present & set(names):
         return df
     keys = [k for k in KEYS if k in df.columns and df[k].notna().any()]   # an all-empty member column is no key
     num = [c for c in df.select_dtypes("number").columns if c not in NOT_BLENDED]
@@ -118,7 +121,10 @@ def blend_points(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         mask = out["point"] == p
         if not mask.any():
             continue
-        w = cell_rows["point"].map(weights(model, cells, pt["lat"], pt["lon"])).fillna(0.0)   # other cells: 0
+        wts = weights(model, cells, pt["lat"], pt["lon"])
+        if not {k for k, v in wts.items() if v > 0} <= present:
+            continue                                                  # a cell it needs isn't in this run
+        w = cell_rows["point"].map(wts).fillna(0.0)                   # other cells: 0
         vals = cell_rows[num]
         by = [cell_rows[k] for k in keys]
         total = vals.mul(w, axis=0).groupby(by).sum()

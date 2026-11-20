@@ -249,6 +249,13 @@ Running live, TWO places for now (side-by-side check before cutover):
   skips if a run is queued/running/started in the last 30 min; GitHub's schedule stays as backup. Deployed by the
   owner via the dashboard (secret GITHUB_TOKEN = fine-grained, this repo only, Actions read+write). tests/
   test_cloud_trigger.py keeps its CRON in step with pass.yml. Check event "workflow_dispatch" runs at ~:50 appear.
+- v1.13 PREPARED 2026-11-19 (released only on the owner's approve; see docs/PLAN.md "IN MAIN 11/19"): reports
+  (Storms "Observed at Alta" + Collins rows in the 12 h blocks; Models "Thu-Fri" headers, partial day "*", "obs so
+  far"; COLLINS ONLY IN SAVED FILES: model_report.py / storms.py print a Collins-free version because the pass log is
+  public), park_city point at the Thaynes SNOTEL (internal) + thaynes_canyon obs + NWS Park City Mountain totals,
+  GDPS 2x3 cells (feed-visible: Brighton GDPS a true blend, manual v1.13), cells.blend_points per point, U of U
+  "0:1 /  -%" parser fix, "most likely bins". Laptop tools: time-height (models/bufkit.py, timeheight.py),
+  shortwaves.py, backfill scripts; learning design docs/LEARNING_PLAN.md.
 - RELEASED v1.11 (owner approved 2026-11-12 "make everything since 1.10 live as 1.11"): everything below, the
   review fixes / backfill scripts / ECMWF 06-18z names / feed below-ground flag, and (4) NOAA ALTA (obs:ghcn) failing
   on a SCHEDULED pass shows FAILED in the obs table only, not a failed run (archive.obs.step_failed; NCEI 503s

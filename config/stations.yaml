@@ -11,6 +11,10 @@ snotel:
                    lat: 40.65883, lon: -111.63683, elev_ft: 8940}
   atwater:        {name: "Atwater",        triplet: "1308:UT:SNTL", verified: true,
                    lat: 40.59124, lon: -111.63775, elev_ft: 8750}
+  # BACK SIDE of the Wasatch crest (Park City; owner 2026-11-19, spillover measurement): ~4.5 km east of Brighton
+  # SNOTEL at a similar elevation. The only SNOTEL east of the crest near the Cottonwoods (AWDB list checked 11/19)
+  thaynes_canyon: {name: "Thaynes Canyon", triplet: "814:UT:SNTL", verified: true,
+                   lat: 40.62350, lon: -111.53322, elev_ft: 9260}
 
 # Non-NRCS stations, pulled from the Synoptic (MesoWest) API; needs SYNOPTIC_TOKEN in the environment.
 # Alta Collins is Alta's own reference site (the one Alta reports from). No snow pillow, so it is
@@ -36,12 +40,55 @@ backfill:
   # step 2, the runs (scripts/backfill_runs.py): each model's run issued at least each lead before a storm began,
   # fetched only up to the storm's end, a model at a time, with the live archive.download_workers (one GFS run of
   # 104 h peaked at ~130 MB; 2 workers took 20 min, mostly waiting on NCAR)
-  models: [GFS, HRRR, IFS]
+  models: [GFS, HRRR, IFS, UUHRRR, UUGFS, ENS, GEFS]   # RRFS left out: NOAA's archive starts 2026-08; Canadian
+                             # models: ~30-day archive (checked 2026-11-19). Ensembles: not in the scoring scripts
+                             # (backfill.runs_by_lead), for the bin-calibration layer
+  first_init: {UUHRRR: 2026-01-01, UUGFS: 2026-01-01, IFS: 2024-02-01, ENS: 2024-02-01}   # U of U files from 2026-01-01;
+                             # IFS / ENS 0.25 deg open data start 2024-02-01 (0.4 deg before; checked 2026-11-19)
   leads_hours: [24, 48, 72]
   min_water_in: 0.5          # storms with less observed water are not worth a download
   gfs_aws_first: true        # GFS from AWS first (2021 on), NCAR GDEX for older runs (live passes: GDEX first)
   download_workers: {noaa: 4}  # overrides archive.download_workers for these servers (HRRR's 12 ran the laptop
                                # low on memory alongside other programs, 2026-11-10)
+
+# Time-height features from BUFKIT model point soundings (owner 2026-11-19; models/bufkit.py, timeheight.py,
+# scripts/time_height.py; laptop only, not in the pass or the feed). Iowa State MTArchive keeps NCEP's BUFKIT files:
+# Alta since at least 2020, KSLC since at least 2016 (checked 2026-11-19). Thresholds UNCALIBRATED (first version).
+timeheight:
+  base_url: https://mtarchive.geol.iastate.edu
+  files: {HRRR: hrrr/hrrr, RAP: rap/rap, GFS: gfs/gfs3, RRFS: rrfs/rrfs}   # folder/prefix
+  sites: {alta: alta, kslc: kslc}
+  timeout_s: 60
+  user_agent: cottonwoods-wx (snow forecast verification)
+  top_hpa: 300               # levels above this are ignored (no snow cloud there)
+  rh_moist: 90               # % (over ice below 0 C): a level counts as moist / saturated
+  moist_base_max_agl_m: 1000 # the moist layer must start within this of the model's ground to snow on the point
+  dgz_c: [-18, -12]          # dendritic growth zone
+  stab_top_hpa: 500          # stability (theta-e, lapse rate) from the model's ground up to this level
+  front_hpa: 650             # the front is looked for here (700 mb is underground at Alta in deep lows)
+  # overrunning (owner 2026-11-19): snow from a cloud aloft sublimating in dry air below it
+  cloud_min_depth_m: 300     # the precipitating cloud = the lowest saturated layer at least this deep
+  onset_in: 0.1              # a storm's onset = first time this much water has fallen (the gauge reads 0.1")
+  onset_window_hours: 6      # the dry gap is averaged over this long before each onset
+  # spillover (owner 2026-11-19): crest-made snow carried onto the Wasatch back (Park City) instead of the Cottonwoods
+  crest_m: 3200              # Wasatch crest at the head of the Cottonwoods (~10,500 ft)
+  barrier_normal_deg: 270    # cross-barrier flow comes FROM the west (crest runs ~N-S here)
+  barrier_height_m: 2000     # crest above the Salt Lake Valley (Froude number)
+  stab_layer_m: 2000         # stability for the Froude number: this deep above the model's ground
+  gen_max_agl_m: 4000        # snow generation level searched for up to this above the ground
+  fall_speed_ms: {cold: 1.0, warm: 1.5}   # dendrites / aggregates vs rimed snow
+  fall_cold_c: -10           # generated at or below this: "cold" fall speed
+  spill_sites: {back: [thaynes_canyon], front: [brighton]}   # gauges either side of the crest (~4.5 km apart,
+                                                           # 9,260 / 8,790 ft)
+  # measurement (scripts/backfill_timeheight.py, timeheight_scores.py)
+  analysis_model: RAP        # its hourly runs' first profiles = the near-observed time-height
+  backfill_models: [HRRR, GFS]   # forecast BUFKIT files fetched for the backfill's planned runs
+  pad_hours: 6               # analyses from this long before each storm (to catch the front)
+  pause_s: 0.2               # between downloads (Iowa State's public server)
+  block_hours: 6             # observed vs forecast compared in blocks this long (the gauge reads in 0.1" steps)
+  wet_block_in: 0.05         # a block with at least this much observed water is "wet"
+  conv_min_depth_m: 2000     # "convective": moist layer at least this deep ...
+  conv_min_thetae_drop_k: 2  # ... and theta-e falling at least this much with height inside it
 
 # NWS Salt Lake "Preliminary Storm Information" statements (obs/pns.py, owner 2026-11-10): Collins storm totals,
 # public, archived by IEM since well before 2016. Scored only where the Worker's hours give no snow total (owner:
@@ -55,7 +102,8 @@ pns:
   timeout_s: 60
   user_agent: cottonwoods-wx (snow forecast verification)
   days: 10                     # a scheduled pass re-reads the last 10 days of statements
-  sites: {alta: '^alta\W+collins$'}   # our site -> the statement's station name (regex; "Alta Collins", "Alta - Collins")
+  sites: {alta: '^alta\W+collins$',  # our site -> the statement's station name (regex; "Alta Collins", "Alta - Collins")
+          park_city: '^park\W+city\W+mountain$'}   # "Park City Mountain - 9300 ft" (owner 2026-11-19)
   match_after_hours: 12
   start_match_hours: 24
   max_storm_days: 10           # a stated start date further back than this (or after the statement) is an NWS typo:
@@ -105,6 +153,11 @@ points:
                     label: "Mill-D North SNOTEL"}
   brighton_snotel: {lat: 40.59936, lon: -111.58167, elev_ft: 8790, obs: [brighton], internal: true,
                     label: "Brighton SNOTEL"}
+  # WASATCH BACK (owner 2026-11-19): forecast at the Thaynes Canyon SNOTEL on Park City Mountain (9,260 ft),
+  # verified on its gauge (water) and the NWS "Park City Mountain - 9300 ft" statement totals (snow, config pns).
+  # Internal for now (not in the feed). Exists only in runs archived after the change.
+  park_city:       {lat: 40.62350, lon: -111.53322, elev_ft: 9260, obs: [thaynes_canyon], internal: true,
+                    label: "Thaynes Canyon SNOTEL"}   # storm-table header "Thaynes SNTL"
 
 # The 2x2 block of grid points around the Cottonwoods for each COARSE model. The resorts all sit nearest the same
 # one or two of these, so every run of these models also stores all four (with each cell's own profile), so
@@ -112,10 +165,16 @@ points:
 # models' exact grid points (checked against real files 2026-10-27), so each cell is read with zero distance.
 # Stored as points named like "gfs_40.50N_111.75W"; verification and the reports skip them for now.
 model_cells:
-  GFS:  {lats: [40.50, 40.75], lons: [-111.75, -111.50]}   # 0.25 deg (~28 x 21 km)
+  GFS:  {lats: [40.50, 40.75], lons: [-111.75, -111.50]}   # 0.25 deg (~28 x 21 km); park_city (-111.533) is inside
   IFS:  {lats: [40.50, 40.75], lons: [-111.75, -111.50]}   # ECMWF HRES, 0.25 deg
   ENS:  {lats: [40.50, 40.75], lons: [-111.75, -111.50]}   # ECMWF ensemble, 0.25 deg
-  GDPS: {lats: [40.50, 40.65], lons: [-111.75, -111.60]}   # 0.15 deg (~17 x 13 km)
+  # GDPS: 2 x 3 (owner 2026-11-19: park_city at -111.533 is east of the old -111.60 edge), as grid_points (rows
+  # south -> north, columns west -> east); each point blends inside its own square, so the Cottonwoods points keep
+  # exactly their old weights.
+  GDPS:                                                    # 0.15 deg (~17 x 13 km)
+    grid_points:
+      - [[40.50, -111.75], [40.50, -111.60], [40.50, -111.45]]
+      - [[40.65, -111.75], [40.65, -111.60], [40.65, -111.45]]
   GEFS: {lats: [40.50, 41.00], lons: [-112.00, -111.50],   # 0.5 deg (~55 x 42 km: the cells reach the valley and Park City)
          blend: false}   # owner 2026-10-28: keep the nearest cell; blending would mix Salt Lake Valley precip into the resorts
   # RDPS (owner 2026-10-29): a rotated ~10 km grid, so its cells don't sit on lat/lon lines: grid_points lists the
@@ -282,6 +341,7 @@ archive:
 patterns:
   box: {lat: [25, 60], lon: [-150, -90]}   # Pacific troughs to the Plains
   grid_deg: 1.0
+  first_hour: 6                          # first lead pulled (0 = the analysis; the backfill's maps use 0)
   step_hours: 6
   max_hours: 240
   recent_cycles: 8                       # newest cycles each pass checks (2 days: a missed pass is caught up)
@@ -292,6 +352,28 @@ patterns:
     GFS: {cycles_utc: [0, 6, 12, 18]}
     GEFS: {cycles_utc: [0, 6, 12, 18]}
     IFS: {cycles_utc: [0, 12]}
+
+# 500 mb shortwave troughs + vorticity advection (owner 2026-11-19; shortwaves.py, scripts/shortwaves.py), from
+# the pattern archive. Laptop only, not in the pass or the feed. First guesses, UNCALIBRATED.
+shortwaves:
+  grid: 1deg                 # the 1 deg Pacific-to-Plains grid: every model area-averaged onto it (like for like),
+                             # long tracks; "native" (0.25 deg around Utah) is noisy and tracks last 2-3 maps
+  background_km: 400         # vorticity smoothed this much (Gaussian sigma) = the background; the rest = shortwaves
+  detail_km: 0               # ... and smoothed this much first (75 for the native grid: 0.25 deg streaks)
+  min_anomaly_s: 1.5e-4      # a shortwave: anomaly maximum at least this (1/s; 1 deg grid, 11/15-18 maps 29-52e-5)
+  peak_spacing_km: 250       # maxima closer than this are one feature
+  max_speed_kmh: 120         # a trough moves at most this far per hour between maps (~33 m/s)
+  allow_west_kmh: 15         # ... and at most this fast westward (troughs here move east; allows wobble)
+  max_gap_hours: 12          # a track can skip one 6 h map
+  match_radius_km: 400       # a maximum joins a track only this close to where the track should be by now
+  first_guess_kmh: 50        # a one-point track is expected to move this fast east
+  min_maps: 2                # tracks seen on fewer maps are noise
+  passage_lat_deg: 5         # a crossing of the point's longitude counts within this far north / south
+  pva_radius_km: 200         # PVA averaged over this disk around the point (a few 1 deg cells)
+  analysis_lead_hr: 0        # backfill "what happened" maps: each GFS run's 0 h ANALYSIS (full map), chained run
+                             # to run (the live archive has no 0 h: scripts chain each run's earliest map, 6 h)
+  analysis_before_hours: 48  # backfill maps (scripts/backfill_patterns.py): from this long before each storm
+  analysis_after_hours: 12   # ... to this long after it
 
 # Snow / mix / rain at each station, per model step, from the model's profile moved to the station's real
 # elevation (src/cottonwoods/profile.py). Wet-bulb (not air) temperature, because snow falling into dry air cools

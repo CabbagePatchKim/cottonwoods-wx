@@ -102,14 +102,16 @@ def test_gfs_runs_also_store_the_2x2_cells_and_verify_ignores_them():
     assert not build_pairs(fc, obs, cfg2)["point"].str.startswith("gfs_").any()
 
 
-def test_every_coarse_model_stores_its_own_2x2_cells():
+def test_every_coarse_model_stores_its_own_block_of_cells():
     cfg = make_cfg()
     expect = {"GFS": "gfs_40.50N_111.75W", "IFS": "ifs_40.75N_111.50W", "ENS": "ens_40.50N_111.50W",
               "GDPS": "gdps_40.65N_111.60W", "GEFS": "gefs_41.00N_112.00W"}
     for model, name in expect.items():
         pts = fa.run_points(model, cfg)
         cells = [p for p in pts if p not in cfg["points"]]
-        assert len(cells) == 4 and name in cells, model
+        # GDPS 2 x 3 (owner 2026-11-19: a column east for park_city at the Thaynes SNOTEL); the others 2 x 2
+        assert len(cells) == (6 if model == "GDPS" else 4) and name in cells, model
+    assert "gdps_40.65N_111.45W" in fa.run_points("GDPS", cfg)
     rdps = [p for p in fa.run_points("RDPS", cfg) if p not in cfg["points"]]   # rotated grid: its own 3x3 grid points
     assert len(rdps) == 9 and "rdps_40.60N_111.62W" in rdps
     for model in ("HRRR", "NAMNEST", "NAM"):   # fine grids: resort points only
@@ -291,6 +293,10 @@ def test_uu_guidance_text_becomes_model_steps_with_their_own_snow():
     g = uu.parse_text("UUGFS", UU_GFS, datetime(2026, 10, 30))
     assert g["lead_hr"].tolist() == [1, 4] and abs(g["snow_issued_in"].iloc[1] - 1.5) < 1e-9   # hour 0 dropped
     assert np.isnan(g["wbz_msl_m"].iloc[1])                                     # "<= KSLC": below the valley, no height
+    # UUGFS prints a zero snow ratio as "0:1 /  -%" (2026-05 runs lost 32 of 90 hours to it, 2026-11-19)
+    zero = UU_GFS.replace("   8300 FT       11:1 /  9%      0.05\"", "   8300 FT       0:1 /  -%       0.05\"")
+    z = uu.parse_text("UUGFS", zero, datetime(2026, 10, 30))
+    assert z["lead_hr"].tolist() == [1, 4] and z["slr_issued"].iloc[0] == 0.0
     d = fa.derive_run_fields(g, cfg)
     assert (d["snow_in"] == d["snow_issued_in"]).all()                          # their snow, their ratio
 

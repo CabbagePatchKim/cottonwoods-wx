@@ -3,6 +3,39 @@
 Shown at the start of every Claude Code session by the SessionStart hook (scripts/collins_due.py). Update it as
 steps finish; keep it short.
 
+## LEARNING MODEL PLAN (owner 2026-11-19): docs/LEARNING_PLAN.md (step 6 design; v0 + switches; GFS dryness check first)
+
+## FIRST THING NEXT SESSION (2026-11-20): ask before anything else
+1. Did the sequential backfill finish? (one job at a time after the 11/19 low-memory stop of all four jobs): IFS
+   2024-25 (80/86 at the stop), GFS + HRRR 2024-25, 2023-24, 2022-23, then 500 mb maps (0 h analyses 4 winters, then
+   GFS forecast maps). Check data/local/backfill/runs_log.csv + maps folders; rerun the same commands (they skip
+   what is on disk). RUN ONE AT A TIME (7.8 GB laptop; close other programs).
+2. Then: backfill_scores.py per winter; timeheight_scores.py --winters 2025-26 2024-25 2023-24 2022-23; the GFS
+   dryness check (LEARNING_PLAN section 0).
+3. RELEASE (owner approves): everything below "IN MAIN 11/19". Before: golden check (11/19: only expected
+   differences: old GDPS runs' cell_blend flag at Brighton rows, values identical; reports gain the Thaynes column /
+   section), CI green, dry run on a bucket copy. Manual "Changes by version": GDPS at BRIGHTON now a true blend with
+   the new eastern column (~13%; it was the clipped edge): small feed-visible change. park_city is internal.
+
+## IN MAIN 11/19 (not released)
+- U of U parser: "0:1 /  -%" (zero snow ratio, UUGFS) dropped hours; fixed + test (1 of 278 live runs affected).
+- park_city point at the Thaynes Canyon SNOTEL (internal; label "Thaynes Canyon SNOTEL"), verified on its gauge and
+  NWS "Park City Mountain" totals (pns.sites); thaynes_canyon in config snotel (obs fetched every pass; history
+  2016-10+ backfilled on the laptop, not pushed). GDPS cells 2x3 (a column at -111.45). cells.blend_points now
+  checks each point's own cells (old runs keep blending their old points).
+- Reports (owner 11/19): Storms page "Observed at Alta" (Collins so far / NWS / scored-as, recent storms) and Collins
+  rows in the 12 h blocks of a storm under way; Models: "Thu-Fri 11/20" headers, partial day for runs started
+  mid-day ("*"), "obs so far" row. Collins only in SAVED files (pass log is public: printed versions are SNOTEL-only);
+  the feed unchanged. Chances table: "most likely bins".
+- golden.py prints the first changed lines of a differing report.
+- Laptop tools (not in the pass): time-height (BUFKIT), shortwaves / PVA, backfill_patterns / backfill_timeheight /
+  timeheight_scores, backfill models HRRR + UUHRRR + UUGFS (first_init 2026-01-01), backfill.runs_by_lead.
+- 2025-26 backfill complete: GFS, IFS, HRRR (23), UUGFS (36), UUHRRR (12); RRFS impossible (NOAA archive from 2026-08).
+  Water ratio vs SNOTEL at 24 h: HRRR 0.73, UUHRRR 0.85, UUGFS 0.66, GFS 0.45, IFS 0.33.
+  Time-height first look (1 winter): observed heavy blocks rise with moist depth (<1 km 0.16" / 6 h, >3 km ~0.5");
+  models driest when their own forecast is shallow / growth zone unsaturated; Thaynes / Brighton 0.58 -> 0.94 as the
+  cross-barrier wind rises (pillows agree: not undercatch); onset: no signal yet.
+
 ## DONE 2026-11-18 (evening): GFS 2025-26 backfill complete, 69 of 69 runs (last 18 archived, exit 0)
 GOLDEN CHECK 11/18 for v1.12: every run IDENTICAL; both reports IDENTICAL on the snapshot's own runs (the first
 "DIFF report storms/models" was runs archived after the 11/11 snapshot). golden.py check now uses only the
@@ -95,6 +128,10 @@ trends and guidance are all unproven. Until a few storms verify, the work is MEA
 5. [ ] Only then decide from results: keep / fix / drop (regime factors, cell blend, the 0 -> 1 C rain/snow rule,
        PRISM idea), and the design changes (store raw + derive on read; a `variant` column instead of "GFS raw";
        one scores table; split CLAUDE.md into architecture / decision log / status).
+6. [ ] The learning layer ("CWX"), agreed 2026-11-19: docs/LEARNING_PLAN.md. Starts with the GFS dryness check
+       (SNOTEL vs Collins / NWS, blended vs nearest point), then v0 (water correction, timing, blend weights, SLR model,
+       calibrated bins; season-out tested, partial pooling, capped) and the article-derived switches tested one at a
+       time; v0 + v1 run live and frozen through 2026-27 before any feed decision.
 
 ## Review of the 11/10 work (11/11, in main, not released)
 Dry run of main's storms step on a bucket copy: ok (frozen regime: weekend storm now S/E -> SW -> NW from GDPS

@@ -76,7 +76,12 @@ else:
             bad += 1
             print(f"DIFF run {k}: {str(e)[:300]}")
     for k, v in texts.items():
-        if v != (OUT / f"{k}.txt").read_text(encoding="utf-8"):
+        old = (OUT / f"{k}.txt").read_text(encoding="utf-8")
+        if v != old:
+            import difflib
             bad += 1
-            print(f"DIFF report {k}")
+            print(f"DIFF report {k} (first changed lines):")
+            diff = [ln for ln in difflib.unified_diff(old.splitlines(), v.splitlines(), "snapshot", "now", n=0, lineterm="")
+                    if not ln.startswith(("---", "+++"))]
+            print("\n".join(diff[:40]) + (f"\n... {len(diff) - 40} more" if len(diff) > 40 else ""))
     print("IDENTICAL" if not bad else f"{bad} differences")

@@ -54,8 +54,9 @@ def pattern_path(model: str, init, cfg: dict, root: Path | None = None) -> Path:
 
 
 def steps(cfg: dict) -> list[int]:
+    """Lead hours pulled: first_hour (live 6; the backfill's analyses 0) to max_hours every step_hours."""
     p = cfg["patterns"]
-    return list(range(p["step_hours"], p["max_hours"] + 1, p["step_hours"]))
+    return list(range(p["first_hour"], p["max_hours"] + 1, p["step_hours"]))
 
 
 def area_mean(vals: np.ndarray, res: float, step: float) -> np.ndarray:

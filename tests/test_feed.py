@@ -75,7 +75,7 @@ def test_internal_points_are_never_in_the_feed():
     # The SNOTEL-site points are archived and verified, but the website only ever sees the resorts
     cfg, f = _feed()
     internal = {p for p, v in cfg["points"].items() if v.get("internal")}
-    assert internal == {"solitude_snotel", "brighton_snotel"}
+    assert internal == {"solitude_snotel", "brighton_snotel", "park_city"}   # park_city: Wasatch back, internal for now
     assert set(feed.public_points(cfg)) == {"alta", "snowbird", "solitude", "brighton"}
     assert not internal & set(f["meta"]["points"])
     assert not internal & set(f["daily"]["points"])

@@ -54,12 +54,14 @@ def latest_runs(fc: pd.DataFrame) -> pd.DataFrame:
 
 
 def model_days(fc: pd.DataFrame, cfg: dict, point: str, days: int | None = None,
-               start: pd.Timestamp | None = None) -> list[dict]:
+               start: pd.Timestamp | None = None, partial: bool = False) -> list[dict]:
     """The numbers behind model_table, one dict per model (newest run), in display order. Each day is a dict:
     deterministic {"water_in", "snow_in", "snow_in_regime"} (NaN where missing; snow_in_regime only exists if fc went
     through regime_adjusted), ensembles {"members_wet", "members", "mean_water_in"},
     or None where the run doesn't cover the whole day, or the day ends past the run's shown lead (config report:
-    deterministic 168 h, ensembles 240 h for the 8-10 day tail). Used by the text report and the website feed."""
+    deterministic 168 h, ensembles 240 h for the 8-10 day tail). Used by the text report and the website feed.
+    partial (the text report only, owner 2026-11-19; the FEED keeps None): a run that STARTED during a day and covers
+    the rest of it gets that rest, marked "partial": True (the day already under way when the newest runs came in)."""
     rcfg = cfg["report"]
     start = start or pd.Timestamp.now(tz="UTC").tz_localize(None)
     fc = fc[fc["model"].map(kind_of) != "guidance"]      # guidance has its own table in the storm reports
@@ -72,16 +74,22 @@ def model_days(fc: pd.DataFrame, cfg: dict, point: str, days: int | None = None,
         ens = "member" in g.columns and g["member"].notna().any()
         g = within_lead(g, rcfg["ensemble_lead_hours"] if ens else rcfg["deterministic_lead_hours"])
         cells = []
+        begun = g["valid_start"].min() if not g.empty else None
         for s, e in wins:
+            # the run started during this day and reaches its end: total its part (text report only, "partial")
+            part = (partial and begun is not None and s < begun < e and g["valid_end"].max() >= e)
+            a, strict = (begun, False) if part else (s, True)
             if ens:
-                per = g.groupby("member").apply(lambda m: window_total(m, s, e, strict=True), include_groups=False).dropna()
+                per = g.groupby("member").apply(lambda m: window_total(m, a, e, strict=strict),
+                                                include_groups=False).dropna()
                 cells.append({"members_wet": int((per >= thr_mm).sum()), "members": len(per),
-                              "mean_water_in": per.mean() / MM_PER_IN} if len(per) else None)
+                              "mean_water_in": per.mean() / MM_PER_IN, "partial": part} if len(per) else None)
             else:
-                water = window_total(g, s, e, strict=True) / MM_PER_IN
-                snow = window_total(g, s, e, "snow_in", strict=True) if "snow_in" in g.columns else np.nan
-                adj = window_total(g, s, e, "snow_in_adj", strict=True) if "snow_in_adj" in g.columns else np.nan
-                cells.append(None if np.isnan(water) else {"water_in": water, "snow_in": snow, "snow_in_regime": adj})
+                water = window_total(g, a, e, strict=strict) / MM_PER_IN
+                snow = window_total(g, a, e, "snow_in", strict=strict) if "snow_in" in g.columns else np.nan
+                adj = window_total(g, a, e, "snow_in_adj", strict=strict) if "snow_in_adj" in g.columns else np.nan
+                cells.append(None if np.isnan(water) else {"water_in": water, "snow_in": snow, "snow_in_regime": adj,
+                                                           "partial": part})
         out.append({"model": model, "init": g["init"].iloc[0], "ensemble": ens, "windows": wins, "days": cells})
     return _by_model_order(out)
 
@@ -103,32 +111,39 @@ def _cells(c: dict | None, regime: bool = False) -> tuple[str, str]:
     doesn't cover it. regime: show the regime-adjusted snow where there is one (the storm report)."""
     if c is None:
         return "-", ""
+    star = "*" if c.get("partial") else ""          # the run started during that day: its part only
     if "members" in c:
-        return f"{c['members_wet']}/{c['members']}", f"{c['mean_water_in']:.2f}"
+        return f"{c['members_wet']}/{c['members']}{star}", f"{c['mean_water_in']:.2f}"
     snow = c["snow_in_regime"] if regime and not np.isnan(c.get("snow_in_regime", np.nan)) else c["snow_in"]
-    return f"{c['water_in']:.2f}", "" if np.isnan(snow) else f"{snow:.0f}"
+    return f"{c['water_in']:.2f}{star}", "" if np.isnan(snow) else f"{snow:.0f}"
 
 
 def model_table(fc: pd.DataFrame, cfg: dict, point: str, days: int | None = None,
-                start: pd.Timestamp | None = None) -> list[str]:
+                start: pd.Timestamp | None = None, partial: bool = False, observed: dict | None = None) -> list[str]:
     """One point's daily table as text lines (newest run of each model). Every day is a fixed-width block under its
-    date holding two numbers, named on a sub-header row: water + Kuchera snow for deterministic models, wet members/N
-    + mean water for ensembles. Fixed widths, so each number sits under its own header."""
-    rows = model_days(fc, cfg, point, days, start)
+    header holding two numbers, named on a sub-header row: water + Kuchera snow for deterministic models, wet members/N
+    + mean water for ensembles. Headers name the snow day and the morning it is reported ("Thu-Fri 11/20" = 0500
+    Thu to 0500 Fri; owner 2026-11-19: "Fri 11/20" read as Friday's snow). partial: runs that started during a day
+    show the rest of it, "*" (model_days). observed: this point's observed_today, an "observed so far" row under
+    the first (current) day."""
+    rows = model_days(fc, cfg, point, days, start, partial=partial)
     if not rows:
         return ["(no archived runs)"]
 
     def line(model, run, cells):
-        return (f"{model:<8}{run:<11}" + "".join(f"  {a:>5}{b:>6}" for a, b in cells)).rstrip()
+        return (f"{model:<8}{run:<11}" + "".join(f"   {a:>5}{b:>6}" for a, b in cells)).rstrip()
 
-    ends = [e for _, e in rows[0]["windows"]]
-    out = [" " * 19 + "".join(f"{timefmt.local(e):%a %m/%d}".rjust(13) for e in ends)]
+    wins = rows[0]["windows"]
+    out = [" " * 19 + "".join(f"{timefmt.local(s):%a}-{timefmt.local(e):%a %m/%d}".rjust(14) for s, e in wins)]
     for group, names in (([r for r in rows if not r["ensemble"]], ("water", "snow")),
                          ([r for r in rows if r["ensemble"]], ("wet/N", "mean"))):
         if group:
-            out.append(line("model", "run", [names] * len(ends)))
+            out.append(line("model", "run", [names] * len(wins)))
             out += [line(r["model"], timefmt.cycle(r["init"]), [_cells(c) for c in r["days"]])
                     for r in group]
+        if observed and names[0] == "water":
+            snow = "" if pd.isna(observed["snow_in"]) else f"{observed['snow_in']:.0f}"
+            out.append(line("obs", "so far", [(f"{observed['water_in']:.2f}", snow)]) + f"   ({observed['source']})")
     return out
 
 
@@ -157,21 +172,30 @@ def staleness(cfg: dict, now, root=None, grace_hours: float = 4.0, lookback_cycl
 
 
 def render(fc: pd.DataFrame, cfg: dict, points: list[str], days: int | None = None,
-           start: pd.Timestamp | None = None) -> str:
-    """The text report: one table per point."""
+           start: pd.Timestamp | None = None, partial: bool = False, observed: dict | None = None) -> str:
+    """The text report: one table per point. partial / observed: see model_table (observed = observed_today)."""
     rcfg = cfg["report"]
-    end_local = timefmt.clock(day_windows(start or pd.Timestamp.now(tz="UTC").tz_localize(None), 1,
-                                          cfg["verify"]["window_end_utc_hour"])[0][1], date=False)
-    lines = [f"Each day: the 24 h ending {end_local} on that date (the morning snow report's day). Amounts in inches.",
+    now = start or pd.Timestamp.now(tz="UTC").tz_localize(None)
+    end_local = timefmt.clock(day_windows(now, 1, cfg["verify"]["window_end_utc_hour"])[0][1], date=False)
+    lines = [f"Each day: {end_local} to {end_local}, headed by the day the snow falls and the morning it is reported "
+             f"(\"Thu-Fri 11/20\" = {end_local} Thu to {end_local} Fri). Amounts in inches.",
              "  water snow   deterministic models: water, and Kuchera snow at the point's elevation",
              f"  wet/N mean   ensembles: members with >= {cfg['verify']['event_swe_in']:.2f}\" water out of N, "
              "and their mean water",
              f"  run = model cycle (UTC). Deterministic shown to {rcfg['deterministic_lead_hours']} h after the run, "
-             f"ensembles to {rcfg['ensemble_lead_hours']} h; '-' = not covered.", ""]
+             f"ensembles to {rcfg['ensemble_lead_hours']} h; '-' = not covered."]
+    if partial:
+        lines.append("  * = the run started during that day: only its part, from the run's start to the day's end")
+    if observed:
+        lines.append(f"  observed so far = what has fallen in the first day's column up to "
+                     f"{timefmt.clock(now, date=False)} (source named on the row: Collins = water + new snow, "
+                     "SNOTEL = gauge water only)")
+    lines.append("")
     for p in points:
         pt = cfg["points"][p]
         note = ", SNOTEL site, internal: not in the feed" if pt.get("internal") else ""
-        lines += [f"=== {pt.get('label', p).upper()}  ({pt['elev_ft']:,} ft{note})", *model_table(fc, cfg, p, days, start), ""]
+        lines += [f"=== {pt.get('label', p).upper()}  ({pt['elev_ft']:,} ft{note})",
+                  *model_table(fc, cfg, p, days, start, partial, (observed or {}).get(p)), ""]
     return "\n".join(lines)
 
 
@@ -234,7 +258,45 @@ def _observed_blocks(osteps: pd.DataFrame, blks, now) -> list[str]:
     return seen
 
 
-def storm_block_lines(st, fc: pd.DataFrame, cfg: dict, now=None, osteps: pd.DataFrame | None = None) -> list[str]:
+def collins_window(readings: pd.DataFrame | None, s, e, cfg: dict) -> dict | None:
+    """Alta Collins new snow / water over (s, e] (storms.hand_obs_totals on that window: hourly readings and
+    boards, nothing counted twice), or None without readings there. PRIVATE: Collins values go only to the private
+    report files and pages, never to printed output (the pass log is public) or the feed."""
+    if readings is None or readings.empty or pd.Timestamp(e) <= pd.Timestamp(s):
+        return None
+    return hand_obs_totals(pd.Series({"final_start": pd.Timestamp(s), "final_end": pd.Timestamp(e),
+                                      "fc_start": pd.Timestamp(s), "fc_end": pd.Timestamp(e)}), readings, cfg)
+
+
+def _collins_blocks(readings: pd.DataFrame, blks, now, cfg: dict) -> tuple[list[str], list[str]]:
+    """Collins new snow and water in each block so far: '' for blocks not begun, "*" for the block still going."""
+    snow, water = [], []
+    for bs, be, _ in blks:
+        got = collins_window(readings, bs, min(be, pd.Timestamp(now)), cfg) if bs < pd.Timestamp(now) else None
+        star = "*" if bs < pd.Timestamp(now) < be else ""
+        snow.append("" if got is None or pd.isna(got["new_snow_in"]) else f"{got['new_snow_in']:.0f}{star}")
+        water.append("" if got is None or pd.isna(got["water_in"]) else f"{got['water_in']:.2f}{star}")
+    return snow, water
+
+
+def observed_today(psteps: dict[str, pd.DataFrame] | None, readings: pd.DataFrame | None, cfg: dict, now,
+                   s) -> dict[str, dict]:
+    """What has fallen since `s` (the start of today's column) up to now, per point: SNOTEL gauge water (psteps,
+    storms.point_steps); at storms.point (Alta) Collins new snow + water instead when `readings` are given (PRIVATE:
+    pass readings only for the saved report files). {point: {"water_in", "snow_in", "source"}}."""
+    out = {}
+    for p in cfg["points"]:
+        steps = (psteps or {}).get(p)
+        if steps is not None and not steps.empty:
+            out[p] = {"water_in": window_total(steps, s, now) / MM_PER_IN, "snow_in": np.nan, "source": "SNOTEL water"}
+    got = collins_window(readings, s, now, cfg)
+    if got is not None:
+        out[cfg["storms"]["point"]] = {"water_in": got["water_in"], "snow_in": got["new_snow_in"], "source": "Collins"}
+    return out
+
+
+def storm_block_lines(st, fc: pd.DataFrame, cfg: dict, now=None, osteps: pd.DataFrame | None = None,
+                      readings: pd.DataFrame | None = None) -> list[str]:
     """A storm in fixed 12 h blocks (blocks.py), kept to two small tables so long storms stay readable:
       1. storms.block_point (Alta) snow by model, plus their median and the ensembles' share of wet members;
       2. every point's median snow (of the deterministic runs covering the whole block).
@@ -287,6 +349,10 @@ def storm_block_lines(st, fc: pd.DataFrame, cfg: dict, now=None, osteps: pd.Data
     if going and osteps is not None and not osteps.empty:
         out.append(row("observed", "water", _observed_blocks(osteps, blks, now)).rstrip()
                    + "  SNOTEL water (in) so far, not snow")
+    if going and readings is not None and not readings.empty:      # PRIVATE (owner 2026-11-19): files / pages only
+        csnow, cwater = _collins_blocks(readings, blks, now, cfg)
+        out.append(row("Collins", "snow", csnow).rstrip() + "  Alta Collins new snow (in) so far")
+        out.append(row("Collins", "water", cwater).rstrip() + "  Alta Collins water (in) so far")
     out += [row(m, timefmt.cycle(i), ["-" if c == blocks.NONE else f"{v:.0%}" + ("*" if c == blocks.PART else "")
                                       for v, c in got]) + "  members wet" for m, i, got in ens]
     out += ["    12 h blocks: median snow (in) of the models covering the whole block, every point",
@@ -422,7 +488,7 @@ def storm_trend_lines(st, fc: pd.DataFrame, cfg: dict) -> list[str]:
 
 
 def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Timestamp,
-                  psteps: dict[str, pd.DataFrame] | None = None) -> str:
+                  psteps: dict[str, pd.DataFrame] | None = None, readings: pd.DataFrame | None = None) -> str:
     """Each storm still ahead or under way, with every model's newest run totalled over the storm window.
 
     Deterministic: water (in) and Kuchera snow (in, regime-adjusted when available). Ensembles: members reaching the
@@ -432,6 +498,8 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Tim
     "awaiting verification" line, like the feed leaving it out (owner, 2026-10-28). Times are Mountain.
     Under each storm's totals: the same runs in fixed 12 h blocks (storm_block_lines), where short-range runs count.
     Last: whether each point's snow is trending up, down or the same since each model's previous run (storm_trend_lines).
+    readings: Alta Collins readings for the storm under way (Collins rows in the 12 h blocks). PRIVATE: pass them
+    only for the saved file, never for printed output (the pass log is public).
     """
     fc, adjusted = regime_adjusted(fc, cfg)
     lines = ["Snow is regime-adjusted per step (each resort's history in that step's flow, regime_factors.csv)."
@@ -453,7 +521,8 @@ def render_storms(storms: pd.DataFrame, fc: pd.DataFrame, cfg: dict, now: pd.Tim
         lines += [f"    {k}: {v}" for k, v in storm_notes(st)]
         labels = {p: v.get("label", p) for p, v in cfg["points"].items()}
         lines += _storm_table(models, list(cfg["points"]), tail_w, labels) if models else ["(no model reaches this storm)"]
-        lines += storm_block_lines(st, fc, cfg, now, (psteps or {}).get(cfg["storms"]["block_point"])) if models else []
+        lines += storm_block_lines(st, fc, cfg, now, (psteps or {}).get(cfg["storms"]["block_point"]),
+                                   readings) if models else []
         lines += storm_trend_lines(st, fc, cfg) if models else []
         lines.append("")
     for _, st in ended.iterrows():

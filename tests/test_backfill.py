@@ -54,6 +54,22 @@ def test_backfill_plans_each_models_runs_before_a_storm_only_up_to_its_end():
     assert set(plan["storms"]) == {"2026021706"}
 
 
+def test_backfill_plans_use_each_runs_own_length_and_scoring_leaves_ensembles_out():
+    # 2026-11-19: the run's length came from the storm START's hour: an IFS 12z run (360 h) took the 06z length
+    # (144 h) for a storm starting at 14z, and ENS (no runs at 14z) had no length at all
+    cfg = make_cfg()
+    cfg["backfill"].update(models=["IFS", "ENS"], leads_hours=[72], min_water_in=0.5, first_init={})
+    found = pd.DataFrame({"storm_id": ["s"], "point": "alta", "final_start": [pd.Timestamp("2025-01-04 14:00")],
+                          "final_end": [pd.Timestamp("2025-01-08 06:00")], "obs_water_in": [2.0]})
+    plan = backfill.plan_runs(found, cfg).set_index("model")
+    assert plan.loc["IFS", "init"] == pd.Timestamp("2025-01-01 12:00")
+    assert plan.loc["IFS", "max_lead_hours"] == 162.0                      # to the storm's end, past 144 h
+    assert plan.loc["ENS", "max_lead_hours"] == 162.0
+    runs = backfill.runs_by_lead(found.iloc[0], cfg)
+    assert [m for m, _, _ in runs] == ["IFS"]                              # an ensemble's members aren't one total
+    assert {m for m, _, _ in backfill.runs_by_lead(found.iloc[0], cfg, ensembles=True)} == {"IFS", "ENS"}
+
+
 def test_a_backfill_run_fetches_only_the_hours_it_needs():
     import tempfile
     from datetime import datetime

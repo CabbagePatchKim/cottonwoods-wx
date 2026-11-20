@@ -245,6 +245,11 @@ Each published version puts its own copy of this manual here, so this list is cu
 - **v1.12:** `ENS` (the ECMWF ensemble) runs from 06z and 18z are back. Under v1.11 every 06z / 18z ENS run failed
   to download from 11/12 18z on, so the feed's ENS numbers came only from the 00z and 12z runs and could be up to
   18 h old. No fields were added, removed or renamed.
+- **v1.13:** `GDPS` at Brighton is now a true blend of the grid points around it. Brighton sits just east of
+  the GDPS block the feed used before, so it took that block's eastern edge; the block now reaches one column
+  further east, and about 13% of Brighton's GDPS numbers come from that new column. GDPS water and snow at Brighton
+  can shift slightly; every other resort and model is made exactly as in v1.12. No fields were added, removed or
+  renamed.
 
 ## 10. Credits and licences
 

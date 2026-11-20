@@ -15,7 +15,6 @@ covers, with observed water re-totalled from the SNOTEL gauge over that same win
 Observed snow stays the whole storm's total (no hourly snow before the Collins Worker).
 """
 import argparse
-import copy
 
 import numpy as np
 import pandas as pd
@@ -41,17 +40,6 @@ point = cfg["storms"]["point"]
 MAX_SHORT_H = 6                          # one model step (GFS 3 h; IFS 6 h past 144 h)
 
 
-def runs_by_lead(storm: pd.Series) -> list[tuple[str, int, pd.Timestamp]]:
-    """[(model, lead, init)] the backfill planned for this storm (plan_runs, one lead at a time)."""
-    out = []
-    for lead in cfg["backfill"]["leads_hours"]:
-        c = copy.deepcopy(cfg)
-        c["backfill"]["leads_hours"] = [lead]
-        for _, r in backfill.plan_runs(storm.to_frame().T, c).iterrows():
-            out.append((r["model"], lead, pd.Timestamp(r["init"])))
-    return out
-
-
 start, end = found["final_start"].min() - pd.Timedelta(days=4), found["final_end"].max()
 fc = pd.concat([load_forecasts(cfg, start=start, end=end, root=base / "archive", raw=raw) for raw in (False, True)],
                ignore_index=True)
@@ -68,7 +56,7 @@ for _, st in found.iterrows():
         obs_snow, snow_src = float(st.nws_snow_in), "nws"
     else:
         obs_snow, snow_src = np.nan, ""
-    for model, lead, init in runs_by_lead(st):
+    for model, lead, init in backfill.runs_by_lead(st, cfg):
         for label in (model, model + " raw"):
             g = fc[(fc["model"] == label) & (fc["init"] == init)]
             if g.empty:
@@ -116,8 +104,9 @@ print("\n=== By model and lead (water vs SNOTEL gauge; snow vs journal stake, el
 print(ok.groupby(["model", "lead_h"]).apply(table, include_groups=False).to_string())
 print("\n=== All leads together")
 print(ok.groupby("model").apply(table, include_groups=False).to_string())
-both = ok.pivot_table(index=["storm_id", "lead_h"], columns="model", values="water_err").dropna()
+both = ok.pivot_table(index=["storm_id", "lead_h"], columns="model", values="water_err")
 if {"GFS", "IFS"} <= set(both.columns):
+    both = both[["GFS", "IFS"]].dropna()           # only these two (HRRR / U of U runs cover fewer storms)
     closer = (both["GFS"].abs() < both["IFS"].abs()).sum()
     print(f"\nSame storm and lead, water: GFS closer {closer} of {len(both)}, IFS closer {len(both) - closer - (both['GFS'].abs() == both['IFS'].abs()).sum()}")
 print("\n=== Per storm (24 h lead): water fc / obs, snow fc / obs")

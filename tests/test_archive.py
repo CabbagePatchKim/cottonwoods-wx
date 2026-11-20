@@ -81,7 +81,7 @@ def test_ensemble_completeness_counts_members_and_report_counts_wet_members():
     rows = {ln.split()[0]: ln for ln in lines[1:]}
     # the day ending 11/02 12z starts before the 00z run does, so it's incomplete -> "-". The 11/03 day is
     # complete: members get 0, 24 and 48 mm -> 2 of 3 reach 0.10" (2.54 mm), mean 24 mm = 0.94"
-    assert lines[0].split() == ["Mon", "11/02", "Tue", "11/03"]
+    assert lines[0].split() == ["Sun-Mon", "11/02", "Mon-Tue", "11/03"]   # snow day - morning reported (11/19)
     assert rows["GEFS"].split()[3:] == ["-", "2/3", "0.94"]
     assert rows["HRRR"].split()[3:5] == ["-", f"{24 / 25.4:.2f}"]
     # every number ends in the same column as its sub-header (fixed widths)
@@ -153,6 +153,22 @@ def test_points_take_the_blend_of_the_four_cells_and_cells_stay_as_pulled():
     filled = df.assign(filled_values=[30, 0, 0, 0, 30, 30][:len(df)]).astype({"filled_values": "int64"})
     got = blend_points(filled, cfg).set_index("point")
     assert got.loc["mid", "filled_values"] == 30 and got["filled_values"].dtype == "int64"
+
+
+def test_a_run_from_before_a_block_was_widened_still_blends_its_old_points():
+    # GDPS gained a column 2026-11-19 (park_city): runs archived before have only the old four cells. A point inside
+    # the old square still blends exactly as before; a point that now needs a missing new cell is left as stored.
+    from cottonwoods.archive.cells import blend_points
+    cfg = make_cfg()
+    cfg["model_cells"] = {"GFS": {"grid_points": [[[40.50, -111.75], [40.50, -111.50], [40.50, -111.25]],
+                                                  [[40.75, -111.75], [40.75, -111.50], [40.75, -111.25]]]}}
+    cfg["points"] = {"mid": {"lat": 40.625, "lon": -111.625}, "east": {"lat": 40.625, "lon": -111.40}}
+    vals = [{"qpf_mm": q, "t_700_k": t} for q, t in ((1.0, 270.0), (2.0, 271.0), (3.0, 272.0), (6.0, 275.0))]
+    df = _cell_run(["mid", "east"], vals)                      # only the old 2 x 2 cells (-111.75 / -111.50)
+    df.loc[df["point"] == "east", "qpf_mm"] = 9.0
+    out = blend_points(df, cfg).set_index("point")
+    assert out.loc["mid", "qpf_mm"] == 3.0 and out.loc["mid", "cell_blend"]        # same as the 2 x 2 blend
+    assert out.loc["east", "qpf_mm"] == 9.0 and not out.loc["east", "cell_blend"]   # needs -111.25: left as stored
 
 
 def test_a_model_marked_blend_false_keeps_its_nearest_cell():
