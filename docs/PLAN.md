@@ -8,14 +8,23 @@ steps finish; keep it short.
 ## FIRST THING NEXT SESSION (2026-11-20): ask before anything else
 1. Did the sequential backfill finish? (one job at a time after the 11/19 low-memory stop of all four jobs): IFS
    2024-25 (80/86 at the stop), GFS + HRRR 2024-25, 2023-24, 2022-23, then 500 mb maps (0 h analyses 4 winters, then
-   GFS forecast maps). Check data/local/backfill/runs_log.csv + maps folders; rerun the same commands (they skip
-   what is on disk). RUN ONE AT A TIME (7.8 GB laptop; close other programs).
+   GFS forecast maps). QUEUED AFTER IT (11/19 night): IFS late 2023-24 (first_init 2024-02-01) + 3 IFS runs re-fetched
+   past 144 h, then ENS (2024-02 on, 187 runs, ~72 s each), then GEFS (4 winters, 295 runs, ~175 s each): done ~Sat
+   11/21. Check data/local/backfill/runs_log.csv + maps folders; rerun the same commands (they skip what is on disk).
+   RUN ONE AT A TIME (7.8 GB laptop; close other programs).
 2. Then: backfill_scores.py per winter; timeheight_scores.py --winters 2025-26 2024-25 2023-24 2022-23; the GFS
    dryness check (LEARNING_PLAN section 0).
-3. RELEASE (owner approves): everything below "IN MAIN 11/19". Before: golden check (11/19: only expected
-   differences: old GDPS runs' cell_blend flag at Brighton rows, values identical; reports gain the Thaynes column /
-   section), CI green, dry run on a bucket copy. Manual "Changes by version": GDPS at BRIGHTON now a true blend with
-   the new eastern column (~13%; it was the clipped edge): small feed-visible change. park_city is internal.
+3. RELEASED v1.13 (owner approved 11/19 "publish 1.13"; tag on 21b39ed, CI green; golden: only expected
+   differences; dry run on a bucket copy ok). CHECK the first v1.13 pass (Worker ~05:50Z 11/20): log "Running
+   approved release v1.13"; feed meta code_version v1.13 with park_city in points (its numbers fill in as new runs
+   arrive); cwx-feed README = the v1.13 manual; phone viewer Storms "Observed at Alta" + Collins block rows, Models
+   "Thu-Fri" headers / "*" / "obs so far"; the PUBLIC pass log has NO Collins values. Friend heads-up: new feed key
+   park_city (manual v1.13); GDPS at Brighton shifts slightly.
+   RELEASED v1.13.1 (owner 11/20 "push 1.13.1"; dd7e080): NCAR GDEX answers 403 for every GFS file since 11/19 18z;
+   live GFS now falls back to AWS on any GDEX failure. CHECK its first pass: "Running approved release v1.13.1",
+   "[gfs] GDEX failed ... trying AWS", GFS runs archived and the meta.json stale-GFS warning gone.
+   Also 11/20: docs/FORECAST_CHECKLIST.md (+ .txt), docs/STORM_NOTES.md (11/19-20 storm; owner's 11/23 forecast to
+   score Monday). Next: LEARNING_PLAN steps 0 (GFS dryness check - Atwater ran far under Collins on 11/19-20) and 2.
 
 ## IN MAIN 11/19 (not released)
 - U of U parser: "0:1 /  -%" (zero snow ratio, UUGFS) dropped hours; fixed + test (1 of 278 live runs affected).

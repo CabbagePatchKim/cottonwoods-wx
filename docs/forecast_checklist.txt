@@ -1,0 +1,40 @@
+PERSONAL FORECAST CHECKLIST (until the learning model is ready) - 2026-11-20
+Checks to make, not calibrated numbers.
+
+1. WATER FIRST
+   - Median water across models; lean on the ensemble mean and RRFS.
+   - Distrust HRRR's big 3-hour bursts. If they aren't verifying early in the storm, discount the later ones.
+   - Ensemble means hide spread: check wet members (>= 0.10"). Under half wet = likeliest is below the mean.
+   - Trend down (or up) across runs: shade the number that way, or say why not.
+   - High-res vs ensembles disagree: say which side you lean on.
+
+2. DIRECTION AT CREST LEVEL (700 mb, not 850)
+   - Use 700 mb at KSLC or the time-height crest winds. Ignore 850 mb at KSLC unless well over ~10 kt.
+   - S-SSW (~180-215): Wasatch Back and Snowbird do relatively well; lean toward the Back, no fixed Alta cut yet.
+   - SW-WSW (~220-260): roughly neutral.
+   - W-NW (~270-330): favors the Cottonwoods, Alta especially; lake-effect window.
+
+3. MOISTURE DEPTH AND CONTINUITY
+   - Sounding / time-height: moist-layer depth, -12 to -18 C growth zone saturated?, dry gaps.
+   - Shallow, broken or gapped moisture = steady light rates, low end of the range.
+   - Slack crest winds under lingering moisture = light snow that outlasts the runs.
+   - Slack = 700 mb wind under ~10 kt (rule of thumb). Little lift = light rates; moisture lingers;
+     little spillover to the Back; patchy totals.
+
+4. SNOW RATIO FROM CREST TEMPERATURE
+   - Mild SW storms (700 mb ~-5 to -8 C) run denser than cold NW ones. Don't trust Kuchera totals blindly.
+
+5. TIMING, NOT JUST THE TOTAL
+   - Forecast 12-hour blocks, onset, peak window and end time.
+   - Watch run-to-run trends; runs pushing the end later are a signal.
+   - Time the end from the 500 mb trough passage, and whether another shortwave follows.
+
+6. VERIFY THE RIGHT WAY
+   - Alta: Collins board snow and water only.
+   - Other points: SNOTEL water. Depth change only for site-vs-site comparison (settling makes it run low).
+   - Score total, blocks, peak window and end separately.
+   - Near a bin edge, give bin probabilities (e.g. <1: 40%, 1-3: 55%, 3+: 5%). Work out the low case
+     (low water x low ratio) and the high case; see which bins they land in.
+
+7. LOG THE SURPRISES
+   - One note per storm; name the cause only after checking soundings and 700 mb winds.
