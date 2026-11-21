@@ -35,7 +35,9 @@ def pull_run(init: datetime, fxx_list, points: dict[str, dict], save_dir: str | 
         return gfs_gdex.pull_run(init, fxx_list, points, workers=gdex_workers)
     try:
         return gfs_gdex.pull_run(init, fxx_list, points, workers=gdex_workers)
-    except gfs_gdex.NotInArchive:
+    except Exception as e:  # noqa: BLE001 - not in GDEX (404), or GDEX refusing/down (403 from 11/19 18z): AWS
+        if not isinstance(e, gfs_gdex.NotInArchive):
+            print(f"[gfs] GDEX failed ({type(e).__name__}: {str(e)[:120]}); trying AWS", flush=True)
         return _pull_run_aws(init, fxx_list, points, save_dir, workers=workers)
 
 

@@ -107,3 +107,24 @@ def test_backfill_gfs_comes_from_aws_first_and_falls_back_to_gdex_while_live_sta
     finally:
         gfs._pull_run_aws, gfs_gdex.pull_run = saved
     assert calls == ["aws", "gdex"] and len(out) == 1
+
+
+def test_live_gfs_falls_back_to_aws_when_gdex_refuses():
+    """GDEX started answering 403 Forbidden (11/19 18z): live GFS must go to AWS, not fail."""
+    import requests
+    from cottonwoods.models import gfs, gfs_gdex
+    saved, calls = (gfs._pull_run_aws, gfs_gdex.pull_run), []
+
+    def gdex(*a, **k):
+        calls.append("gdex")
+        raise requests.HTTPError("403 Client Error: Forbidden")
+
+    def aws(*a, **k):
+        calls.append("aws")
+        return pd.DataFrame({"qpf_mm": [1.0]})
+    gfs._pull_run_aws, gfs_gdex.pull_run = aws, gdex
+    try:
+        out = gfs.pull_run(None, [6], {}, workers=1, gdex_workers=1)
+    finally:
+        gfs._pull_run_aws, gfs_gdex.pull_run = saved
+    assert calls == ["gdex", "aws"] and len(out) == 1

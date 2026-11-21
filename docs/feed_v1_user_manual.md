@@ -254,6 +254,10 @@ Each published version puts its own copy of this manual here, so this list is cu
   block the feed used before, so it took that block's eastern edge; the block now reaches one column further east,
   and about 13% of Brighton's GDPS numbers come from that new column, so GDPS water and snow at Brighton can shift
   slightly. Every other resort and model is made exactly as in v1.12. No fields were removed or renamed.
+- **v1.13.1:** `GFS` runs are back. From the 11/19 18z run on, the server the feed took GFS from refused every
+  download, so the feed kept showing the 11/19 12z run (with a warning in `meta.json` → `warnings`). GFS now comes
+  from NOAA's copy on AWS whenever that server fails; it is the same model data. The missed runs from the last two
+  days are filled in on the next update. No fields were added, removed or renamed.
 
 ## 10. Credits and licences
 
