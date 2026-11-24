@@ -106,6 +106,8 @@ pns:
           park_city: '^park\W+city\W+mountain$'}   # "Park City Mountain - 9300 ft" (owner 2026-11-19)
   match_after_hours: 12
   start_match_hours: 24
+  check_min_in: 3              # warn (storms.collins_check) when Collins's storm snow and the statement's differ by at
+  check_share: 0.25            # least this many inches AND more than this share of the statement's (owner 2026-11-23)
   max_storm_days: 10           # a stated start date further back than this (or after the statement) is an NWS typo:
                                # the weekday decides instead (2026-11-11: "Friday September 4" in a November statement)
 

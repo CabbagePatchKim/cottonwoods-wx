@@ -611,7 +611,7 @@ def pns_totals(storm: pd.Series, totals: pd.DataFrame, cfg: dict, point: str | N
     """The NWS statement total (obs/pns.py rows in `totals`, source PNS_SOURCE) for this storm at `point`: the latest
     reading at or after the storm's start and up to pns.match_after_hours after its end (latest issued on a tie). A
     statement whose stated start is more than pns.start_match_hours from the storm's covers another span: skipped.
-    {"new_snow_in", "water_in", "sources", "note"} or None. A statement may give water only (snow NaN)."""
+    {"new_snow_in", "water_in", "sources", "note", "end_utc" (the reading's time)} or None. A statement may give water only (snow NaN)."""
     c = cfg.get("pns")
     if not c or totals is None or totals.empty:
         return None
@@ -624,7 +624,29 @@ def pns_totals(storm: pd.Series, totals: pd.DataFrame, cfg: dict, point: str | N
         return None
     r = t.sort_values(["end_utc", "issued_utc"]).iloc[-1]
     return {"new_snow_in": r.new_snow_in, "water_in": r.water_in, "note": r.notes if pd.notna(r.notes) else "",
-            "sources": f"{PNS_SOURCE} {timefmt.clock(r.issued_utc, weekday=True)}"}
+            "end_utc": r.end_utc, "sources": f"{PNS_SOURCE} {timefmt.clock(r.issued_utc, weekday=True)}"}
+
+
+def collins_check(storm: pd.Series, totals: pd.DataFrame, readings: pd.DataFrame | None, cfg: dict) -> str:
+    """A warning when Collins's snow and the NWS statement's differ by at least pns.check_min_in AND more than
+    pns.check_share of the statement's (owner 2026-11-23: a board glitch tripled a storm total unnoticed), else ''.
+    Compared up to the statement's own reading if that is before the storm's end; a partial Collins total (a Worker
+    outage) is not compared. Only warns: the total scored is unchanged. PRIVATE, like every Collins value."""
+    nws = pns_totals(storm, totals, cfg)
+    if not nws or pd.isna(nws["new_snow_in"]):
+        return ""
+    s, e = storm_span(storm)
+    end = min(e, nws["end_utc"])
+    if end <= s:
+        return ""
+    col = hand_obs_totals(pd.Series({**storm.to_dict(), "final_start": s, "final_end": end}), readings, cfg)
+    if not col or pd.isna(col["new_snow_in"]) or col["missing_hours"] > cfg["storms"]["collins_max_missing_hours"]:
+        return ""
+    off = col["new_snow_in"] - nws["new_snow_in"]
+    if abs(off) < cfg["pns"]["check_min_in"] or abs(off) <= cfg["pns"]["check_share"] * nws["new_snow_in"]:
+        return ""
+    return (f"CHECK: Collins {col['new_snow_in']:.0f}\" vs NWS {nws['new_snow_in']:.1f}\" through "
+            f"{timefmt.clock(end, weekday=True)}: look at the hourly board readings")
 
 
 def observed_snow(storm: pd.Series, totals: pd.DataFrame, readings: pd.DataFrame | None, cfg: dict,

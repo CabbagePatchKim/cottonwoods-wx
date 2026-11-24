@@ -12,7 +12,7 @@ import pandas as pd
 
 from . import blocks, regimes, timefmt
 from .config import PROCESSED_DIR
-from .storms import bin_scores, hand_obs_totals, manual_totals, pns_totals, run_flow, run_modes
+from .storms import bin_scores, collins_check, hand_obs_totals, manual_totals, pns_totals, run_flow, run_modes
 from .models.registry import kind_of, retired_by
 from .profile import below_ground
 from .windows import window_total, within_lead
@@ -792,7 +792,11 @@ def _verified_storm(st, scores: pd.DataFrame, totals: pd.DataFrame, readings, bi
             obs += f" ({man['note']})"
     if not found:
         obs += " | Collins: no total yet (no Worker hours or NWS statement for this window)"
-    lines += [f"    observed: {obs}", _flow_line(st)]
+    lines.append(f"    observed: {obs}")
+    check = collins_check(st, totals, readings, cfg)
+    if check:
+        lines.append(f"    ** {check}")
+    lines.append(_flow_line(st))
     picks = bin_picks(binned[binned["point"] == st.point] if not binned.empty else binned, st.storm_id, cfg)
     if picks:
         first = next(iter(picks.values())).iloc[0]

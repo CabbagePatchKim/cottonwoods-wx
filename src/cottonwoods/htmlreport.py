@@ -291,7 +291,7 @@ def observed_html(storms: pd.DataFrame, readings: pd.DataFrame | None, totals: p
     statement total, and for a verified storm the total its scores use (storms.observed_snow). PRIVATE page only:
     Collins is never published."""
     from .report import collins_window
-    from .storms import observed_snow, pns_totals, storm_span
+    from .storms import collins_check, observed_snow, pns_totals, storm_span
     recent = storms[storms["status"].isin(["forecast", "verified"])
                     & (pd.to_datetime(storms["fc_start"]) <= pd.Timestamp(now))
                     & (pd.to_datetime(storms["fc_end"]) >= pd.Timestamp(now)
@@ -308,10 +308,12 @@ def observed_html(storms: pd.DataFrame, readings: pd.DataFrame | None, totals: p
         used = observed_snow(st, totals, readings, cfg) if st.status == "verified" else (np.nan, "")
         state = "under way" if going else ("verified" if st.status == "verified" else "ended, awaiting verification")
         miss = f" ({col['missing_hours']} of {col['hours']} h missing)" if col and col.get("missing_hours") else ""
+        check = collins_check(st, totals, readings, cfg) if st.status == "verified" and totals is not None else ""
+        scored = "-" if pd.isna(used[0]) else escape(f'{used[0]:.0f}" ({used[1]})', quote=False)
         rows.append([escape(f"{timefmt.clock(s, weekday=True)} - {timefmt.clock(e, weekday=True)}"), escape(state),
                      amt(col, "new_snow_in", ".0f") + escape(miss), amt(col, "water_in", ".2f"),
                      amt(nws, "new_snow_in", ".0f"), amt(nws, "water_in", ".2f"),
-                     "-" if pd.isna(used[0]) else escape(f'{used[0]:.0f}" ({used[1]})', quote=False)])
+                     scored + (f" <b>{escape(check, quote=False)}</b>" if check else "")])
     return ("<h2>Observed at Alta</h2><p class='note'>Alta Collins (hourly readings; so far for a storm under way), "
             "the NWS storm statement, and the total the scores use once a storm is verified (Collins, else NWS). "
             "Private: not in the feed.</p>"

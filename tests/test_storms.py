@@ -775,6 +775,26 @@ def test_nws_statement_total_is_the_latest_reading_in_the_window_from_a_matching
     assert pns_totals(st, t[t["new_snow_in"] == 2.0], cfg) is None
 
 
+def test_collins_check_warns_only_when_the_statement_disagrees():
+    from cottonwoods.storms import collins_check
+    cfg = make_cfg()
+    s, e = pd.Timestamp("2026-02-16 00:00"), pd.Timestamp("2026-02-16 12:00")
+    st = pd.Series({"point": "alta", "fc_start": s, "fc_end": e, "final_start": s, "final_end": e})
+    ends = pd.date_range("2026-02-16 01:00", periods=12, freq="h")
+    r = pd.DataFrame({"end_utc": ends, "start_utc": ends - pd.Timedelta(hours=1), "period_h": 1, "new_snow_in": 1.0,
+                      "water_in": 0.1, "depth_in": 40.0, "temp_f": 25.0, "rh_pct": 90.0})
+
+    def nws(snow, end=e):
+        return pd.DataFrame([{"site": "alta", "source": "nws statement", "notes": "", "start_utc": pd.NaT, "end_utc": end,
+                              "issued_utc": end, "new_snow_in": snow, "water_in": 1.0}])
+    assert collins_check(st, nws(11.0), r, cfg) == ""                        # 12 vs 11
+    assert "CHECK" in collins_check(st, nws(6.0), r, cfg)                    # 12 vs 6
+    assert "CHECK" in collins_check(st, nws(20.0), r, cfg)                   # too low warns as well
+    assert collins_check(st, nws(6.0, s + pd.Timedelta(hours=6)), r, cfg) == ""   # a mid-storm reading: same span
+    assert collins_check(st, nws(6.0), r.iloc[:8], cfg) == ""                # hours missing: not compared
+    assert collins_check(st, nws(float("nan")), r, cfg) == "" and collins_check(st, pd.DataFrame(), r, cfg) == ""
+
+
 def test_observed_snow_takes_the_worker_then_the_nws_statement_then_a_hand_total():
     # owner 2026-11-10: no more hand entries; the Worker's hours first, then the NWS statement
     from cottonwoods.storms import observed_snow

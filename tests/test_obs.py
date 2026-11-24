@@ -218,6 +218,43 @@ def test_collins_new_snow_is_the_interval_boards_rise_and_a_clearing_starts_over
     assert (r["period_h"] == 1).all() and (r["start_utc"] == r["end_utc"] - pd.Timedelta(hours=1)).all()
 
 
+def test_collins_board_glitch_is_not_snow():
+    from cottonwoods.obs import collins
+
+    def snow(board, depth):
+        t = pd.date_range("2026-01-10 00:00", periods=len(board), freq="h")
+        return collins.readings(pd.DataFrame({"time_utc": t, "water_in": 0.05, "snow_interval_in": board,
+                                              "depth_in": depth, "temp_f": 25.0, "rh_pct": 90.0,
+                                              "fetched_at": t[-1]}))["new_snow_in"].tolist()[1:]
+    # up 2 h and back, depth flat: the rise to the value it came back to counts once, no hour is missing
+    assert snow([0.0, 1.0, 30.0, 30.0, 3.0, 4.0], 40.0) == [1.0, 0.0, 0.0, 2.0, 1.0]
+    # cleared during the glitch: those hours are unknown, then snow since the clearing
+    s = snow([0.0, 5.0, 30.0, 1.0], 40.0)
+    assert s[0] == 5.0 and s[1] != s[1] and s[2] == 1.0
+    # still up at the newest hour: unknown for now
+    s = snow([0.0, 1.0, 30.0], 40.0)
+    assert s[0] == 1.0 and s[1] != s[1]
+    # a big rise the depth confirms is snow (e.g. after a Worker outage)
+    assert snow([0.0, 1.0, 10.0], [40.0, 41.0, 47.0]) == [1.0, 9.0]
+
+
+def test_collins_settling_is_not_a_cleared_board():
+    from cottonwoods.obs import collins
+
+    def snow(board, water):
+        t = pd.date_range("2026-01-10 00:00", periods=len(board), freq="h")
+        return collins.readings(pd.DataFrame({"time_utc": t, "water_in": water, "snow_interval_in": board,
+                                              "depth_in": 40.0, "temp_f": 25.0, "rh_pct": 90.0,
+                                              "fetched_at": t[-1]}))["new_snow_in"].tolist()[1:]
+    # settles 1", wobbles back (nothing), then 1" more
+    assert snow([4.0, 5.0, 4.0, 5.0, 6.0], 0.01) == [1.0, 0.0, 0.0, 1.0]
+    # settles slowly, then new snow hours later counts from the settled level
+    assert snow([8.0, 7.0, 6.0, 6.0, 6.0, 6.0, 6.0, 8.0], 0.01) == [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0]
+    # cleared: a big drop, a drop to 0, or a small drop in an hour wet enough to make what's left
+    assert snow([7.0, 2.0], 0.02) == [2.0] and snow([1.0, 0.0, 1.0], 0.02) == [0.0, 1.0]
+    assert snow([2.0, 1.0], 0.10) == [1.0]
+
+
 def test_collins_worker_hours_are_stored_and_hand_entries_win_value_by_value():
     from cottonwoods.obs import collins
     cfg = make_cfg()
