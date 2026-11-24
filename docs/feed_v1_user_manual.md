@@ -258,6 +258,8 @@ Each published version puts its own copy of this manual here, so this list is cu
   download, so the feed kept showing the 11/19 12z run (with a warning in `meta.json` → `warnings`). GFS now comes
   from NOAA's copy on AWS whenever that server fails; it is the same model data. The missed runs from the last two
   days are filled in on the next update. No fields were added, removed or renamed.
+- **v1.13.2:** no changes to the feed. This version only changes how finished storms are verified behind the
+  scenes.
 
 ## 10. Credits and licences
 

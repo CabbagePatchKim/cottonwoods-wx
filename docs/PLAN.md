@@ -5,6 +5,19 @@ steps finish; keep it short.
 
 ## LEARNING MODEL PLAN (owner 2026-11-19): docs/LEARNING_PLAN.md (step 6 design; v0 + switches; GFS dryness check first)
 
+## IN PROGRESS (2026-11-23): release v1.13.2 (owner said "release 1.13.2"; NOT TAGGED YET)
+- Why: the Collins interval board glitched twice in the 11/19-21 storm, so its verified total (and every Alta snow score
+  of that storm) is about 3 x too high in v1.13.1. Fixed in main 4853948 (CI green): board glitches + settling in
+  obs/collins.py; storms.collins_check warns when Collins and the NWS statement disagree (pns.check_min_in / check_share).
+- Golden check: 51 differences (49 GDPS cell_blend runs, 2 reports), byte-identical with and without 4853948, so none
+  are from it: the snapshot predates v1.13 (save a new one after the release).
+- STILL TO DO: the dry run on a bucket copy (pull, storms.py, model_report.py). Stopped on the laptop 11/23 by low
+  memory after the pull; the owner is setting up a second PC (D:\cottonwoods-wx) to run it. Pass = both exit 0, the
+  11/19-21 total near the NWS statement with no CHECK line, earlier storms unchanged, no Collins values in the printed
+  output. Then: green CI, `git tag -a v1.13.2`, push the tag, and check the first pass ("Running approved release
+  v1.13.2"; bin scores of the 11/19-21 storm rebuilt).
+- Second PC: code by git, data by bucket_sync.py pull only (never push), no scheduled passes, no releases from it.
+
 ## FIRST THING NEXT SESSION (2026-11-20): ask before anything else
 1. Did the sequential backfill finish? (one job at a time after the 11/19 low-memory stop of all four jobs): IFS
    2024-25 (80/86 at the stop), GFS + HRRR 2024-25, 2023-24, 2022-23, then 500 mb maps (0 h analyses 4 winters, then
